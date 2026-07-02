@@ -7,6 +7,24 @@ type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
 type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
+type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'needs_test' | 'tested_ok' | 'tested_rework';
+
+interface Comment {
+  id: string;
+  authorId: string;
+  text: string;
+  createdAt: string;
+}
+
+const deployStatuses: { id: DeployStatus; label: string; color: string; icon: string }[] = [
+  { id: 'none',          label: 'Без статуса',                   color: '215 15% 50%', icon: 'Minus' },
+  { id: 'local',         label: 'Готово локально у скриптера',   color: '270 65% 65%', icon: 'Code2' },
+  { id: 'test',          label: 'Залито на тестовый',            color: '210 80% 62%', icon: 'FlaskConical' },
+  { id: 'ready_live',    label: 'Можно заливать на лайв',        color: '45 90% 55%',  icon: 'Rocket' },
+  { id: 'needs_test',    label: 'Требуется тест',                color: '35 85% 58%',  icon: 'ClipboardCheck' },
+  { id: 'tested_ok',     label: 'Протестировано — всё ок',       color: '152 55% 50%', icon: 'CircleCheck' },
+  { id: 'tested_rework', label: 'На доработку (есть замечания)', color: '0 65% 60%',   icon: 'CircleX' },
+];
 
 interface Server {
   id: ServerId;
@@ -52,6 +70,7 @@ interface Member {
   role: string;
   short: string;
   color: string;
+  tg?: string;
 }
 
 interface Task {
@@ -67,6 +86,8 @@ interface Task {
   links?: { url: string; label: string }[];
   category: CategoryId;
   sprintId?: string;
+  deployStatus?: DeployStatus;
+  comments?: Comment[];
 }
 
 interface Bug {
@@ -89,11 +110,11 @@ interface Sprint {
 
 const members: Member[] = [
   { id: 'prog2', name: 'Вы', role: 'Программист · Руководитель', short: 'РП', color: '152 60% 48%' },
-  { id: 'prog1', name: 'Программист 1', role: 'Разработка', short: 'П1', color: '210 80% 60%' },
-  { id: 'cm', name: 'Комьюнити-менеджер', role: 'Админ · Веб · Обновления', short: 'КМ', color: '270 65% 65%' },
-  { id: 'smm', name: 'СММ', role: 'Соцсети · Баннеры · Розыгрыши', short: 'СМ', color: '330 70% 62%' },
-  { id: 'support', name: 'Саппорт', role: 'Поддержка · Тестирование', short: 'СП', color: '35 85% 58%' },
-  { id: 'mods', name: 'Модераторы', role: 'Новости · Игроки', short: 'МД', color: '190 70% 55%' },
+  { id: 'prog1', name: 'Программист 1', role: 'Разработка', short: 'П1', color: '210 80% 60%', tg: '' },
+  { id: 'cm', name: 'Комьюнити-менеджер', role: 'Админ · Веб · Обновления', short: 'КМ', color: '270 65% 65%', tg: '' },
+  { id: 'smm', name: 'СММ', role: 'Соцсети · Баннеры · Розыгрыши', short: 'СМ', color: '330 70% 62%', tg: '' },
+  { id: 'support', name: 'Саппорт', role: 'Поддержка · Тестирование', short: 'СП', color: '35 85% 58%', tg: '' },
+  { id: 'mods', name: 'Модераторы', role: 'Новости · Игроки', short: 'МД', color: '190 70% 55%', tg: '' },
 ];
 
 const columns: { id: ColumnId; title: string; icon: string }[] = [
@@ -254,17 +275,29 @@ export default function Index() {
           <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Команда</div>
           <div className="space-y-0.5">
             {members.map((m) => (
-              <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer">
+              <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
                 <div
                   className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold shrink-0"
                   style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
                 >
                   {m.short}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium truncate">{m.name}</div>
                   <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>{m.role}</div>
                 </div>
+                {m.tg && (
+                  <a
+                    href={`https://t.me/${m.tg.replace('@', '')}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Написать ${m.name} в Telegram`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                  >
+                    <Icon name="Send" size={12} />
+                  </a>
+                )}
               </div>
             ))}
           </div>
@@ -481,6 +514,24 @@ function PriorityBadge({ p }: { p: Priority }) {
   );
 }
 
+function DeployBadge({ status }: { status: DeployStatus }) {
+  const ds = deployStatuses.find((d) => d.id === status) ?? deployStatuses[0];
+  if (status === 'none') return null;
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md border"
+      style={{
+        background: `hsl(${ds.color} / 0.12)`,
+        color: `hsl(${ds.color})`,
+        borderColor: `hsl(${ds.color} / 0.3)`,
+      }}
+    >
+      <Icon name={ds.icon} size={10} />
+      {ds.label}
+    </span>
+  );
+}
+
 function CategoryBadge({ id }: { id: CategoryId }) {
   const c = categoryMeta(id);
   return (
@@ -530,7 +581,12 @@ function Board({
                       <CategoryBadge id={t.category} />
                       <PriorityBadge p={t.priority} />
                     </div>
-                    <p className="text-sm font-medium leading-snug mb-3">{t.title}</p>
+                    <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
+                    {t.deployStatus && t.deployStatus !== 'none' && (
+                      <div className="mb-2">
+                        <DeployBadge status={t.deployStatus} />
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <div
                         className="h-6 w-6 rounded-md flex items-center justify-center text-xs font-semibold"
@@ -540,6 +596,12 @@ function Board({
                         {m.short}
                       </div>
                       <ServerBadge id={t.server} />
+                      {t.comments && t.comments.length > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Icon name="MessageSquare" size={11} />
+                          {t.comments.length}
+                        </span>
+                      )}
                       {t.version && (
                         <span className="ml-auto text-xs font-mono text-primary/70 flex items-center gap-1">
                           <Icon name="Tag" size={10} />
@@ -675,6 +737,8 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
+  const [comments, setComments] = useState<Comment[]>(task.comments ?? []);
+  const [newComment, setNewComment] = useState('');
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
@@ -689,8 +753,24 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
     setLinks((prev) => prev.filter((_, idx) => idx !== i));
   }
 
+  function addComment() {
+    if (!newComment.trim()) return;
+    const c: Comment = {
+      id: 'c' + Date.now(),
+      authorId: 'prog2',
+      text: newComment.trim(),
+      createdAt: new Date().toISOString(),
+    };
+    setComments((prev) => [...prev, c]);
+    setNewComment('');
+  }
+
+  function removeComment(id: string) {
+    setComments((prev) => prev.filter((c) => c.id !== id));
+  }
+
   function handleSave() {
-    onSave({ ...form, links });
+    onSave({ ...form, links, comments });
   }
 
   return (
@@ -770,6 +850,31 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
           />
         </div>
 
+        {/* Deploy status */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
+          <div className="flex flex-wrap gap-2">
+            {deployStatuses.map((ds) => {
+              const active = (form.deployStatus ?? 'none') === ds.id;
+              return (
+                <button
+                  key={ds.id}
+                  onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id }))}
+                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                  style={{
+                    background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                    borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                    color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                  }}
+                >
+                  <Icon name={ds.icon} size={12} />
+                  {ds.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Links */}
         <div>
           <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
@@ -807,6 +912,63 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
               className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
             >
               <Icon name="Plus" size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Comments */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+            <Icon name="MessageSquare" size={12} />
+            Комментарии {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
+          </label>
+          {comments.length > 0 && (
+            <div className="flex flex-col gap-2 mb-3">
+              {comments.map((c) => {
+                const auth = member(c.authorId);
+                return (
+                  <div key={c.id} className="flex gap-2.5 group">
+                    <div
+                      className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5"
+                      style={{ background: `hsl(${auth.color} / 0.18)`, color: `hsl(${auth.color})` }}
+                    >
+                      {auth.short}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-xs font-medium">{auth.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        <button
+                          onClick={() => removeComment(c.id)}
+                          className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-xs"
+                        >
+                          <Icon name="X" size={12} />
+                        </button>
+                      </div>
+                      <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap">{c.text}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <textarea
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addComment(); }}
+              placeholder="Написать комментарий... (Ctrl+Enter для отправки)"
+              rows={2}
+              className={inputCls + ' resize-none flex-1'}
+            />
+            <button
+              onClick={addComment}
+              disabled={!newComment.trim()}
+              className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
+            >
+              <Icon name="Send" size={15} />
             </button>
           </div>
         </div>
