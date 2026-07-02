@@ -3,6 +3,23 @@ import Icon from '@/components/ui/icon';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
+type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
+
+interface Server {
+  id: ServerId;
+  label: string;
+  color: string;
+}
+
+const servers: Server[] = [
+  { id: 'c4x1', label: 'С4х1', color: '270 65% 65%' },
+  { id: 'hfx3old', label: 'HFx3 old', color: '35 85% 58%' },
+  { id: 'hfnew', label: 'HF new', color: '152 60% 48%' },
+];
+
+function serverMeta(id: ServerId) {
+  return servers.find((s) => s.id === id)!;
+}
 
 interface Member {
   id: string;
@@ -20,6 +37,7 @@ interface Task {
   priority: Priority;
   tag: string;
   version?: string;
+  server: ServerId;
 }
 
 interface Bug {
@@ -28,6 +46,7 @@ interface Bug {
   priority: Priority;
   version: string;
   status: 'open' | 'fixing' | 'closed';
+  server: ServerId;
 }
 
 const members: Member[] = [
@@ -46,22 +65,22 @@ const columns: { id: ColumnId; title: string; icon: string }[] = [
 ];
 
 const initialTasks: Task[] = [
-  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0' },
-  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент' },
-  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Веб', version: 'v2.4.0' },
-  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0' },
-  { id: 't5', title: 'Оптимизация серверной части боёв', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Бэкенд' },
-  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости' },
-  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5' },
-  { id: 't8', title: 'Настройка дропа с сезонных мобов', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'Геймплей' },
+  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew' },
+  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1' },
+  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Веб', version: 'v2.4.0', server: 'hfnew' },
+  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old' },
+  { id: 't5', title: 'Оптимизация серверной части боёв', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Бэкенд', server: 'hfx3old' },
+  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1' },
+  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old' },
+  { id: 't8', title: 'Настройка дропа с сезонных мобов', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'Геймплей', server: 'hfnew' },
 ];
 
 const bugs: Bug[] = [
-  { id: 'b1', title: 'Вылет клиента при входе в подземелье', priority: 'critical', version: 'v2.3.5', status: 'fixing' },
-  { id: 'b2', title: 'Некорректный расчёт урона по площади', priority: 'high', version: 'v2.3.5', status: 'open' },
-  { id: 'b3', title: 'Пропадает иконка гильдии в чате', priority: 'medium', version: 'v2.3.4', status: 'open' },
-  { id: 'b4', title: 'Дюп золота через торговлю', priority: 'critical', version: 'v2.3.5', status: 'fixing' },
-  { id: 'b5', title: 'Опечатка в описании квеста', priority: 'low', version: 'v2.3.5', status: 'closed' },
+  { id: 'b1', title: 'Вылет клиента при входе в подземелье', priority: 'critical', version: 'v2.3.5', status: 'fixing', server: 'hfnew' },
+  { id: 'b2', title: 'Некорректный расчёт урона по площади', priority: 'high', version: 'v2.3.5', status: 'open', server: 'hfx3old' },
+  { id: 'b3', title: 'Пропадает иконка гильдии в чате', priority: 'medium', version: 'v2.3.4', status: 'open', server: 'c4x1' },
+  { id: 'b4', title: 'Дюп золота через торговлю', priority: 'critical', version: 'v2.3.5', status: 'fixing', server: 'hfx3old' },
+  { id: 'b5', title: 'Опечатка в описании квеста', priority: 'low', version: 'v2.3.5', status: 'closed', server: 'c4x1' },
 ];
 
 const versions = [
@@ -83,7 +102,11 @@ function member(id: string) {
 
 export default function Index() {
   const [view, setView] = useState<'board' | 'bugs' | 'versions'>('board');
+  const [server, setServer] = useState<ServerId | 'all'>('all');
   const [tasks] = useState<Task[]>(initialTasks);
+
+  const filteredTasks = server === 'all' ? tasks : tasks.filter((t) => t.server === server);
+  const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
 
   return (
     <div className="min-h-screen grid-bg text-foreground flex">
@@ -164,9 +187,44 @@ export default function Index() {
           </div>
         </header>
 
+        {view !== 'versions' && (
+          <div className="flex items-center gap-2 px-6 py-3 border-b border-border bg-card/20 overflow-x-auto scrollbar-thin">
+            <span className="text-xs uppercase tracking-widest text-muted-foreground mr-1 shrink-0">
+              <Icon name="Server" size={13} className="inline mr-1.5 -mt-0.5" />
+              Сервер
+            </span>
+            <button
+              onClick={() => setServer('all')}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0 ${
+                server === 'all' ? 'bg-primary text-primary-foreground' : 'bg-secondary/60 text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Все
+            </button>
+            {servers.map((s) => {
+              const active = server === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setServer(s.id)}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all shrink-0 flex items-center gap-1.5 border"
+                  style={{
+                    background: active ? `hsl(${s.color} / 0.18)` : 'transparent',
+                    borderColor: active ? `hsl(${s.color} / 0.5)` : 'hsl(var(--border))',
+                    color: active ? `hsl(${s.color})` : 'hsl(var(--muted-foreground))',
+                  }}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${s.color})` }} />
+                  {s.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="flex-1 overflow-auto p-6 scrollbar-thin">
-          {view === 'board' && <Board tasks={tasks} />}
-          {view === 'bugs' && <Bugs />}
+          {view === 'board' && <Board tasks={filteredTasks} />}
+          {view === 'bugs' && <Bugs bugs={filteredBugs} />}
           {view === 'versions' && <Versions />}
         </div>
       </main>
@@ -211,7 +269,10 @@ function Board({ tasks }: { tasks: Task[] }) {
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
                     <div className="flex items-center justify-between mb-2.5">
-                      <span className="text-xs text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">{t.tag}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">{t.tag}</span>
+                        <ServerBadge id={t.server} />
+                      </div>
                       <PriorityBadge p={t.priority} />
                     </div>
                     <p className="text-sm font-medium leading-snug mb-3">{t.title}</p>
@@ -245,7 +306,20 @@ function Board({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function Bugs() {
+function ServerBadge({ id }: { id: ServerId }) {
+  const s = serverMeta(id);
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md shrink-0"
+      style={{ background: `hsl(${s.color} / 0.15)`, color: `hsl(${s.color})` }}
+    >
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${s.color})` }} />
+      {s.label}
+    </span>
+  );
+}
+
+function Bugs({ bugs: list }: { bugs: Bug[] }) {
   const statusMeta: Record<Bug['status'], { label: string; color: string }> = {
     open: { label: 'Открыт', color: '35 85% 58%' },
     fixing: { label: 'В работе', color: '210 80% 60%' },
@@ -256,31 +330,40 @@ function Bugs() {
       <div className="flex items-center gap-3 mb-5">
         <Icon name="Bug" size={20} className="text-destructive" />
         <h2 className="font-display tracking-wide text-lg">Трекер ошибок</h2>
-        <span className="text-sm text-muted-foreground">· {bugs.filter((b) => b.status !== 'closed').length} активных</span>
+        <span className="text-sm text-muted-foreground">· {list.filter((b) => b.status !== 'closed').length} активных</span>
       </div>
-      <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {bugs.map((b, i) => {
-          const st = statusMeta[b.status];
-          return (
-            <div
-              key={b.id}
-              className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/40 transition-colors animate-fade-in"
-              style={{ animationDelay: `${i * 50}ms` }}
-            >
-              <span className="font-mono text-xs text-muted-foreground w-10">{b.id.toUpperCase()}</span>
-              <PriorityBadge p={b.priority} />
-              <span className="text-sm font-medium flex-1 min-w-0 truncate">{b.title}</span>
-              <span className="text-xs font-mono text-primary hidden sm:block">{b.version}</span>
-              <span
-                className="text-xs font-medium px-2.5 py-1 rounded-md shrink-0"
-                style={{ background: `hsl(${st.color} / 0.15)`, color: `hsl(${st.color})` }}
+      {list.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+          На выбранном сервере ошибок нет
+        </div>
+      ) : (
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
+          {list.map((b, i) => {
+            const st = statusMeta[b.status];
+            return (
+              <div
+                key={b.id}
+                className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/40 transition-colors animate-fade-in"
+                style={{ animationDelay: `${i * 50}ms` }}
               >
-                {st.label}
-              </span>
-            </div>
-          );
-        })}
-      </div>
+                <span className="font-mono text-xs text-muted-foreground w-10">{b.id.toUpperCase()}</span>
+                <PriorityBadge p={b.priority} />
+                <span className="text-sm font-medium flex-1 min-w-0 truncate">{b.title}</span>
+                <span className="hidden md:block">
+                  <ServerBadge id={b.server} />
+                </span>
+                <span className="text-xs font-mono text-primary hidden sm:block">{b.version}</span>
+                <span
+                  className="text-xs font-medium px-2.5 py-1 rounded-md shrink-0"
+                  style={{ background: `hsl(${st.color} / 0.15)`, color: `hsl(${st.color})` }}
+                >
+                  {st.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
