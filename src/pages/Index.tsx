@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import Icon from '@/components/ui/icon';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
@@ -103,10 +104,27 @@ function member(id: string) {
 export default function Index() {
   const [view, setView] = useState<'board' | 'bugs' | 'versions'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
-  const [tasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [createFor, setCreateFor] = useState<ColumnId | null>(null);
 
   const filteredTasks = server === 'all' ? tasks : tasks.filter((t) => t.server === server);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
+
+  function handleAddTask(task: Task) {
+    setTasks((prev) => [...prev, task]);
+    setCreateFor(null);
+  }
+
+  function handleUpdateTask(updated: Task) {
+    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+    setSelectedTask(null);
+  }
+
+  function handleDeleteTask(id: string) {
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    setSelectedTask(null);
+  }
 
   return (
     <div className="min-h-screen grid-bg text-foreground flex">
@@ -180,7 +198,10 @@ export default function Index() {
               <Icon name="Bell" size={17} />
               <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive" />
             </button>
-            <button className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
+            <button
+              onClick={() => setCreateFor('todo')}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+            >
               <Icon name="Plus" size={16} />
               <span className="hidden sm:inline">Задача</span>
             </button>
@@ -223,11 +244,33 @@ export default function Index() {
         )}
 
         <div className="flex-1 overflow-auto p-6 scrollbar-thin">
-          {view === 'board' && <Board tasks={filteredTasks} />}
+          {view === 'board' && (
+            <Board
+              tasks={filteredTasks}
+              onCardClick={setSelectedTask}
+              onAddClick={setCreateFor}
+            />
+          )}
           {view === 'bugs' && <Bugs bugs={filteredBugs} />}
           {view === 'versions' && <Versions />}
         </div>
       </main>
+
+      {selectedTask && (
+        <TaskModal
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onSave={handleUpdateTask}
+          onDelete={handleDeleteTask}
+        />
+      )}
+      {createFor && (
+        <CreateTaskModal
+          column={createFor}
+          onClose={() => setCreateFor(null)}
+          onCreate={handleAddTask}
+        />
+      )}
     </div>
   );
 }
@@ -245,7 +288,15 @@ function PriorityBadge({ p }: { p: Priority }) {
   );
 }
 
-function Board({ tasks }: { tasks: Task[] }) {
+function Board({
+  tasks,
+  onCardClick,
+  onAddClick,
+}: {
+  tasks: Task[];
+  onCardClick: (t: Task) => void;
+  onAddClick: (col: ColumnId) => void;
+}) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-fade-in">
       {columns.map((col) => {
@@ -265,6 +316,7 @@ function Board({ tasks }: { tasks: Task[] }) {
                 return (
                   <div
                     key={t.id}
+                    onClick={() => onCardClick(t)}
                     className="rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in"
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
@@ -294,7 +346,10 @@ function Board({ tasks }: { tasks: Task[] }) {
                   </div>
                 );
               })}
-              <button className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2">
+              <button
+                onClick={() => onAddClick(col.id)}
+                className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"
+              >
                 <Icon name="Plus" size={15} />
                 Добавить
               </button>
@@ -365,6 +420,227 @@ function Bugs({ bugs: list }: { bugs: Bug[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+function ModalOverlay({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 animate-scale-in"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options }: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <div>
+      <label className="block text-xs text-muted-foreground mb-1.5">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+function TaskModal({ task, onClose, onSave, onDelete }: {
+  task: Task;
+  onClose: () => void;
+  onSave: (t: Task) => void;
+  onDelete: (id: string) => void;
+}) {
+  const [form, setForm] = useState<Task>({ ...task });
+  const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="font-display tracking-wide text-lg">Задача</h2>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <Icon name="X" size={20} />
+        </button>
+      </div>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
+          <input
+            value={form.title}
+            onChange={(e) => set('title', e.target.value)}
+            className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
+            { value: 'todo', label: 'To Do' },
+            { value: 'progress', label: 'In Progress' },
+            { value: 'done', label: 'Done' },
+          ]} />
+          <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
+            { value: 'critical', label: 'Критический' },
+            { value: 'high', label: 'Высокий' },
+            { value: 'medium', label: 'Средний' },
+            { value: 'low', label: 'Низкий' },
+          ]} />
+          <Select label="Исполнитель" value={form.assignee} onChange={(v) => set('assignee', v)} options={
+            members.map((m) => ({ value: m.id, label: m.name }))
+          } />
+          <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
+            servers.map((s) => ({ value: s.id, label: s.label }))
+          } />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
+            <input
+              value={form.tag}
+              onChange={(e) => set('tag', e.target.value)}
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
+            <input
+              value={form.version ?? ''}
+              onChange={(e) => set('version', e.target.value)}
+              placeholder="v2.4.0"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button
+          onClick={() => onDelete(task.id)}
+          className="h-9 px-4 rounded-lg border border-destructive/40 text-destructive text-sm hover:bg-destructive/10 transition-colors"
+        >
+          Удалить
+        </button>
+        <button
+          onClick={() => onSave(form)}
+          className="ml-auto h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+        >
+          Сохранить
+        </button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+function CreateTaskModal({ column, onClose, onCreate }: {
+  column: ColumnId;
+  onClose: () => void;
+  onCreate: (t: Task) => void;
+}) {
+  const [form, setForm] = useState({
+    title: '',
+    column,
+    assignee: 'prog2',
+    priority: 'medium' as Priority,
+    tag: '',
+    version: '',
+    server: 'hfnew' as ServerId,
+  });
+  const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  function handleCreate() {
+    if (!form.title.trim()) return;
+    onCreate({
+      ...form,
+      id: 't' + Date.now(),
+      version: form.version || undefined,
+    } as Task);
+  }
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="font-display tracking-wide text-lg">Новая задача</h2>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
+          <Icon name="X" size={20} />
+        </button>
+      </div>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
+          <input
+            autoFocus
+            value={form.title}
+            onChange={(e) => set('title', e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+            placeholder="Опишите задачу..."
+            className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
+            { value: 'todo', label: 'To Do' },
+            { value: 'progress', label: 'In Progress' },
+            { value: 'done', label: 'Done' },
+          ]} />
+          <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
+            { value: 'critical', label: 'Критический' },
+            { value: 'high', label: 'Высокий' },
+            { value: 'medium', label: 'Средний' },
+            { value: 'low', label: 'Низкий' },
+          ]} />
+          <Select label="Исполнитель" value={form.assignee} onChange={(v) => set('assignee', v)} options={
+            members.map((m) => ({ value: m.id, label: m.name }))
+          } />
+          <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
+            servers.map((s) => ({ value: s.id, label: s.label }))
+          } />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
+            <input
+              value={form.tag}
+              onChange={(e) => set('tag', e.target.value)}
+              placeholder="Геймплей, Контент..."
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
+            <input
+              value={form.version}
+              onChange={(e) => set('version', e.target.value)}
+              placeholder="v2.4.0"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        </div>
+      </div>
+      <div className="flex gap-3 mt-6">
+        <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
+          Отмена
+        </button>
+        <button
+          onClick={handleCreate}
+          disabled={!form.title.trim()}
+          className="ml-auto h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
+          Создать
+        </button>
+      </div>
+    </ModalOverlay>
   );
 }
 
