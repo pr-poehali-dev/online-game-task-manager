@@ -6,10 +6,18 @@ import RichEditor from '@/components/RichEditor';
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
 type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
+type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
 
 interface Server {
   id: ServerId;
   label: string;
+  color: string;
+}
+
+interface Category {
+  id: CategoryId;
+  label: string;
+  icon: string;
   color: string;
 }
 
@@ -19,8 +27,23 @@ const servers: Server[] = [
   { id: 'hfnew', label: 'HF new', color: '152 60% 48%' },
 ];
 
+const categories: Category[] = [
+  { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
+  { id: 'launcher', label: 'Лаунчер', icon: 'MonitorDown', color: '270 65% 65%' },
+  { id: 'client', label: 'Клиент', icon: 'Gamepad2', color: '35 85% 58%' },
+  { id: 'social', label: 'Соцсети и форум', icon: 'MessagesSquare', color: '330 70% 62%' },
+  { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
+  { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
+  { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
+  { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
+];
+
 function serverMeta(id: ServerId) {
   return servers.find((s) => s.id === id)!;
+}
+
+function categoryMeta(id: CategoryId) {
+  return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
 }
 
 interface Member {
@@ -42,6 +65,7 @@ interface Task {
   server: ServerId;
   description?: string;
   links?: { url: string; label: string }[];
+  category: CategoryId;
 }
 
 interface Bug {
@@ -69,14 +93,15 @@ const columns: { id: ColumnId; title: string; icon: string }[] = [
 ];
 
 const initialTasks: Task[] = [
-  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew' },
-  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1' },
-  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Веб', version: 'v2.4.0', server: 'hfnew' },
-  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old' },
-  { id: 't5', title: 'Оптимизация серверной части боёв', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Бэкенд', server: 'hfx3old' },
-  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1' },
-  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old' },
-  { id: 't8', title: 'Настройка дропа с сезонных мобов', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'Геймплей', server: 'hfnew' },
+  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew', category: 'server-ext' },
+  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1', category: 'social' },
+  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Сайт', version: 'v2.4.0', server: 'hfnew', category: 'web' },
+  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old', category: 'client' },
+  { id: 't5', title: 'Скрипт античита для торговли', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Безопасность', server: 'hfx3old', category: 'server-scripts' },
+  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1', category: 'social' },
+  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old', category: 'social' },
+  { id: 't8', title: 'Обновить лаунчер — новый фон патча', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'UI', server: 'hfnew', category: 'launcher' },
+  { id: 't9', title: 'Настроить таргетинг рекламы ВКонтакте', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Продвижение', server: 'hfnew', category: 'ads' },
 ];
 
 const bugs: Bug[] = [
@@ -107,11 +132,14 @@ function member(id: string) {
 export default function Index() {
   const [view, setView] = useState<'board' | 'bugs' | 'versions'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
+  const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
 
-  const filteredTasks = server === 'all' ? tasks : tasks.filter((t) => t.server === server);
+  const filteredTasks = tasks
+    .filter((t) => server === 'all' || t.server === server)
+    .filter((t) => category === 'all' || t.category === category);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
 
   function handleAddTask(task: Task) {
@@ -132,39 +160,79 @@ export default function Index() {
   return (
     <div className="min-h-screen grid-bg text-foreground flex">
       {/* Sidebar */}
-      <aside className="w-72 shrink-0 border-r border-border bg-card/60 backdrop-blur-sm hidden lg:flex flex-col p-5">
-        <div className="flex items-center gap-3 mb-8">
-          <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center">
-            <Icon name="Swords" size={22} className="text-primary-foreground" />
-          </div>
-          <div>
-            <div className="font-display text-lg leading-none tracking-wide">AETHER</div>
-            <div className="text-xs text-muted-foreground mt-1">Task Command</div>
-          </div>
-        </div>
-
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-3">Команда</div>
-        <div className="space-y-1 flex-1">
-          {members.map((m) => (
-            <div key={m.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-secondary/60 transition-colors cursor-pointer">
-              <div
-                className="h-9 w-9 rounded-lg flex items-center justify-center text-sm font-semibold shrink-0"
-                style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
-              >
-                {m.short}
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-medium truncate">{m.name}</div>
-                <div className="text-xs text-muted-foreground truncate">{m.role}</div>
-              </div>
+      <aside className="w-72 shrink-0 border-r border-border bg-card/60 backdrop-blur-sm hidden lg:flex flex-col">
+        {/* Logo — L2 style */}
+        <div className="px-5 pt-5 pb-4 border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'linear-gradient(135deg, hsl(35 85% 40%), hsl(45 90% 55%))' }}>
+              <Icon name="Swords" size={20} className="text-black/80" />
             </div>
-          ))}
+            <div>
+              <div className="font-display text-xl leading-none tracking-widest text-foreground" style={{ letterSpacing: '0.18em' }}>ЭРА</div>
+              <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Task Command · MMORPG</div>
+            </div>
+          </div>
         </div>
 
-        <div className="mt-6 p-4 rounded-xl bg-secondary/50 border border-border">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="h-2 w-2 rounded-full bg-primary animate-pulse-dot" />
-            <span className="text-muted-foreground">Онлайн ветка</span>
+        {/* Categories nav */}
+        <div className="px-4 pt-4 pb-2">
+          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Категории</div>
+          <div className="space-y-0.5">
+            <button
+              onClick={() => setCategory('all')}
+              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${category === 'all' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+            >
+              <Icon name="LayoutGrid" size={14} />
+              Все задачи
+              <span className="ml-auto text-xs font-mono opacity-60">{tasks.length}</span>
+            </button>
+            {categories.map((cat) => {
+              const count = tasks.filter((t) => t.category === cat.id).length;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategory(cat.id)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors"
+                  style={{
+                    background: category === cat.id ? `hsl(${cat.color} / 0.12)` : 'transparent',
+                    color: category === cat.id ? `hsl(${cat.color})` : 'hsl(var(--muted-foreground))',
+                    fontWeight: category === cat.id ? 500 : 400,
+                  }}
+                >
+                  <Icon name={cat.icon} size={14} />
+                  {cat.label}
+                  <span className="ml-auto text-xs font-mono opacity-60">{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="px-4 pt-3 pb-2 mt-auto">
+          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Команда</div>
+          <div className="space-y-0.5">
+            {members.map((m) => (
+              <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors cursor-pointer">
+                <div
+                  className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold shrink-0"
+                  style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
+                >
+                  {m.short}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-medium truncate">{m.name}</div>
+                  <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>{m.role}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mx-4 mb-4 mt-3 p-3 rounded-lg bg-secondary/50 border border-border">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse-dot" />
+            <span className="text-muted-foreground">Текущая ветка</span>
             <span className="ml-auto font-mono text-primary">v2.4.0</span>
           </div>
         </div>
@@ -173,12 +241,18 @@ export default function Index() {
       {/* Main */}
       <main className="flex-1 min-w-0 flex flex-col">
         {/* Topbar */}
-        <header className="h-16 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm">
-          <div>
-            <h1 className="font-display text-xl tracking-wide leading-none">Панель проекта</h1>
-            <p className="text-xs text-muted-foreground mt-1">MMORPG «Aether Online»</p>
+        <header className="h-14 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm"
+          style={{ borderBottom: '1px solid hsl(var(--border))', boxShadow: '0 1px 0 hsl(35 85% 45% / 0.08)' }}>
+          <div className="flex items-center gap-2">
+            <span className="font-display tracking-widest text-base" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
+            <span className="text-muted-foreground/40 text-sm">/</span>
+            <span className="text-sm text-muted-foreground">
+              {view === 'board' && 'Доска задач'}
+              {view === 'bugs' && 'Трекер ошибок'}
+              {view === 'versions' && 'История версий'}
+            </span>
           </div>
-          <nav className="ml-6 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
+          <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
             {[
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
@@ -196,34 +270,48 @@ export default function Index() {
               </button>
             ))}
           </nav>
-          <div className="ml-auto flex items-center gap-3">
-            <button className="h-9 w-9 rounded-lg bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors relative">
-              <Icon name="Bell" size={17} />
-              <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-destructive" />
+          <div className="ml-auto flex items-center gap-2">
+            {/* Active category indicator */}
+            {category !== 'all' && (
+              <button
+                onClick={() => setCategory('all')}
+                className="hidden md:flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border transition-colors hover:opacity-80"
+                style={{
+                  borderColor: `hsl(${categoryMeta(category as CategoryId).color} / 0.4)`,
+                  background: `hsl(${categoryMeta(category as CategoryId).color} / 0.1)`,
+                  color: `hsl(${categoryMeta(category as CategoryId).color})`,
+                }}
+              >
+                <Icon name={categoryMeta(category as CategoryId).icon} size={12} />
+                {categoryMeta(category as CategoryId).label}
+                <Icon name="X" size={11} />
+              </button>
+            )}
+            <button className="h-8 w-8 rounded-lg bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors relative">
+              <Icon name="Bell" size={16} />
+              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
             </button>
             <button
               onClick={() => setCreateFor('todo')}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+              className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
             >
-              <Icon name="Plus" size={16} />
+              <Icon name="Plus" size={15} />
               <span className="hidden sm:inline">Задача</span>
             </button>
           </div>
         </header>
 
+        {/* Server filter bar */}
         {view !== 'versions' && (
-          <div className="flex items-center gap-2 px-6 py-3 border-b border-border bg-card/20 overflow-x-auto scrollbar-thin">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground mr-1 shrink-0">
-              <Icon name="Server" size={13} className="inline mr-1.5 -mt-0.5" />
-              Сервер
-            </span>
+          <div className="flex items-center gap-2 px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
+            <Icon name="Server" size={12} className="text-muted-foreground shrink-0" />
             <button
               onClick={() => setServer('all')}
-              className={`text-xs font-medium px-3 py-1.5 rounded-lg transition-colors shrink-0 ${
-                server === 'all' ? 'bg-primary text-primary-foreground' : 'bg-secondary/60 text-muted-foreground hover:text-foreground'
+              className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
+                server === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
               }`}
             >
-              Все
+              Все серверы
             </button>
             {servers.map((s) => {
               const active = server === s.id;
@@ -231,10 +319,10 @@ export default function Index() {
                 <button
                   key={s.id}
                   onClick={() => setServer(s.id)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-lg transition-all shrink-0 flex items-center gap-1.5 border"
+                  className="text-xs font-medium px-2.5 py-1 rounded-md transition-all shrink-0 flex items-center gap-1.5 border"
                   style={{
                     background: active ? `hsl(${s.color} / 0.18)` : 'transparent',
-                    borderColor: active ? `hsl(${s.color} / 0.5)` : 'hsl(var(--border))',
+                    borderColor: active ? `hsl(${s.color} / 0.4)` : 'hsl(var(--border))',
                     color: active ? `hsl(${s.color})` : 'hsl(var(--muted-foreground))',
                   }}
                 >
@@ -291,6 +379,19 @@ function PriorityBadge({ p }: { p: Priority }) {
   );
 }
 
+function CategoryBadge({ id }: { id: CategoryId }) {
+  const c = categoryMeta(id);
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md"
+      style={{ background: `hsl(${c.color} / 0.12)`, color: `hsl(${c.color})` }}
+    >
+      <Icon name={c.icon} size={10} />
+      {c.label}
+    </span>
+  );
+}
+
 function Board({
   tasks,
   onCardClick,
@@ -323,25 +424,23 @@ function Board({
                     className="rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in"
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
-                    <div className="flex items-center justify-between mb-2.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">{t.tag}</span>
-                        <ServerBadge id={t.server} />
-                      </div>
+                    <div className="flex items-center justify-between mb-2">
+                      <CategoryBadge id={t.category} />
                       <PriorityBadge p={t.priority} />
                     </div>
                     <p className="text-sm font-medium leading-snug mb-3">{t.title}</p>
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       <div
-                        className="h-7 w-7 rounded-lg flex items-center justify-center text-xs font-semibold"
+                        className="h-6 w-6 rounded-md flex items-center justify-center text-xs font-semibold"
                         style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
                         title={m.name}
                       >
                         {m.short}
                       </div>
+                      <ServerBadge id={t.server} />
                       {t.version && (
-                        <span className="text-xs font-mono text-primary flex items-center gap-1">
-                          <Icon name="Tag" size={11} />
+                        <span className="ml-auto text-xs font-mono text-primary/70 flex items-center gap-1">
+                          <Icon name="Tag" size={10} />
                           {t.version}
                         </span>
                       )}
@@ -542,6 +641,9 @@ function TaskModal({ task, onClose, onSave, onDelete }: {
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
           } />
+          <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
+            categories.map((c) => ({ value: c.id, label: c.label }))
+          } />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
@@ -629,6 +731,7 @@ function CreateTaskModal({ column, onClose, onCreate }: {
     tag: '',
     version: '',
     server: 'hfnew' as ServerId,
+    category: 'other' as CategoryId,
     description: '',
   });
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
@@ -686,6 +789,9 @@ function CreateTaskModal({ column, onClose, onCreate }: {
           } />
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
+          } />
+          <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
+            categories.map((c) => ({ value: c.id, label: c.label }))
           } />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>

@@ -13,7 +13,7 @@
     --popover: 220 16% 11%;
     --popover-foreground: 210 20% 92%;
 
-    --primary: 152 60% 48%;
+    --primary: 38 85% 52%;
     --primary-foreground: 220 18% 8%;
 
     --secondary: 220 14% 16%;
@@ -22,7 +22,7 @@
     --muted: 220 14% 15%;
     --muted-foreground: 215 12% 55%;
 
-    --accent: 152 55% 45%;
+    --accent: 38 80% 48%;
     --accent-foreground: 220 18% 8%;
 
     --destructive: 0 72% 55%;
@@ -30,7 +30,7 @@
 
     --border: 220 14% 18%;
     --input: 220 14% 18%;
-    --ring: 152 60% 48%;
+    --ring: 38 85% 52%;
 
     --radius: 0.75rem;
 
@@ -226,7 +226,15 @@
     border-radius: 8px;
   }
   .grid-bg {
-    background-image: radial-gradient(hsl(220 14% 16%) 1px, transparent 1px);
-    background-size: 28px 28px;
+    background-image:
+      radial-gradient(hsl(220 14% 16%) 1px, transparent 1px),
+      radial-gradient(
+        ellipse 80% 60% at 50% 0%,
+        hsl(38 60% 20% / 0.08) 0%,
+        transparent 60%
+      );
+    background-size:
+      28px 28px,
+      100% 100%;
   }
 }

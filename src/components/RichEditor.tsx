@@ -2,12 +2,12 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Link from '@tiptap/extension-link';
 import Image from '@tiptap/extension-image';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableCell from '@tiptap/extension-table-cell';
-import TableHeader from '@tiptap/extension-table-header';
-import Placeholder from '@tiptap/extension-placeholder';
-import Underline from '@tiptap/extension-underline';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { Placeholder } from '@tiptap/extension-placeholder';
+import { Underline } from '@tiptap/extension-underline';
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 
@@ -77,7 +77,7 @@ export default function RichEditor({ content, onChange }: Props) {
     const label = linkText || linkUrl;
     const hasSelection = !editor!.state.selection.empty;
     if (hasSelection) {
-      editor!.chain().focus().extendMarkToLink({ href: linkUrl }).setLink({ href: linkUrl }).run();
+      editor!.chain().focus().setLink({ href: linkUrl }).run();
     } else {
       editor!.chain().focus().insertContent(`<a href="${linkUrl}">${label}</a>`).run();
     }
