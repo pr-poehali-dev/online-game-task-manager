@@ -101,6 +101,115 @@
   }
 }
 
+/* Tiptap editor styles */
+.tiptap-editor .ProseMirror {
+  outline: none;
+  min-height: 180px;
+  padding: 12px 14px;
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: hsl(var(--foreground));
+}
+.tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+.tiptap-editor .ProseMirror h2 {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0.75em 0 0.3em;
+}
+.tiptap-editor .ProseMirror h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.tiptap-editor .ProseMirror strong {
+  font-weight: 700;
+}
+.tiptap-editor .ProseMirror em {
+  font-style: italic;
+}
+.tiptap-editor .ProseMirror u {
+  text-decoration: underline;
+}
+.tiptap-editor .ProseMirror ul {
+  list-style: disc;
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.tiptap-editor .ProseMirror ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+  margin: 0.4em 0;
+}
+.tiptap-editor .ProseMirror li {
+  margin: 0.15em 0;
+}
+.tiptap-editor .ProseMirror blockquote {
+  border-left: 3px solid hsl(var(--primary));
+  padding-left: 12px;
+  margin: 0.5em 0;
+  color: hsl(var(--muted-foreground));
+}
+.tiptap-editor .ProseMirror code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.82em;
+  background: hsl(var(--secondary));
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.tiptap-editor .ProseMirror pre {
+  background: hsl(220 18% 6%);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0.5em 0;
+  overflow-x: auto;
+}
+.tiptap-editor .ProseMirror pre code {
+  background: none;
+  padding: 0;
+}
+.tiptap-editor .ProseMirror a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tiptap-editor .ProseMirror img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin: 0.5em 0;
+  display: block;
+}
+.tiptap-editor .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.75em 0;
+  font-size: 0.82rem;
+}
+.tiptap-editor .ProseMirror table td,
+.tiptap-editor .ProseMirror table th {
+  border: 1px solid hsl(var(--border));
+  padding: 6px 10px;
+  min-width: 60px;
+  vertical-align: top;
+}
+.tiptap-editor .ProseMirror table th {
+  background: hsl(var(--secondary));
+  font-weight: 600;
+}
+.tiptap-editor .ProseMirror table .selectedCell {
+  background: hsl(var(--primary) / 0.12);
+}
+.tiptap-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1em 0;
+}
+
 @layer utilities {
   .font-display {
     font-family: "Oswald", sans-serif;

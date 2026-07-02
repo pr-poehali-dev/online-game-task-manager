@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import Icon from '@/components/ui/icon';
+import RichEditor from '@/components/RichEditor';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
@@ -39,6 +40,8 @@ interface Task {
   tag: string;
   version?: string;
   server: ServerId;
+  description?: string;
+  links?: { url: string; label: string }[];
 }
 
 interface Bug {
@@ -423,15 +426,15 @@ function Bugs({ bugs: list }: { bugs: Bug[] }) {
   );
 }
 
-function ModalOverlay({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function ModalOverlay({ onClose, children, wide }: { onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto"
+      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-2xl border border-border bg-card p-6 animate-scale-in"
+        className={`w-full rounded-2xl border border-border bg-card animate-scale-in mb-8 ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -460,6 +463,8 @@ function Select({ label, value, onChange, options }: {
   );
 }
 
+const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
+
 function TaskModal({ task, onClose, onSave, onDelete }: {
   task: Task;
   onClose: () => void;
@@ -467,26 +472,59 @@ function TaskModal({ task, onClose, onSave, onDelete }: {
   onDelete: (id: string) => void;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
+  const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
+  const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
+  function addLink() {
+    if (!newLink.url.trim()) return;
+    const updated = [...links, { url: newLink.url, label: newLink.label || newLink.url }];
+    setLinks(updated);
+    setNewLink({ url: '', label: '' });
+  }
+
+  function removeLink(i: number) {
+    setLinks((prev) => prev.filter((_, idx) => idx !== i));
+  }
+
+  function handleSave() {
+    onSave({ ...form, links });
+  }
+
   return (
-    <ModalOverlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-5">
-        <h2 className="font-display tracking-wide text-lg">Задача</h2>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-          <Icon name="X" size={20} />
-        </button>
+    <ModalOverlay onClose={onClose} wide>
+      {/* Header */}
+      <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
+        <div className="flex items-center gap-3">
+          <PriorityBadge p={form.priority} />
+          <ServerBadge id={form.server} />
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onDelete(task.id)}
+            className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors"
+          >
+            Удалить
+          </button>
+          <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+            <Icon name="X" size={18} />
+          </button>
+        </div>
       </div>
-      <div className="space-y-4">
+
+      <div className="px-6 py-5 space-y-5">
+        {/* Title */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
           <input
             value={form.title}
             onChange={(e) => set('title', e.target.value)}
-            className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors"
+            placeholder="Название задачи"
           />
         </div>
-        <div className="grid grid-cols-2 gap-3">
+
+        {/* Meta grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
             { value: 'todo', label: 'To Do' },
             { value: 'progress', label: 'In Progress' },
@@ -504,37 +542,72 @@ function TaskModal({ task, onClose, onSave, onDelete }: {
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
           } />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
-            <input
-              value={form.tag}
-              onChange={(e) => set('tag', e.target.value)}
-              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
+            <input value={form.version ?? ''} onChange={(e) => set('version', e.target.value)} placeholder="v2.4.0" className={inputCls} />
+          </div>
+        </div>
+
+        {/* Description */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
+          <RichEditor
+            content={form.description ?? ''}
+            onChange={(html) => setForm((p) => ({ ...p, description: html }))}
+          />
+        </div>
+
+        {/* Links */}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
+          {links.length > 0 && (
+            <div className="flex flex-col gap-1.5 mb-2">
+              {links.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
+                  <Icon name="Link" size={13} className="text-primary shrink-0" />
+                  <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
+                    {l.label}
+                  </a>
+                  <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                    <Icon name="X" size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
             <input
-              value={form.version ?? ''}
-              onChange={(e) => set('version', e.target.value)}
-              placeholder="v2.4.0"
-              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+              value={newLink.label}
+              onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
+              placeholder="Название (напр. Тикет #1234)"
+              className={inputCls + ' flex-1'}
             />
+            <input
+              value={newLink.url}
+              onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
+              onKeyDown={(e) => e.key === 'Enter' && addLink()}
+              placeholder="https://..."
+              className={inputCls + ' flex-1'}
+            />
+            <button
+              onClick={addLink}
+              className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+            >
+              <Icon name="Plus" size={16} />
+            </button>
           </div>
         </div>
       </div>
-      <div className="flex gap-3 mt-6">
+
+      {/* Footer */}
+      <div className="flex justify-end px-6 pb-5">
         <button
-          onClick={() => onDelete(task.id)}
-          className="h-9 px-4 rounded-lg border border-destructive/40 text-destructive text-sm hover:bg-destructive/10 transition-colors"
-        >
-          Удалить
-        </button>
-        <button
-          onClick={() => onSave(form)}
-          className="ml-auto h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+          onClick={handleSave}
+          className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
         >
           Сохранить
         </button>
@@ -556,8 +629,17 @@ function CreateTaskModal({ column, onClose, onCreate }: {
     tag: '',
     version: '',
     server: 'hfnew' as ServerId,
+    description: '',
   });
+  const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
+  const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  function addLink() {
+    if (!newLink.url.trim()) return;
+    setLinks((p) => [...p, { url: newLink.url, label: newLink.label || newLink.url }]);
+    setNewLink({ url: '', label: '' });
+  }
 
   function handleCreate() {
     if (!form.title.trim()) return;
@@ -565,30 +647,29 @@ function CreateTaskModal({ column, onClose, onCreate }: {
       ...form,
       id: 't' + Date.now(),
       version: form.version || undefined,
+      links,
     } as Task);
   }
 
   return (
-    <ModalOverlay onClose={onClose}>
-      <div className="flex items-center justify-between mb-5">
+    <ModalOverlay onClose={onClose} wide>
+      <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
         <h2 className="font-display tracking-wide text-lg">Новая задача</h2>
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors">
-          <Icon name="X" size={20} />
+        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+          <Icon name="X" size={18} />
         </button>
       </div>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
-          <input
-            autoFocus
-            value={form.title}
-            onChange={(e) => set('title', e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-            placeholder="Опишите задачу..."
-            className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
+
+      <div className="px-6 py-5 space-y-5">
+        <input
+          autoFocus
+          value={form.title}
+          onChange={(e) => set('title', e.target.value)}
+          placeholder="Название задачи..."
+          className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors placeholder:text-muted-foreground/50"
+        />
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
             { value: 'todo', label: 'To Do' },
             { value: 'progress', label: 'In Progress' },
@@ -606,37 +687,51 @@ function CreateTaskModal({ column, onClose, onCreate }: {
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
           } />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
-            <input
-              value={form.tag}
-              onChange={(e) => set('tag', e.target.value)}
-              placeholder="Геймплей, Контент..."
-              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            <input value={form.tag} onChange={(e) => set('tag', e.target.value)} placeholder="Геймплей..." className={inputCls} />
           </div>
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
-            <input
-              value={form.version}
-              onChange={(e) => set('version', e.target.value)}
-              placeholder="v2.4.0"
-              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-            />
+            <input value={form.version} onChange={(e) => set('version', e.target.value)} placeholder="v2.4.0" className={inputCls} />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
+          <RichEditor content={form.description} onChange={(html) => set('description', html)} />
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
+          {links.length > 0 && (
+            <div className="flex flex-col gap-1.5 mb-2">
+              {links.map((l, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
+                  <Icon name="Link" size={13} className="text-primary shrink-0" />
+                  <span className="text-sm text-primary truncate flex-1">{l.label}</span>
+                  <button onClick={() => setLinks((p) => p.filter((_, idx) => idx !== i))} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                    <Icon name="X" size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input value={newLink.label} onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))} placeholder="Название (напр. Тикет #1234)" className={inputCls + ' flex-1'} />
+            <input value={newLink.url} onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && addLink()} placeholder="https://..." className={inputCls + ' flex-1'} />
+            <button onClick={addLink} className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0">
+              <Icon name="Plus" size={16} />
+            </button>
           </div>
         </div>
       </div>
-      <div className="flex gap-3 mt-6">
+
+      <div className="flex justify-between px-6 pb-5">
         <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
           Отмена
         </button>
-        <button
-          onClick={handleCreate}
-          disabled={!form.title.trim()}
-          className="ml-auto h-9 px-5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
-        >
+        <button onClick={handleCreate} disabled={!form.title.trim()} className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity">
           Создать
         </button>
       </div>
