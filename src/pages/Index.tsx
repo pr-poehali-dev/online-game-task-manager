@@ -66,6 +66,7 @@ interface Task {
   description?: string;
   links?: { url: string; label: string }[];
   category: CategoryId;
+  sprintId?: string;
 }
 
 interface Bug {
@@ -75,6 +76,15 @@ interface Bug {
   version: string;
   status: 'open' | 'fixing' | 'closed';
   server: ServerId;
+}
+
+interface Sprint {
+  id: string;
+  title: string;
+  goal: string;
+  startDate: string;
+  endDate: string;
+  status: 'active' | 'planned' | 'done';
 }
 
 const members: Member[] = [
@@ -93,15 +103,42 @@ const columns: { id: ColumnId; title: string; icon: string }[] = [
 ];
 
 const initialTasks: Task[] = [
-  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew', category: 'server-ext' },
-  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1', category: 'social' },
-  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Сайт', version: 'v2.4.0', server: 'hfnew', category: 'web' },
-  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old', category: 'client' },
-  { id: 't5', title: 'Скрипт античита для торговли', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Безопасность', server: 'hfx3old', category: 'server-scripts' },
-  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1', category: 'social' },
-  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old', category: 'social' },
-  { id: 't8', title: 'Обновить лаунчер — новый фон патча', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'UI', server: 'hfnew', category: 'launcher' },
-  { id: 't9', title: 'Настроить таргетинг рекламы ВКонтакте', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Продвижение', server: 'hfnew', category: 'ads' },
+  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew', category: 'server-ext', sprintId: 's2' },
+  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1', category: 'social', sprintId: 's2' },
+  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Сайт', version: 'v2.4.0', server: 'hfnew', category: 'web', sprintId: 's2' },
+  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old', category: 'client', sprintId: 's3' },
+  { id: 't5', title: 'Скрипт античита для торговли', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Безопасность', server: 'hfx3old', category: 'server-scripts', sprintId: 's1' },
+  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1', category: 'social', sprintId: 's2' },
+  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old', category: 'social', sprintId: 's1' },
+  { id: 't8', title: 'Обновить лаунчер — новый фон патча', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'UI', server: 'hfnew', category: 'launcher', sprintId: 's2' },
+  { id: 't9', title: 'Настроить таргетинг рекламы ВКонтакте', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Продвижение', server: 'hfnew', category: 'ads', sprintId: 's3' },
+];
+
+const initialSprints: Sprint[] = [
+  {
+    id: 's1',
+    title: 'Спринт 1 · Старт проекта',
+    goal: 'Запустить базовые системы: античит, лаунчер, лендинг',
+    startDate: '2025-06-23',
+    endDate: '2025-07-06',
+    status: 'done',
+  },
+  {
+    id: 's2',
+    title: 'Спринт 2 · Ивент «Затмение»',
+    goal: 'Подготовить ивент, обновить соцсети и сайт под патч 2.4',
+    startDate: '2025-07-07',
+    endDate: '2025-07-20',
+    status: 'active',
+  },
+  {
+    id: 's3',
+    title: 'Спринт 3 · Гильдейские войны',
+    goal: 'Релиз системы гильдейских войн и рекламная кампания',
+    startDate: '2025-07-21',
+    endDate: '2025-08-03',
+    status: 'planned',
+  },
 ];
 
 const bugs: Bug[] = [
@@ -130,16 +167,20 @@ function member(id: string) {
 }
 
 export default function Index() {
-  const [view, setView] = useState<'board' | 'bugs' | 'versions'>('board');
+  const [view, setView] = useState<'board' | 'bugs' | 'versions' | 'sprints'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
+  const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
+  const [createSprint, setCreateSprint] = useState(false);
 
   const filteredTasks = tasks
     .filter((t) => server === 'all' || t.server === server)
-    .filter((t) => category === 'all' || t.category === category);
+    .filter((t) => category === 'all' || t.category === category)
+    .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
 
   function handleAddTask(task: Task) {
@@ -250,12 +291,14 @@ export default function Index() {
               {view === 'board' && 'Доска задач'}
               {view === 'bugs' && 'Трекер ошибок'}
               {view === 'versions' && 'История версий'}
+              {view === 'sprints' && 'Спринты'}
             </span>
           </div>
           <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
             {[
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
+              { k: 'sprints', label: 'Спринты', icon: 'Zap' },
               { k: 'versions', label: 'Версии', icon: 'GitBranch' },
             ].map((t) => (
               <button
@@ -271,7 +314,6 @@ export default function Index() {
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            {/* Active category indicator */}
             {category !== 'all' && (
               <button
                 onClick={() => setCategory('all')}
@@ -291,18 +333,28 @@ export default function Index() {
               <Icon name="Bell" size={16} />
               <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
             </button>
-            <button
-              onClick={() => setCreateFor('todo')}
-              className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-            >
-              <Icon name="Plus" size={15} />
-              <span className="hidden sm:inline">Задача</span>
-            </button>
+            {view === 'sprints' ? (
+              <button
+                onClick={() => setCreateSprint(true)}
+                className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                <Icon name="Plus" size={15} />
+                <span className="hidden sm:inline">Спринт</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setCreateFor('todo')}
+                className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+              >
+                <Icon name="Plus" size={15} />
+                <span className="hidden sm:inline">Задача</span>
+              </button>
+            )}
           </div>
         </header>
 
-        {/* Server filter bar */}
-        {view !== 'versions' && (
+        {/* Filter bar — server + sprint */}
+        {(view === 'board' || view === 'bugs') && (
           <div className="flex items-center gap-2 px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
             <Icon name="Server" size={12} className="text-muted-foreground shrink-0" />
             <button
@@ -331,6 +383,39 @@ export default function Index() {
                 </button>
               );
             })}
+            {view === 'board' && (
+              <>
+                <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
+                <button
+                  onClick={() => setSprintFilter('all')}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
+                    sprintFilter === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                  }`}
+                >
+                  Все спринты
+                </button>
+                {sprints.map((sp) => {
+                  const active = sprintFilter === sp.id;
+                  const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
+                  return (
+                    <button
+                      key={sp.id}
+                      onClick={() => setSprintFilter(sp.id)}
+                      className="text-xs font-medium px-2.5 py-1 rounded-md transition-all shrink-0 flex items-center gap-1.5 border"
+                      style={{
+                        background: active ? `hsl(${statusColor} / 0.18)` : 'transparent',
+                        borderColor: active ? `hsl(${statusColor} / 0.4)` : 'hsl(var(--border))',
+                        color: active ? `hsl(${statusColor})` : 'hsl(var(--muted-foreground))',
+                      }}
+                    >
+                      {sp.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
+                      {sp.title}
+                    </button>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
 
@@ -343,6 +428,15 @@ export default function Index() {
             />
           )}
           {view === 'bugs' && <Bugs bugs={filteredBugs} />}
+          {view === 'sprints' && (
+            <Sprints
+              sprints={sprints}
+              tasks={tasks}
+              onUpdate={(updated) => setSprints((prev) => prev.map((s) => s.id === updated.id ? updated : s))}
+              onDelete={(id) => setSprints((prev) => prev.filter((s) => s.id !== id))}
+              onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
+            />
+          )}
           {view === 'versions' && <Versions />}
         </div>
       </main>
@@ -353,6 +447,7 @@ export default function Index() {
           onClose={() => setSelectedTask(null)}
           onSave={handleUpdateTask}
           onDelete={handleDeleteTask}
+          sprints={sprints}
         />
       )}
       {createFor && (
@@ -360,6 +455,13 @@ export default function Index() {
           column={createFor}
           onClose={() => setCreateFor(null)}
           onCreate={handleAddTask}
+          sprints={sprints}
+        />
+      )}
+      {createSprint && (
+        <CreateSprintModal
+          onClose={() => setCreateSprint(false)}
+          onCreate={(sp) => { setSprints((prev) => [...prev, sp]); setCreateSprint(false); }}
         />
       )}
     </div>
@@ -564,11 +666,12 @@ function Select({ label, value, onChange, options }: {
 
 const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
 
-function TaskModal({ task, onClose, onSave, onDelete }: {
+function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
   task: Task;
   onClose: () => void;
   onSave: (t: Task) => void;
   onDelete: (id: string) => void;
+  sprints: Sprint[];
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
@@ -644,6 +747,10 @@ function TaskModal({ task, onClose, onSave, onDelete }: {
           <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
             categories.map((c) => ({ value: c.id, label: c.label }))
           } />
+          <Select label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
+            { value: '', label: '— Без спринта —' },
+            ...sprints.map((s) => ({ value: s.id, label: s.title })),
+          ]} />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
@@ -718,11 +825,13 @@ function TaskModal({ task, onClose, onSave, onDelete }: {
   );
 }
 
-function CreateTaskModal({ column, onClose, onCreate }: {
+function CreateTaskModal({ column, onClose, onCreate, sprints }: {
   column: ColumnId;
   onClose: () => void;
   onCreate: (t: Task) => void;
+  sprints: Sprint[];
 }) {
+  const activeSprint = sprints.find((s) => s.status === 'active');
   const [form, setForm] = useState({
     title: '',
     column,
@@ -732,6 +841,7 @@ function CreateTaskModal({ column, onClose, onCreate }: {
     version: '',
     server: 'hfnew' as ServerId,
     category: 'other' as CategoryId,
+    sprintId: activeSprint?.id ?? '',
     description: '',
   });
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
@@ -793,6 +903,10 @@ function CreateTaskModal({ column, onClose, onCreate }: {
           <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
             categories.map((c) => ({ value: c.id, label: c.label }))
           } />
+          <Select label="Спринт" value={form.sprintId} onChange={(v) => set('sprintId', v)} options={[
+            { value: '', label: '— Без спринта —' },
+            ...sprints.map((s) => ({ value: s.id, label: s.title })),
+          ]} />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} placeholder="Геймплей..." className={inputCls} />
@@ -838,6 +952,242 @@ function CreateTaskModal({ column, onClose, onCreate }: {
           Отмена
         </button>
         <button onClick={handleCreate} disabled={!form.title.trim()} className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity">
+          Создать
+        </button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
+  sprints: Sprint[];
+  tasks: Task[];
+  onUpdate: (s: Sprint) => void;
+  onDelete: (id: string) => void;
+  onFilterBoard: (sprintId: string) => void;
+}) {
+  const [editing, setEditing] = useState<Sprint | null>(null);
+
+  const statusMeta: Record<Sprint['status'], { label: string; color: string; icon: string }> = {
+    active:  { label: 'Активный', color: '152 55% 50%', icon: 'Zap' },
+    planned: { label: 'Запланирован', color: '210 80% 62%', icon: 'Clock' },
+    done:    { label: 'Завершён', color: '215 15% 50%', icon: 'CheckCircle2' },
+  };
+
+  function formatDate(d: string) {
+    return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+  }
+
+  return (
+    <div className="max-w-3xl animate-fade-in">
+      <div className="flex items-center gap-3 mb-6">
+        <Icon name="Zap" size={20} className="text-primary" />
+        <h2 className="font-display tracking-wide text-lg">Спринты</h2>
+        <span className="text-sm text-muted-foreground">· {sprints.length} спринтов</span>
+      </div>
+
+      <div className="space-y-4">
+        {sprints.map((sp, i) => {
+          const spTasks = tasks.filter((t) => t.sprintId === sp.id);
+          const done = spTasks.filter((t) => t.column === 'done').length;
+          const total = spTasks.length;
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+          const sm = statusMeta[sp.status];
+
+          return (
+            <div
+              key={sp.id}
+              className="rounded-xl border border-border bg-card p-5 animate-fade-in transition-all hover:border-primary/30"
+              style={{ animationDelay: `${i * 70}ms` }}
+            >
+              <div className="flex items-start justify-between gap-3 mb-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span
+                      className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md"
+                      style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}
+                    >
+                      {sp.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
+                      <Icon name={sm.icon} size={11} />
+                      {sm.label}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatDate(sp.startDate)} — {formatDate(sp.endDate)}
+                    </span>
+                  </div>
+                  <h3 className="font-semibold text-base leading-tight">{sp.title}</h3>
+                  {sp.goal && (
+                    <p className="text-sm text-muted-foreground mt-1">{sp.goal}</p>
+                  )}
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={() => onFilterBoard(sp.id)}
+                    title="Открыть на доске"
+                    className="h-8 px-2.5 rounded-lg bg-secondary/60 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5"
+                  >
+                    <Icon name="LayoutGrid" size={13} />
+                    Доска
+                  </button>
+                  <button
+                    onClick={() => setEditing({ ...sp })}
+                    className="h-8 w-8 rounded-lg bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center justify-center"
+                  >
+                    <Icon name="Pencil" size={13} />
+                  </button>
+                  <button
+                    onClick={() => onDelete(sp.id)}
+                    className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center"
+                  >
+                    <Icon name="Trash2" size={13} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Progress */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${pct}%`,
+                      background: pct === 100 ? 'hsl(152 55% 50%)' : 'hsl(var(--primary))',
+                    }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground shrink-0 w-20 text-right">
+                  {done}/{total} задач · {pct}%
+                </span>
+              </div>
+            </div>
+          );
+        })}
+
+        {sprints.length === 0 && (
+          <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
+            Спринтов пока нет — создай первый
+          </div>
+        )}
+      </div>
+
+      {editing && (
+        <SprintEditModal
+          sprint={editing}
+          onClose={() => setEditing(null)}
+          onSave={(updated) => { onUpdate(updated); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function SprintEditModal({ sprint, onClose, onSave }: {
+  sprint: Sprint;
+  onClose: () => void;
+  onSave: (s: Sprint) => void;
+}) {
+  const [form, setForm] = useState<Sprint>({ ...sprint });
+  const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
+        <h2 className="font-display tracking-wide text-lg">Редактировать спринт</h2>
+        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+          <Icon name="X" size={18} />
+        </button>
+      </div>
+      <div className="px-6 py-5 space-y-4">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
+          <input value={form.title} onChange={(e) => set('title', e.target.value)} className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Цель спринта</label>
+          <textarea value={form.goal} onChange={(e) => set('goal', e.target.value)} rows={2}
+            className={inputCls + ' resize-none'} placeholder="Что должны сделать за этот спринт..." />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Начало</label>
+            <input type="date" value={form.startDate} onChange={(e) => set('startDate', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Конец</label>
+            <input type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <Select label="Статус" value={form.status} onChange={(v) => set('status', v)} options={[
+          { value: 'planned', label: 'Запланирован' },
+          { value: 'active', label: 'Активный' },
+          { value: 'done', label: 'Завершён' },
+        ]} />
+      </div>
+      <div className="flex justify-end gap-3 px-6 pb-5">
+        <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">Отмена</button>
+        <button onClick={() => onSave(form)} className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">Сохранить</button>
+      </div>
+    </ModalOverlay>
+  );
+}
+
+function CreateSprintModal({ onClose, onCreate }: {
+  onClose: () => void;
+  onCreate: (s: Sprint) => void;
+}) {
+  const today = new Date().toISOString().split('T')[0];
+  const twoWeeks = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
+  const [form, setForm] = useState<Sprint>({
+    id: 's' + Date.now(),
+    title: '',
+    goal: '',
+    startDate: today,
+    endDate: twoWeeks,
+    status: 'planned',
+  });
+  const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
+        <h2 className="font-display tracking-wide text-lg">Новый спринт</h2>
+        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+          <Icon name="X" size={18} />
+        </button>
+      </div>
+      <div className="px-6 py-5 space-y-4">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Название</label>
+          <input autoFocus value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Спринт 4 · Летний ивент" className={inputCls} />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Цель спринта</label>
+          <textarea value={form.goal} onChange={(e) => set('goal', e.target.value)} rows={2}
+            className={inputCls + ' resize-none'} placeholder="Что должны сделать за этот спринт..." />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Начало</label>
+            <input type="date" value={form.startDate} onChange={(e) => set('startDate', e.target.value)} className={inputCls} />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Конец</label>
+            <input type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} className={inputCls} />
+          </div>
+        </div>
+        <Select label="Статус" value={form.status} onChange={(v) => set('status', v)} options={[
+          { value: 'planned', label: 'Запланирован' },
+          { value: 'active', label: 'Активный' },
+          { value: 'done', label: 'Завершён' },
+        ]} />
+      </div>
+      <div className="flex justify-end gap-3 px-6 pb-5">
+        <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">Отмена</button>
+        <button
+          onClick={() => { if (form.title.trim()) onCreate(form); }}
+          disabled={!form.title.trim()}
+          className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
           Создать
         </button>
       </div>
