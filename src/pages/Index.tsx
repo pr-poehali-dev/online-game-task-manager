@@ -170,12 +170,6 @@ const bugs: Bug[] = [
   { id: 'b5', title: 'Опечатка в описании квеста', priority: 'low', version: 'v2.3.5', status: 'closed', server: 'c4x1' },
 ];
 
-const versions = [
-  { v: 'v2.4.0', name: 'Гильдейские войны', date: '15 июля', state: 'В разработке' },
-  { v: 'v2.3.5', name: 'Ивент «Затмение»', date: '2 июля', state: 'На тестировании' },
-  { v: 'v2.3.4', name: 'Правки баланса', date: '18 июня', state: 'Выпущено' },
-];
-
 const priorityMap: Record<Priority, { label: string; color: string; bg: string }> = {
   critical: { label: 'Критич.', color: '0 72% 62%', bg: '0 72% 55% / 0.15' },
   high: { label: 'Высокий', color: '35 90% 60%', bg: '35 85% 58% / 0.15' },
@@ -188,7 +182,7 @@ function member(id: string) {
 }
 
 export default function Index() {
-  const [view, setView] = useState<'board' | 'bugs' | 'versions' | 'sprints'>('board');
+  const [view, setView] = useState<'board' | 'bugs' | 'sprints'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -323,7 +317,6 @@ export default function Index() {
             <span className="text-sm text-muted-foreground">
               {view === 'board' && 'Доска задач'}
               {view === 'bugs' && 'Трекер ошибок'}
-              {view === 'versions' && 'История версий'}
               {view === 'sprints' && 'Спринты'}
             </span>
           </div>
@@ -332,7 +325,6 @@ export default function Index() {
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
               { k: 'sprints', label: 'Спринты', icon: 'Zap' },
-              { k: 'versions', label: 'Версии', icon: 'GitBranch' },
             ].map((t) => (
               <button
                 key={t.k}
@@ -470,7 +462,6 @@ export default function Index() {
               onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
             />
           )}
-          {view === 'versions' && <Versions />}
         </div>
       </main>
 
@@ -1357,39 +1348,3 @@ function CreateSprintModal({ onClose, onCreate }: {
   );
 }
 
-function Versions() {
-  const stateColor: Record<string, string> = {
-    'В разработке': '210 80% 60%',
-    'На тестировании': '35 85% 58%',
-    'Выпущено': '152 55% 50%',
-  };
-  return (
-    <div className="max-w-3xl animate-fade-in">
-      <div className="flex items-center gap-3 mb-6">
-        <Icon name="GitBranch" size={20} className="text-primary" />
-        <h2 className="font-display tracking-wide text-lg">История обновлений</h2>
-      </div>
-      <div className="relative pl-6">
-        <div className="absolute left-2 top-2 bottom-2 w-px bg-border" />
-        {versions.map((v, i) => (
-          <div key={v.v} className="relative mb-6 last:mb-0 animate-fade-in" style={{ animationDelay: `${i * 80}ms` }}>
-            <div className="absolute -left-[18px] top-1.5 h-3 w-3 rounded-full bg-primary ring-4 ring-background" />
-            <div className="rounded-xl border border-border bg-card p-5">
-              <div className="flex items-center gap-3 mb-1">
-                <span className="font-mono text-lg text-primary">{v.v}</span>
-                <span className="text-xs text-muted-foreground">{v.date}</span>
-                <span
-                  className="ml-auto text-xs font-medium px-2.5 py-1 rounded-md"
-                  style={{ background: `hsl(${stateColor[v.state]} / 0.15)`, color: `hsl(${stateColor[v.state]})` }}
-                >
-                  {v.state}
-                </span>
-              </div>
-              <p className="text-sm font-medium">{v.name}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
