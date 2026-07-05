@@ -10,10 +10,12 @@ export default function Login() {
   const { loginWithTelegram } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [debug, setDebug] = useState<string | null>(null);
 
   async function handleAuth(data: TelegramAuthData) {
     setBusy(true);
     setError(null);
+    setDebug(`Telegram передал: @${data.username ?? '—'} · ${data.first_name ?? ''} · id ${data.id}`);
     try {
       const user = await loginWithTelegram(data);
       navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
@@ -55,6 +57,12 @@ export default function Login() {
             <div className="w-full flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
               <Icon name="TriangleAlert" size={15} className="shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {debug && (
+            <div className="w-full text-xs text-muted-foreground bg-secondary/50 rounded-lg px-3 py-2 font-mono break-all">
+              {debug}
             </div>
           )}
         </div>
