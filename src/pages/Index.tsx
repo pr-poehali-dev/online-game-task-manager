@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import { useAuth } from '@/lib/auth';
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
@@ -182,6 +184,8 @@ function member(id: string) {
 }
 
 export default function Index() {
+  const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [view, setView] = useState<'board' | 'bugs' | 'sprints'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
@@ -358,6 +362,28 @@ export default function Index() {
               <Icon name="Bell" size={16} />
               <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
             </button>
+            {user ? (
+              <button
+                onClick={() => navigate(isAdmin ? '/admin' : '/cabinet')}
+                title={isAdmin ? 'Админка' : 'Личный кабинет'}
+                className="h-8 px-2.5 rounded-lg bg-secondary/60 flex items-center gap-2 hover:bg-secondary transition-colors"
+              >
+                {user.photo_url ? (
+                  <img src={user.photo_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                ) : (
+                  <Icon name={isAdmin ? 'Shield' : 'User'} size={15} />
+                )}
+                <span className="hidden sm:inline text-sm">{user.first_name}</span>
+              </button>
+            ) : (
+              <button
+                onClick={() => navigate('/login')}
+                className="h-8 px-3 rounded-lg bg-secondary/60 flex items-center gap-2 hover:bg-secondary transition-colors text-sm"
+              >
+                <Icon name="LogIn" size={15} />
+                <span className="hidden sm:inline">Войти</span>
+              </button>
+            )}
             {view === 'sprints' ? (
               <button
                 onClick={() => setCreateSprint(true)}
@@ -1347,4 +1373,3 @@ function CreateSprintModal({ onClose, onCreate }: {
     </ModalOverlay>
   );
 }
-

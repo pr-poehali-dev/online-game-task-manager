@@ -1,0 +1,27 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS CORS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET without token returns 401",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST with bad signature returns 403",
+      "method": "POST",
+      "path": "/",
+      "body": {"telegram": {"id": 123, "first_name": "Test", "auth_date": 1700000000, "hash": "deadbeef"}},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
