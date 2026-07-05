@@ -1,0 +1,24 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS ok",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Empty update handled",
+      "method": "POST",
+      "path": "/",
+      "body": {},
+      "expectedStatus": 200
+    },
+    {
+      "name": "Non-start message handled",
+      "method": "POST",
+      "path": "/",
+      "body": {"message": {"text": "hello", "chat": {"id": 999}, "from": {"id": 999, "first_name": "T"}}},
+      "expectedStatus": 200
+    }
+  ]
+}
