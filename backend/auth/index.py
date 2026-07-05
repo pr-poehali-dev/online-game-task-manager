@@ -114,12 +114,14 @@ def handler(event: dict, context) -> dict:
     last_name = tg.get('last_name')
     photo_url = tg.get('photo_url')
 
+    print(f"[auth] login attempt telegram_id={telegram_id} username={username!r} first_name={first_name!r}")
+
     cur.execute(f"SELECT id, role, is_active FROM {schema}.users WHERE telegram_id = %s", (telegram_id,))
     existing = cur.fetchone()
 
     placeholder = None
     if not existing and username:
-        # Заготовка с заранее выданной ролью (telegram_id <= 0 означает, что реальный вход ещё не был)
+        # Заготовка из белого списка (telegram_id <= 0 означает, что реальный вход ещё не был)
         cur.execute(
             f"SELECT id, role FROM {schema}.users WHERE lower(tg_username) = lower(%s) AND telegram_id <= 0 AND is_active = true LIMIT 1",
             (username,)
@@ -141,13 +143,10 @@ def handler(event: dict, context) -> dict:
         )
         is_active = True
     else:
-        # первый вход — по умолчанию member
-        cur.execute(
-            f"INSERT INTO {schema}.users (telegram_id, username, first_name, last_name, photo_url, role, tg_username) "
-            f"VALUES (%s, %s, %s, %s, %s, 'member', %s) RETURNING id, role, is_active",
-            (telegram_id, username, first_name, last_name, photo_url, username)
-        )
-        user_id, role, is_active = cur.fetchone()
+        # НЕ в белом списке — доступ запрещён
+        print(f"[auth] access denied: username={username!r} not in whitelist")
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_allowed'})}
 
     if not is_active:
         cur.close(); conn.close()

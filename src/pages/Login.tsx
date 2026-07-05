@@ -19,7 +19,8 @@ export default function Login() {
       navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'login_failed';
-      if (msg === 'inactive') setError('Ваш аккаунт деактивирован. Обратитесь к руководителю.');
+      if (msg === 'not_allowed') setError('У вашего аккаунта нет доступа. Обратитесь к руководителю, чтобы вас добавили в команду.');
+      else if (msg === 'inactive') setError('Ваш аккаунт деактивирован. Обратитесь к руководителю.');
       else if (msg === 'bad_signature') setError('Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.');
       else setError('Ошибка входа. Попробуйте ещё раз.');
     } finally {
