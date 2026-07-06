@@ -86,27 +86,32 @@ export default function BotLoginButton({ onSuccess, onError }: Props) {
     return (
       <div className="w-full flex flex-col items-center gap-3">
         <div className="text-sm text-muted-foreground text-center">
-          Откройте бота и нажмите <span className="font-medium text-foreground">Start</span>.
-          Если бот не открылся — отправьте ему команду:
-        </div>
-        <div className="text-lg font-mono font-semibold tracking-widest bg-secondary rounded-lg px-4 py-2 select-all">
-          /start {code}
+          В открывшемся боте нажмите синюю кнопку <span className="font-medium text-foreground">«Запустить»</span> (Start) внизу экрана.
         </div>
         {deepLink && (
           <a
             href={deepLink}
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#229ED9] text-white text-sm font-medium px-4 py-2.5 hover:opacity-90 transition-opacity"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-[#229ED9] text-white text-sm font-medium px-4 py-3 hover:opacity-90 transition-opacity"
           >
             <Icon name="Send" size={16} />
-            Открыть бота
+            Открыть бота ещё раз
           </a>
         )}
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <Icon name="Loader2" size={14} className="animate-spin" />
           Ждём подтверждения входа...
         </div>
+        <details className="w-full text-center">
+          <summary className="text-xs text-muted-foreground/70 cursor-pointer hover:text-muted-foreground">Бот не открылся?</summary>
+          <div className="mt-2 text-xs text-muted-foreground">
+            Откройте бота вручную и отправьте команду:
+            <div className="mt-1.5 text-sm font-mono font-semibold tracking-widest bg-secondary rounded-lg px-3 py-2 select-all inline-block">
+              /start {code}
+            </div>
+          </div>
+        </details>
       </div>
     );
   }

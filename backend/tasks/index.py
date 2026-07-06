@@ -1,7 +1,41 @@
 import json
 import os
+import urllib.request
+import urllib.error
 
 import psycopg2
+
+
+def _tg_send(chat_id, text):
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = json.dumps({'chat_id': chat_id, 'text': text}).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        print(f"[tasks] tg send HTTP {e.code}: {e.read().decode('utf-8', 'ignore')}")
+    except Exception as e:
+        print(f"[tasks] tg send error: {e}")
+
+
+def _notify_assignees(cur, schema, user_ids, title, actor_id):
+    '''Отправляет уведомление в Telegram назначенным исполнителям (кроме самого назначившего).'''
+    targets = [uid for uid in user_ids if uid and uid != actor_id]
+    if not targets:
+        return
+    cur.execute(
+        f"SELECT telegram_id FROM {schema}.users "
+        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
+        (targets,)
+    )
+    rows = cur.fetchall()
+    text = f"📌 Вам назначена задача:\n\n«{title}»\n\nОткройте таск-менеджер, чтобы посмотреть детали."
+    for (tg_id,) in rows:
+        _tg_send(tg_id, text)
 
 
 def _cors_headers():
@@ -166,6 +200,7 @@ def handler(event: dict, context) -> dict:
             )
         )
         task = _row_to_task(cur.fetchone())
+        _notify_assignees(cur, schema, assignee_ids, title, me['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
@@ -179,6 +214,10 @@ def handler(event: dict, context) -> dict:
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
         kb_ids = json.dumps(_norm_kb(body))
+        # Предыдущие исполнители — чтобы уведомить только вновь добавленных
+        cur.execute(f"SELECT assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        prev_row = cur.fetchone()
+        prev_ids = prev_row[0] if prev_row and prev_row[0] else []
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, tag = %s, version = %s, "
@@ -204,9 +243,12 @@ def handler(event: dict, context) -> dict:
             )
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
+        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'])
+        cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
     # Быстрое перемещение по колонкам (drag&drop)
