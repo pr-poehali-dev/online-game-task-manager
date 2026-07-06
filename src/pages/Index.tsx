@@ -340,6 +340,11 @@ export default function Index() {
               const hue = hueFor(m.tg_username || m.first_name || String(m.id));
               const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
               const tg = (m.tg_username || '').replace('@', '');
+              const demo = members.find(
+                (d) => d.name.toLowerCase() === displayName.toLowerCase() ||
+                       (!!m.tg_username && d.tg?.replace('@', '').toLowerCase() === tg.toLowerCase() && !!tg)
+              );
+              const openTasks = demo ? tasks.filter((t) => t.assignee === demo.id && t.column !== 'done').length : 0;
               return (
                 <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
                   <div className="relative shrink-0">
@@ -364,6 +369,14 @@ export default function Index() {
                       {m.specialization || (m.role === 'admin' ? 'Администратор' : 'Участник')}
                     </div>
                   </div>
+                  {openTasks > 0 && (
+                    <span
+                      title={`Открытых задач: ${openTasks}`}
+                      className="shrink-0 min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center group-hover:opacity-0 transition-opacity"
+                    >
+                      {openTasks}
+                    </span>
+                  )}
                   {tg && (
                     <a
                       href={`https://t.me/${tg}`}
