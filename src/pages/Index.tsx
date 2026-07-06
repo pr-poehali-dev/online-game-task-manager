@@ -429,14 +429,6 @@ export default function Index() {
             })}
           </div>
         </div>
-
-        <div className="mx-4 mb-4 mt-3 p-3 rounded-lg bg-secondary/50 border border-border">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse-dot" />
-            <span className="text-muted-foreground">Текущая ветка</span>
-            <span className="ml-auto font-mono text-primary">v2.4.0</span>
-          </div>
-        </div>
       </aside>
 
       {/* Main */}
