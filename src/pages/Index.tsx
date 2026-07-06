@@ -587,14 +587,18 @@ export default function Index() {
                 </button>
                 <button
                   onClick={() => setSprintFilter(sprintFilter === 'none' ? 'all' : 'none')}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
+                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 ${
                     sprintFilter === 'none' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                   }`}
                 >
                   Без спринта
+                  <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center ${sprintFilter === 'none' ? 'bg-primary-foreground/25 text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>
+                    {activeTasks.filter((t) => !t.sprintId).length}
+                  </span>
                 </button>
                 {sprints.map((sp) => {
                   const active = sprintFilter === sp.id;
+                  const count = activeTasks.filter((t) => t.sprintId === sp.id).length;
                   const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
                   return (
                     <button
@@ -609,6 +613,12 @@ export default function Index() {
                     >
                       {sp.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
                       {sp.title}
+                      <span
+                        className="min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
+                        style={{ background: active ? `hsl(${statusColor} / 0.25)` : 'hsl(var(--secondary))', color: active ? `hsl(${statusColor})` : 'hsl(var(--muted-foreground))' }}
+                      >
+                        {count}
+                      </span>
                       {active && <Icon name="X" size={11} />}
                     </button>
                   );
