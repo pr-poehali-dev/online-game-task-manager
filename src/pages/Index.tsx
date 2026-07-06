@@ -236,6 +236,7 @@ export default function Index() {
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
   const [outcomeFilter, setOutcomeFilter] = useState<TaskOutcome | 'all'>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<number | 'all'>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -288,7 +289,8 @@ export default function Index() {
   const filteredTasks = activeTasks
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category)
-    .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter);
+    .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter)
+    .filter((t) => assigneeFilter === 'all' || taskAssigneeIds(t).includes(assigneeFilter));
   const filteredArchive = archivedTasks
     .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)
     .filter((t) => server === 'all' || t.server === server)
@@ -475,8 +477,14 @@ export default function Index() {
               const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
               const tg = (m.tg_username || '').replace('@', '');
               const openTasks = tasks.filter((t) => !t.archived && t.column !== 'done' && taskAssigneeIds(t).includes(m.id)).length;
+              const filterActive = assigneeFilter === m.id;
               return (
-                <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
+                <div
+                  key={m.id}
+                  onClick={() => { setAssigneeFilter(filterActive ? 'all' : m.id); setView('board'); }}
+                  title={filterActive ? 'Показать все задачи' : `Показать задачи: ${displayName}`}
+                  className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors group cursor-pointer ${filterActive ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/50'}`}
+                >
                   <div className="relative shrink-0">
                     {m.photo_url ? (
                       <img src={m.photo_url} alt="" className="h-7 w-7 rounded-md object-cover" />
@@ -683,6 +691,20 @@ export default function Index() {
                     </button>
                   );
                 })}
+                {assigneeFilter !== 'all' && (
+                  <>
+                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                    <button
+                      onClick={() => setAssigneeFilter('all')}
+                      title="Сбросить фильтр по исполнителю"
+                      className="text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 bg-primary/15 text-primary border border-primary/40"
+                    >
+                      <Icon name="User" size={11} />
+                      {resolveAssignee(team, assigneeFilter).name}
+                      <Icon name="X" size={11} />
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
