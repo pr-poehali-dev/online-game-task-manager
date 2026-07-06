@@ -64,6 +64,17 @@ TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at"
 COMMENT_COLS = "id, topic_id, author_id, text, created_at"
 
 
+def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, actor_id):
+    '''Создаёт внутреннее уведомление (не для самого себя).'''
+    if not user_id or user_id == actor_id:
+        return
+    cur.execute(
+        f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
+        f"VALUES (%s, %s, %s, %s, 'idea', %s, %s)",
+        (user_id, ntype, title, body_text, str(entity_id) if entity_id else None, actor_id)
+    )
+
+
 def handler(event: dict, context) -> dict:
     '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Закрывать топик может автор или админ. Доступно авторизованным участникам.'''
     method = event.get('httpMethod', 'GET')
@@ -148,6 +159,11 @@ def handler(event: dict, context) -> dict:
         )
         comment = _comment_row(cur.fetchone())
         cur.execute(f"UPDATE {schema}.idea_topics SET updated_at = NOW() WHERE id = %s", (int(tid),))
+        # Уведомить автора темы о новом комментарии
+        cur.execute(f"SELECT author_id, title FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        trow = cur.fetchone()
+        if trow:
+            _add_notification(cur, schema, trow[0], 'idea_comment', 'Новый комментарий к вашей идее', trow[1], tid, me['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}
 
@@ -158,7 +174,7 @@ def handler(event: dict, context) -> dict:
         if not tid or status not in ('open', 'wont_do', 'sent'):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
-        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        cur.execute(f"SELECT author_id, title FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
         row = cur.fetchone()
         if not row:
             cur.close(); conn.close()
@@ -171,6 +187,8 @@ def handler(event: dict, context) -> dict:
             (status, int(tid))
         )
         topic = _topic_row(cur.fetchone())
+        status_label = {'sent': 'Отправлено на реализацию', 'wont_do': 'Решено не делать', 'open': 'Переоткрыто'}.get(status, status)
+        _add_notification(cur, schema, row[0], 'idea_status', f'Статус идеи: {status_label}', row[1], tid, me['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 

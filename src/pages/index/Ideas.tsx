@@ -49,7 +49,11 @@ function initialsFor(name: string) {
   return (name.slice(0, 2) || '?').toUpperCase();
 }
 
-export default function Ideas({ authors }: { authors: Author[] }) {
+export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+  authors: Author[];
+  initialTopicId?: string | null;
+  onConsumeInitial?: () => void;
+}) {
   const { user, isAdmin } = useAuth();
   const [list, setList] = useState<TopicListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,7 +84,7 @@ export default function Ideas({ authors }: { authors: Author[] }) {
 
   useEffect(() => { loadList(); }, [loadList]);
 
-  async function openTopic(id: string) {
+  const openTopic = useCallback(async (id: string) => {
     try {
       const res = await fetch(IDEAS_URL, {
         method: 'POST',
@@ -97,7 +101,15 @@ export default function Ideas({ authors }: { authors: Author[] }) {
     } catch {
       /* ignore */
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (initialTopicId) {
+      openTopic(initialTopicId);
+      onConsumeInitial?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTopicId]);
 
   async function createTopic() {
     if (!newTitle.trim()) return;

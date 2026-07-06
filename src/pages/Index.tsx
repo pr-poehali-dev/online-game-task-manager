@@ -32,6 +32,7 @@ import type {
 import Board from './index/Board';
 import Restart from './index/Restart';
 import Ideas from './index/Ideas';
+import NotificationBell from './index/NotificationBell';
 import { TaskModal, CreateTaskModal } from './index/TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './index/SprintsBugsArchive';
 
@@ -54,6 +55,7 @@ export default function Index() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [kbArticles, setKbArticles] = useState<KbArticleBrief[]>([]);
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+  const [openTopicId, setOpenTopicId] = useState<string | null>(null);
 
   const loadTeam = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -126,6 +128,20 @@ export default function Index() {
     setSelectedTask(null);
     setOpenArticleId(id);
     setView('knowledge');
+  }
+
+  function handleOpenTaskById(taskId: string) {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      setView(task.column === 'restart' ? 'restart' : 'board');
+      setSelectedTask(task);
+    }
+  }
+
+  function handleOpenIdeaById(ideaId: string) {
+    setSelectedTask(null);
+    setOpenTopicId(ideaId);
+    setView('ideas');
   }
 
   async function handleAddTask(task: Task) {
@@ -448,10 +464,12 @@ export default function Index() {
                 <Icon name="X" size={11} />
               </button>
             )}
-            <button className="h-8 w-8 rounded-lg bg-secondary/60 flex items-center justify-center hover:bg-secondary transition-colors relative">
-              <Icon name="Bell" size={16} />
-              <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-destructive" />
-            </button>
+            {user && (
+              <NotificationBell
+                onOpenTask={handleOpenTaskById}
+                onOpenIdea={handleOpenIdeaById}
+              />
+            )}
             {user ? (
               <button
                 onClick={() => navigate(isAdmin ? '/admin' : '/cabinet')}
@@ -673,6 +691,8 @@ export default function Index() {
           )}
           {view === 'ideas' && (
             <Ideas
+              initialTopicId={openTopicId}
+              onConsumeInitial={() => setOpenTopicId(null)}
               authors={team.map((m) => ({
                 id: m.id,
                 name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,

@@ -27,11 +27,19 @@ def _tg_send(chat_id, text, button_url=None):
         print(f"[tasks] tg send error: {e}")
 
 
-def _notify_assignees(cur, schema, user_ids, title, actor_id):
-    '''Отправляет уведомление в Telegram назначенным исполнителям (кроме самого назначившего).'''
+def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
+    '''Уведомляет назначенных исполнителей (кроме назначившего): запись в БД + сообщение в Telegram.'''
     targets = [uid for uid in user_ids if uid and uid != actor_id]
     if not targets:
         return
+    # Внутреннее уведомление в приложении — для всех назначенных
+    for uid in targets:
+        cur.execute(
+            f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
+            f"VALUES (%s, 'task_assigned', %s, %s, 'task', %s, %s)",
+            (uid, 'Вам назначена задача', title, str(task_id) if task_id else None, actor_id)
+        )
+    # Telegram — только тем, кто вошёл через бота
     cur.execute(
         f"SELECT telegram_id FROM {schema}.users "
         f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
@@ -207,7 +215,7 @@ def handler(event: dict, context) -> dict:
             )
         )
         task = _row_to_task(cur.fetchone())
-        _notify_assignees(cur, schema, assignee_ids, title, me['id'])
+        _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
@@ -254,7 +262,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
-        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'])
+        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 

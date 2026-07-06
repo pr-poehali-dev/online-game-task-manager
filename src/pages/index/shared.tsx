@@ -5,6 +5,7 @@ import func2url from '../../../backend/func2url.json';
 export const AUTH_URL = (func2url as Record<string, string>).auth;
 export const TASKS_URL = (func2url as Record<string, string>).tasks;
 export const IDEAS_URL = (func2url as Record<string, string>).ideas;
+export const NOTIFICATIONS_URL = (func2url as Record<string, string>).notifications;
 export const TOKEN_KEY = 'era_auth_token';
 
 export function authHeaders(): Record<string, string> {
