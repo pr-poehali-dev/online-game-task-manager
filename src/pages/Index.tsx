@@ -320,18 +320,38 @@ export default function Index() {
     }
   }
 
-  async function handleDeleteTask(id: string) {
+  function handleDeleteTask(id: string) {
+    const task = tasks.find((t) => t.id === id);
+    if (!task) return;
     setSelectedTask(null);
     setTasks((prev) => prev.filter((t) => t.id !== id));
-    try {
-      await fetch(TASKS_URL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'delete', id }),
-      });
-    } catch {
-      /* ignore */
-    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        await fetch(TASKS_URL, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ action: 'delete', id }),
+        });
+      } catch {
+        /* ignore */
+      }
+    }, 5000);
+
+    toast(`Задача удалена`, {
+      description: task.title,
+      duration: 5000,
+      action: {
+        label: 'Восстановить',
+        onClick: () => {
+          cancelled = true;
+          clearTimeout(timer);
+          setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+        },
+      },
+    });
   }
 
   async function handleArchiveTask(id: string, outcome: TaskOutcome) {
