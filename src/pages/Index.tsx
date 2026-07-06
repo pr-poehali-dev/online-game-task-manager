@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import { useAuth } from '@/lib/auth';
+import { toast } from 'sonner';
 import func2url from '../../backend/func2url.json';
 
 const AUTH_URL = (func2url as Record<string, string>).auth;
@@ -334,6 +335,7 @@ export default function Index() {
   }
 
   async function handleArchiveTask(id: string, outcome: TaskOutcome) {
+    const task = tasks.find((t) => t.id === id);
     setSelectedTask(null);
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true, outcome } : t)));
     try {
@@ -345,6 +347,10 @@ export default function Index() {
     } catch {
       /* ignore */
     }
+    toast(`Задача в архиве · ${outcomeMeta(outcome).label}`, {
+      description: task?.title,
+      action: { label: 'Отменить', onClick: () => handleUnarchiveTask(id) },
+    });
   }
 
   async function handleUnarchiveTask(id: string) {
