@@ -649,6 +649,7 @@ export default function Index() {
               loading={tasksLoading}
               onCardClick={setSelectedTask}
               onAddClick={setCreateFor}
+              onArchive={handleArchiveTask}
             />
           )}
           {view === 'bugs' && <Bugs bugs={filteredBugs} />}
@@ -771,13 +772,16 @@ function Board({
   loading,
   onCardClick,
   onAddClick,
+  onArchive,
 }: {
   tasks: Task[];
   team: TeamMember[];
   loading: boolean;
   onCardClick: (t: Task) => void;
   onAddClick: (col: ColumnId) => void;
+  onArchive: (id: string, outcome: TaskOutcome) => void;
 }) {
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -805,10 +809,35 @@ function Board({
                   <div
                     key={t.id}
                     onClick={() => onCardClick(t)}
-                    className="rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in"
+                    className="group relative rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in"
                     style={{ animationDelay: `${i * 60}ms` }}
                   >
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => setMenuFor(menuFor === t.id ? null : t.id)}
+                        title="Отправить в архив"
+                        className={`h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all ${menuFor === t.id ? 'opacity-100 text-primary bg-primary/10' : 'opacity-0 group-hover:opacity-100'}`}
+                      >
+                        <Icon name="Archive" size={13} />
+                      </button>
+                      {menuFor === t.id && (
+                        <div className="absolute right-0 top-7 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+                          <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">В архив как</div>
+                          {outcomes.map((o) => (
+                            <button
+                              key={o.id}
+                              onClick={() => { setMenuFor(null); onArchive(t.id, o.id); }}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                              style={{ color: `hsl(${o.color})` }}
+                            >
+                              <Icon name={o.icon} size={14} />
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between mb-2 pr-7">
                       <CategoryBadge id={t.category} />
                       <PriorityBadge p={t.priority} />
                     </div>
