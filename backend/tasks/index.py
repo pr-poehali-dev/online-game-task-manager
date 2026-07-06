@@ -56,13 +56,27 @@ def _row_to_task(r):
         'archived': bool(r[13]),
         'outcome': r[14],
         'assigneeIds': r[15] if r[15] is not None else [],
+        'kbArticleIds': r[16] if r[16] is not None else [],
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, tag, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids"
 )
+
+
+def _norm_kb(body):
+    raw = body.get('kbArticleIds') or []
+    result = []
+    for v in raw:
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv not in result:
+            result.append(iv)
+    return result
 
 
 def _norm_assignees(body):
@@ -126,10 +140,11 @@ def handler(event: dict, context) -> dict:
         assignee_ids = _norm_assignees(body)
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
+        kb_ids = json.dumps(_norm_kb(body))
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, assignee_ids, priority, tag, version, server, category, sprint_id, deploy_status, description, links, created_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, tag, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
@@ -145,6 +160,7 @@ def handler(event: dict, context) -> dict:
                 body.get('deployStatus') or 'none',
                 body.get('description'),
                 links,
+                kb_ids,
                 me['id'],
             )
         )
@@ -161,10 +177,11 @@ def handler(event: dict, context) -> dict:
         assignee_ids = _norm_assignees(body)
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
+        kb_ids = json.dumps(_norm_kb(body))
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, tag = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, updated_at = NOW() "
+            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
@@ -180,6 +197,7 @@ def handler(event: dict, context) -> dict:
                 body.get('deployStatus') or 'none',
                 body.get('description'),
                 links,
+                kb_ids,
                 int(task_id),
             )
         )

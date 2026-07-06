@@ -3,11 +3,19 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import func2url from '../../backend/func2url.json';
 
-const KNOWLEDGE_URL = (func2url as Record<string, string>).knowledge;
+export const KNOWLEDGE_URL = (func2url as Record<string, string>).knowledge;
 const TOKEN_KEY = 'era_auth_token';
 
-function authHeaders(): Record<string, string> {
+export function kbAuthHeaders(): Record<string, string> {
   return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
+}
+
+const authHeaders = kbAuthHeaders;
+
+export interface KbArticleBrief {
+  id: string;
+  title: string;
+  category: string;
 }
 
 export type KbCategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
@@ -68,9 +76,11 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function KnowledgeBase({ category, authors }: {
+export default function KnowledgeBase({ category, authors, initialArticleId, onConsumeInitial }: {
   category: KbCategoryId | 'all';
   authors: Author[];
+  initialArticleId?: string | null;
+  onConsumeInitial?: () => void;
 }) {
   const [list, setList] = useState<ArticleListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +106,7 @@ export default function KnowledgeBase({ category, authors }: {
 
   useEffect(() => { loadList(); }, [loadList]);
 
-  async function openArticle(id: string) {
+  const openArticle = useCallback(async (id: string) => {
     try {
       const res = await fetch(`${KNOWLEDGE_URL}?id=${id}`, { method: 'GET', headers: authHeaders() });
       if (res.ok) {
@@ -106,7 +116,15 @@ export default function KnowledgeBase({ category, authors }: {
     } catch {
       /* ignore */
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (initialArticleId) {
+      openArticle(initialArticleId);
+      onConsumeInitial?.();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialArticleId]);
 
   async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string }) {
     const action = payload.id ? 'update' : 'create';

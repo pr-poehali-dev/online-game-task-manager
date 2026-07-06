@@ -3,8 +3,8 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
-import KnowledgeBase from '@/components/KnowledgeBase';
-import type { KbCategoryId } from '@/components/KnowledgeBase';
+import KnowledgeBase, { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
+import type { KbCategoryId, KbArticleBrief } from '@/components/KnowledgeBase';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import func2url from '../../backend/func2url.json';
@@ -160,6 +160,7 @@ interface Task {
   comments?: Comment[];
   archived?: boolean;
   outcome?: TaskOutcome | null;
+  kbArticleIds?: number[];
 }
 
 interface Bug {
@@ -247,6 +248,8 @@ export default function Index() {
   const [createSprint, setCreateSprint] = useState(false);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [kbArticles, setKbArticles] = useState<KbArticleBrief[]>([]);
+  const [openArticleId, setOpenArticleId] = useState<string | null>(null);
 
   const loadTeam = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -280,12 +283,25 @@ export default function Index() {
     }
   }, []);
 
+  const loadKbArticles = useCallback(async () => {
+    try {
+      const res = await fetch(KNOWLEDGE_URL, { method: 'GET', headers: kbAuthHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setKbArticles((data.articles || []).map((a: KbArticleBrief) => ({ id: a.id, title: a.title, category: a.category })));
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     loadTeam();
     loadTasks();
+    loadKbArticles();
     const t = setInterval(loadTeam, 30000);
     return () => clearInterval(t);
-  }, [loadTeam, loadTasks]);
+  }, [loadTeam, loadTasks, loadKbArticles]);
 
   const activeTasks = tasks.filter((t) => !t.archived);
   const archivedTasks = tasks.filter((t) => t.archived);
@@ -302,6 +318,12 @@ export default function Index() {
   const myOpenCount = user
     ? activeTasks.filter((t) => t.column !== 'done' && taskAssigneeIds(t).includes(user.id)).length
     : 0;
+
+  function handleOpenArticle(id: string) {
+    setSelectedTask(null);
+    setOpenArticleId(id);
+    setView('knowledge');
+  }
 
   function normalize(s: string) {
     return s.toLowerCase().replace(/[«»"'.,!?]/g, '').trim();
@@ -800,6 +822,8 @@ export default function Index() {
           {view === 'knowledge' && (
             <KnowledgeBase
               category={category as KbCategoryId | 'all'}
+              initialArticleId={openArticleId}
+              onConsumeInitial={() => setOpenArticleId(null)}
               authors={team.map((m) => ({
                 id: m.id,
                 name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
@@ -814,6 +838,8 @@ export default function Index() {
         <TaskModal
           task={selectedTask}
           team={team}
+          kbArticles={kbArticles}
+          onOpenArticle={handleOpenArticle}
           onClose={() => setSelectedTask(null)}
           onSave={handleUpdateTask}
           onDelete={handleDeleteTask}
@@ -826,6 +852,7 @@ export default function Index() {
         <CreateTaskModal
           column={createFor}
           team={team}
+          kbArticles={kbArticles}
           preset={createPreset}
           onClose={() => { setCreateFor(null); setCreatePreset(null); }}
           onCreate={handleAddTask}
@@ -1016,6 +1043,12 @@ function Board({
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Icon name="MessageSquare" size={11} />
                           {t.comments.length}
+                        </span>
+                      )}
+                      {t.kbArticleIds && t.kbArticleIds.length > 0 && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Есть связанные статьи">
+                          <Icon name="BookOpen" size={11} />
+                          {t.kbArticleIds.length}
                         </span>
                       )}
                     </div>
@@ -1220,9 +1253,74 @@ function AssigneeMultiSelect({ team, value, onChange }: {
   );
 }
 
-function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchive, sprints }: {
+function KbMultiSelect({ articles, value, onChange }: {
+  articles: KbArticleBrief[];
+  value: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const toggle = (id: number) => {
+    onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  };
+  const selected = value
+    .map((id) => articles.find((a) => Number(a.id) === id))
+    .filter(Boolean) as KbArticleBrief[];
+
+  return (
+    <div className="md:col-span-2">
+      <label className="block text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+        <Icon name="BookOpen" size={12} />
+        Связанные статьи базы знаний
+      </label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full min-h-9 rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        {selected.length === 0 && <span className="text-muted-foreground">Не выбрано</span>}
+        {selected.map((a) => (
+          <span key={a.id} className="inline-flex items-center gap-1 rounded-md bg-primary/15 text-primary px-1.5 py-0.5 text-xs max-w-[200px]">
+            <span className="truncate">{a.title}</span>
+            <span
+              onClick={(e) => { e.stopPropagation(); toggle(Number(a.id)); }}
+              className="hover:text-foreground cursor-pointer shrink-0"
+            >
+              <Icon name="X" size={11} />
+            </span>
+          </span>
+        ))}
+        <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+          {articles.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">В базе знаний пока нет статей</div>}
+          {articles.map((a) => {
+            const active = value.includes(Number(a.id));
+            return (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => toggle(Number(a.id))}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors text-left"
+              >
+                <span className={`h-4 w-4 shrink-0 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
+                  {active && <Icon name="Check" size={11} />}
+                </span>
+                <span className="truncate">{a.title}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints }: {
   task: Task;
   team: TeamMember[];
+  kbArticles: KbArticleBrief[];
+  onOpenArticle: (id: string) => void;
   onClose: () => void;
   onSave: (t: Task) => void;
   onDelete: (id: string) => void;
@@ -1239,6 +1337,7 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
   const [archiveMenu, setArchiveMenu] = useState(false);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
+  const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -1376,7 +1475,31 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
           </div>
+          <div className="md:col-span-4">
+            <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
+          </div>
         </div>
+
+        {/* Related articles quick links */}
+        {(form.kbArticleIds ?? []).length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {(form.kbArticleIds ?? []).map((id) => {
+              const art = kbArticles.find((a) => Number(a.id) === id);
+              if (!art) return null;
+              return (
+                <button
+                  key={id}
+                  onClick={() => onOpenArticle(art.id)}
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border bg-secondary/40 hover:border-primary/50 hover:text-primary transition-colors"
+                >
+                  <Icon name="BookOpen" size={12} />
+                  <span className="truncate max-w-[240px]">{art.title}</span>
+                  <Icon name="ArrowUpRight" size={12} />
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Description */}
         <div>
@@ -1519,9 +1642,10 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
   );
 }
 
-function CreateTaskModal({ column, team, preset, onClose, onCreate, sprints }: {
+function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
   column: ColumnId;
   team: TeamMember[];
+  kbArticles: KbArticleBrief[];
   preset?: Partial<Task> | null;
   onClose: () => void;
   onCreate: (t: Task) => void;
@@ -1533,6 +1657,7 @@ function CreateTaskModal({ column, team, preset, onClose, onCreate, sprints }: {
     column,
     assigneeId: null as number | null,
     assigneeIds: [] as number[],
+    kbArticleIds: [] as number[],
     priority: (preset?.priority ?? 'medium') as Priority,
     tag: preset?.tag ?? '',
     server: (preset?.server ?? 'hfnew') as ServerId,
@@ -1544,6 +1669,7 @@ function CreateTaskModal({ column, team, preset, onClose, onCreate, sprints }: {
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
+  const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -1604,6 +1730,9 @@ function CreateTaskModal({ column, team, preset, onClose, onCreate, sprints }: {
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} placeholder="Геймплей..." className={inputCls} />
+          </div>
+          <div className="md:col-span-4">
+            <KbMultiSelect articles={kbArticles} value={form.kbArticleIds} onChange={setKbIds} />
           </div>
         </div>
 
