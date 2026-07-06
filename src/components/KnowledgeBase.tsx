@@ -108,10 +108,14 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
 
   const openArticle = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`${KNOWLEDGE_URL}?id=${id}`, { method: 'GET', headers: authHeaders() });
+      const res = await fetch(KNOWLEDGE_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'get', id }),
+      });
       if (res.ok) {
         const data = await res.json();
-        setCurrent(data.article);
+        if (data.article) setCurrent(data.article);
       }
     } catch {
       /* ignore */

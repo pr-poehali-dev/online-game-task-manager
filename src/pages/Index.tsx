@@ -321,11 +321,13 @@ export default function Index() {
               className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${category === 'all' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
             >
               <Icon name="LayoutGrid" size={14} />
-              Все задачи
-              <span className="ml-auto text-xs font-mono opacity-60">{tasks.length}</span>
+              {view === 'knowledge' ? 'Все статьи' : 'Все задачи'}
+              <span className="ml-auto text-xs font-mono opacity-60">{view === 'knowledge' ? kbArticles.length : tasks.length}</span>
             </button>
             {categories.map((cat) => {
-              const count = tasks.filter((t) => t.category === cat.id).length;
+              const count = view === 'knowledge'
+                ? kbArticles.filter((a) => a.category === cat.id).length
+                : tasks.filter((t) => t.category === cat.id).length;
               return (
                 <button
                   key={cat.id}
