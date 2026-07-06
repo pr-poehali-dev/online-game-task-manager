@@ -241,6 +241,7 @@ export default function Index() {
   const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
+  const [createPreset, setCreatePreset] = useState<Partial<Task> | null>(null);
   const [createSprint, setCreateSprint] = useState(false);
   const [team, setTeam] = useState<TeamMember[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
@@ -296,9 +297,37 @@ export default function Index() {
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
+  const myOpenCount = user
+    ? activeTasks.filter((t) => t.column !== 'done' && taskAssigneeIds(t).includes(user.id)).length
+    : 0;
+
+  function normalize(s: string) {
+    return s.toLowerCase().replace(/[«»"'.,!?]/g, '').trim();
+  }
+
+  function handleBugClick(bug: Bug) {
+    const bn = normalize(bug.title);
+    const match = tasks.find((t) => {
+      const tn = normalize(t.title);
+      return tn === bn || tn.includes(bn) || bn.includes(tn);
+    });
+    if (match) {
+      setSelectedTask(match);
+    } else {
+      setCreatePreset({
+        title: bug.title,
+        priority: bug.priority,
+        server: bug.server,
+        category: 'client',
+        tag: 'Баг',
+      });
+      setCreateFor('todo');
+    }
+  }
 
   async function handleAddTask(task: Task) {
     setCreateFor(null);
+    setCreatePreset(null);
     try {
       const res = await fetch(TASKS_URL, {
         method: 'POST',
@@ -673,6 +702,13 @@ export default function Index() {
                     >
                       <Icon name="UserCheck" size={12} />
                       Мои задачи
+                      {myOpenCount > 0 && (
+                        <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center ${
+                          assigneeFilter === user.id ? 'bg-primary-foreground/25 text-primary-foreground' : 'bg-primary/20 text-primary'
+                        }`}>
+                          {myOpenCount}
+                        </span>
+                      )}
                     </button>
                   </>
                 )}
@@ -735,7 +771,7 @@ export default function Index() {
               onArchive={handleArchiveTask}
             />
           )}
-          {view === 'bugs' && <Bugs bugs={filteredBugs} />}
+          {view === 'bugs' && <Bugs bugs={filteredBugs} tasks={tasks} onBugClick={handleBugClick} />}
           {view === 'sprints' && (
             <Sprints
               sprints={sprints}
@@ -776,7 +812,8 @@ export default function Index() {
         <CreateTaskModal
           column={createFor}
           team={team}
-          onClose={() => setCreateFor(null)}
+          preset={createPreset}
+          onClose={() => { setCreateFor(null); setCreatePreset(null); }}
           onCreate={handleAddTask}
           sprints={sprints}
         />
@@ -999,19 +1036,28 @@ function ServerBadge({ id }: { id: ServerId }) {
   );
 }
 
-function Bugs({ bugs: list }: { bugs: Bug[] }) {
+function Bugs({ bugs: list, tasks, onBugClick }: { bugs: Bug[]; tasks: Task[]; onBugClick: (b: Bug) => void }) {
   const statusMeta: Record<Bug['status'], { label: string; color: string }> = {
     open: { label: 'Открыт', color: '35 85% 58%' },
     fixing: { label: 'В работе', color: '210 80% 60%' },
     closed: { label: 'Закрыт', color: '152 50% 50%' },
   };
+  const norm = (s: string) => s.toLowerCase().replace(/[«»"'.,!?]/g, '').trim();
+  const hasTask = (b: Bug) => {
+    const bn = norm(b.title);
+    return tasks.some((t) => {
+      const tn = norm(t.title);
+      return tn === bn || tn.includes(bn) || bn.includes(tn);
+    });
+  };
   return (
     <div className="max-w-4xl animate-fade-in">
-      <div className="flex items-center gap-3 mb-5">
+      <div className="flex items-center gap-3 mb-1">
         <Icon name="Bug" size={20} className="text-destructive" />
         <h2 className="font-display tracking-wide text-lg">Трекер ошибок</h2>
         <span className="text-sm text-muted-foreground">· {list.filter((b) => b.status !== 'closed').length} активных</span>
       </div>
+      <p className="text-sm text-muted-foreground mb-5">Нажмите на ошибку, чтобы открыть связанную задачу или создать новую.</p>
       {list.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
           На выбранном сервере ошибок нет
@@ -1020,15 +1066,25 @@ function Bugs({ bugs: list }: { bugs: Bug[] }) {
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           {list.map((b, i) => {
             const st = statusMeta[b.status];
+            const linked = hasTask(b);
             return (
-              <div
+              <button
                 key={b.id}
-                className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/40 transition-colors animate-fade-in"
+                onClick={() => onBugClick(b)}
+                className="w-full text-left flex items-center gap-4 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/40 transition-colors animate-fade-in group"
                 style={{ animationDelay: `${i * 50}ms` }}
               >
                 <span className="font-mono text-xs text-muted-foreground w-10">{b.id.toUpperCase()}</span>
                 <PriorityBadge p={b.priority} />
                 <span className="text-sm font-medium flex-1 min-w-0 truncate">{b.title}</span>
+                <span
+                  className="hidden lg:flex items-center gap-1 text-xs shrink-0"
+                  style={{ color: linked ? 'hsl(210 80% 62%)' : 'hsl(var(--muted-foreground))' }}
+                  title={linked ? 'Открыть связанную задачу' : 'Создать задачу из ошибки'}
+                >
+                  <Icon name={linked ? 'ExternalLink' : 'Plus'} size={12} />
+                  {linked ? 'Задача' : 'В задачу'}
+                </span>
                 <span className="hidden md:block">
                   <ServerBadge id={b.server} />
                 </span>
@@ -1039,7 +1095,8 @@ function Bugs({ bugs: list }: { bugs: Bug[] }) {
                 >
                   {st.label}
                 </span>
-              </div>
+                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </button>
             );
           })}
         </div>
@@ -1448,23 +1505,24 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
   );
 }
 
-function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
+function CreateTaskModal({ column, team, preset, onClose, onCreate, sprints }: {
   column: ColumnId;
   team: TeamMember[];
+  preset?: Partial<Task> | null;
   onClose: () => void;
   onCreate: (t: Task) => void;
   sprints: Sprint[];
 }) {
   const activeSprint = sprints.find((s) => s.status === 'active');
   const [form, setForm] = useState({
-    title: '',
+    title: preset?.title ?? '',
     column,
     assigneeId: null as number | null,
     assigneeIds: [] as number[],
-    priority: 'medium' as Priority,
-    tag: '',
-    server: 'hfnew' as ServerId,
-    category: 'other' as CategoryId,
+    priority: (preset?.priority ?? 'medium') as Priority,
+    tag: preset?.tag ?? '',
+    server: (preset?.server ?? 'hfnew') as ServerId,
+    category: (preset?.category ?? 'other') as CategoryId,
     sprintId: activeSprint?.id ?? '',
     description: '',
   });
