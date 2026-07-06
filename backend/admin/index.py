@@ -66,7 +66,7 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         cur.execute(
             f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, created_at "
-            f"FROM {schema}.users ORDER BY created_at ASC"
+            f"FROM {schema}.users WHERE is_hidden = false ORDER BY created_at ASC"
         )
         rows = cur.fetchall()
         users = [{
@@ -122,6 +122,20 @@ def handler(event: dict, context) -> dict:
     elif action == 'set_member':
         member_id = body.get('member_id')
         cur.execute(f"UPDATE {schema}.users SET member_id = %s, updated_at = NOW() WHERE id = %s", (member_id, user_id))
+    elif action == 'set_hidden':
+        is_hidden = bool(body.get('is_hidden'))
+        if int(user_id) == admin_id and is_hidden:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'cant_hide_self'})}
+        # При скрытии деактивируем и убираем из белого списка, чтобы аккаунт не мог войти
+        if is_hidden:
+            cur.execute(
+                f"UPDATE {schema}.users SET is_hidden = true, is_active = false, tg_username = NULL, updated_at = NOW() WHERE id = %s",
+                (user_id,)
+            )
+            cur.execute(f"UPDATE {schema}.sessions SET expires_at = NOW() WHERE user_id = %s", (user_id,))
+        else:
+            cur.execute(f"UPDATE {schema}.users SET is_hidden = false, updated_at = NOW() WHERE id = %s", (user_id,))
     else:
         cur.close(); conn.close()
         return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unknown_action'})}

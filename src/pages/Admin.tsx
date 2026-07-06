@@ -72,6 +72,12 @@ export default function Admin() {
     load();
   }
 
+  async function hideUser(u: TeamUser) {
+    if (!confirm(`Скрыть ${u.first_name} из команды? Аккаунт будет отключён и убран из списка.`)) return;
+    await authFetch({ action: 'set_hidden', user_id: u.id, is_hidden: true });
+    load();
+  }
+
   async function handleLogout() {
     await logout();
     navigate('/login', { replace: true });
@@ -176,6 +182,16 @@ export default function Admin() {
                   >
                     <Icon name={u.is_active ? 'UserX' : 'UserCheck'} size={16} />
                   </button>
+
+                  {!u.is_active && u.id !== user?.id && (
+                    <button
+                      onClick={() => hideUser(u)}
+                      title="Скрыть из команды"
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      <Icon name="Trash2" size={16} />
+                    </button>
+                  )}
                 </div>
               );
             })}
