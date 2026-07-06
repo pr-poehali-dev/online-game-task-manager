@@ -2,6 +2,7 @@ import json
 import os
 import secrets
 import urllib.request
+import urllib.error
 from datetime import datetime, timedelta, timezone
 
 import psycopg2
@@ -22,12 +23,19 @@ def _send_message(chat_id, text):
     if not token:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({'chat_id': chat_id, 'text': text, 'parse_mode': 'HTML'}).encode()
-    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-    try:
-        urllib.request.urlopen(req, timeout=5)
-    except Exception as e:
-        print(f"[tg-webhook] send error: {e}")
+    data = json.dumps({'chat_id': chat_id, 'text': text}).encode()
+    for attempt in range(3):
+        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                resp.read()
+            return
+        except urllib.error.HTTPError as e:
+            body = e.read().decode('utf-8', 'ignore')
+            print(f"[tg-webhook] send HTTP {e.code}: {body}")
+            return
+        except Exception as e:
+            print(f"[tg-webhook] send error (attempt {attempt + 1}): {e}")
 
 
 def handler(event: dict, context) -> dict:
