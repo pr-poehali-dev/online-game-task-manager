@@ -55,13 +55,32 @@ def _row_to_task(r):
         'links': r[12] if r[12] is not None else [],
         'archived': bool(r[13]),
         'outcome': r[14],
+        'assigneeIds': r[15] if r[15] is not None else [],
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, tag, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids"
 )
+
+
+def _norm_assignees(body):
+    raw = body.get('assigneeIds')
+    if raw is None:
+        single = body.get('assigneeId')
+        raw = [single] if single else []
+    result = []
+    for v in raw:
+        if v is None or v == '':
+            continue
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv not in result:
+            result.append(iv)
+    return result
 
 
 def handler(event: dict, context) -> dict:
@@ -104,17 +123,19 @@ def handler(event: dict, context) -> dict:
         if not title:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
-        assignee_id = body.get('assigneeId')
+        assignee_ids = _norm_assignees(body)
+        assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, priority, tag, version, server, category, sprint_id, deploy_status, description, links, created_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, tag, version, server, category, sprint_id, deploy_status, description, links, created_by) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
                 body.get('column') or 'todo',
-                assignee_id if assignee_id else None,
+                assignee_id,
+                json.dumps(assignee_ids),
                 body.get('priority') or 'medium',
                 body.get('tag'),
                 body.get('version'),
@@ -137,17 +158,19 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
-        assignee_id = body.get('assigneeId')
+        assignee_ids = _norm_assignees(body)
+        assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
         cur.execute(
             f"UPDATE {schema}.tasks SET "
-            f"title = %s, column_id = %s, assignee_id = %s, priority = %s, tag = %s, version = %s, "
+            f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, tag = %s, version = %s, "
             f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
                 body.get('column') or 'todo',
-                assignee_id if assignee_id else None,
+                assignee_id,
+                json.dumps(assignee_ids),
                 body.get('priority') or 'medium',
                 body.get('tag'),
                 body.get('version'),

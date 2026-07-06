@@ -49,6 +49,11 @@ interface AssigneeView {
   photo_url: string | null;
 }
 
+function taskAssigneeIds(task: { assigneeId: number | null; assigneeIds?: number[] }): number[] {
+  if (task.assigneeIds && task.assigneeIds.length > 0) return task.assigneeIds;
+  return task.assigneeId != null ? [task.assigneeId] : [];
+}
+
 function resolveAssignee(team: TeamMember[], id: number | null): AssigneeView {
   const m = id != null ? team.find((t) => t.id === id) : undefined;
   if (!m) {
@@ -140,6 +145,7 @@ interface Task {
   title: string;
   column: ColumnId;
   assigneeId: number | null;
+  assigneeIds?: number[];
   priority: Priority;
   tag: string;
   version?: string;
@@ -468,7 +474,7 @@ export default function Index() {
               const hue = hueFor(m.tg_username || m.first_name || String(m.id));
               const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
               const tg = (m.tg_username || '').replace('@', '');
-              const openTasks = tasks.filter((t) => t.assigneeId === m.id && t.column !== 'done').length;
+              const openTasks = tasks.filter((t) => !t.archived && t.column !== 'done' && taskAssigneeIds(t).includes(m.id)).length;
               return (
                 <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
                   <div className="relative shrink-0">
@@ -808,6 +814,33 @@ function AssigneeAvatar({ a, size = 24 }: { a: AssigneeView; size?: number }) {
   );
 }
 
+function AssigneeStack({ ids, team, size = 24, max = 3 }: { ids: number[]; team: TeamMember[]; size?: number; max?: number }) {
+  if (ids.length === 0) {
+    return <AssigneeAvatar a={resolveAssignee(team, null)} size={size} />;
+  }
+  const shown = ids.slice(0, max);
+  const rest = ids.length - shown.length;
+  return (
+    <div className="flex items-center shrink-0" title={ids.map((id) => resolveAssignee(team, id).name).join(', ')}>
+      <div className="flex -space-x-2">
+        {shown.map((id) => (
+          <div key={id} className="ring-2 ring-card rounded-md">
+            <AssigneeAvatar a={resolveAssignee(team, id)} size={size} />
+          </div>
+        ))}
+      </div>
+      {rest > 0 && (
+        <span
+          className="ml-1 rounded-md flex items-center justify-center text-[10px] font-semibold bg-secondary text-muted-foreground"
+          style={{ width: size, height: size }}
+        >
+          +{rest}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function Board({
   tasks,
   team,
@@ -846,7 +879,7 @@ function Board({
             </div>
             <div className="space-y-3">
               {colTasks.map((t, i) => {
-                const a = resolveAssignee(team, t.assigneeId);
+                const assignees = taskAssigneeIds(t);
                 return (
                   <div
                     key={t.id}
@@ -890,7 +923,7 @@ function Board({
                       </div>
                     )}
                     <div className="flex items-center gap-2">
-                      <AssigneeAvatar a={a} size={24} />
+                      <AssigneeStack ids={assignees} team={team} size={24} />
                       <ServerBadge id={t.server} />
                       {t.comments && t.comments.length > 0 && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -1018,6 +1051,68 @@ function Select({ label, value, onChange, options }: {
 
 const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
 
+function AssigneeMultiSelect({ team, value, onChange }: {
+  team: TeamMember[];
+  value: number[];
+  onChange: (ids: number[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const toggle = (id: number) => {
+    onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  };
+  const selected = value
+    .map((id) => team.find((m) => m.id === id))
+    .filter(Boolean) as TeamMember[];
+
+  return (
+    <div className="md:col-span-2">
+      <label className="block text-xs text-muted-foreground mb-1.5">Исполнители</label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full min-h-9 rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary"
+      >
+        {selected.length === 0 && <span className="text-muted-foreground">Не назначен</span>}
+        {selected.map((m) => (
+          <span key={m.id} className="inline-flex items-center gap-1 rounded-md bg-primary/15 text-primary px-1.5 py-0.5 text-xs">
+            {m.first_name}{m.last_name ? ' ' + m.last_name[0] + '.' : ''}
+            <span
+              onClick={(e) => { e.stopPropagation(); toggle(m.id); }}
+              className="hover:text-foreground cursor-pointer"
+            >
+              <Icon name="X" size={11} />
+            </span>
+          </span>
+        ))}
+        <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+          {team.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">В команде пока никого нет</div>}
+          {team.map((m) => {
+            const active = value.includes(m.id);
+            const name = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => toggle(m.id)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+              >
+                <span className={`h-4 w-4 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
+                  {active && <Icon name="Check" size={11} />}
+                </span>
+                <AssigneeAvatar a={resolveAssignee(team, m.id)} size={20} />
+                <span className="truncate">{name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchive, sprints }: {
   task: Task;
   team: TeamMember[];
@@ -1036,7 +1131,7 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [archiveMenu, setArchiveMenu] = useState(false);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
-  const setAssignee = (v: string) => setForm((p) => ({ ...p, assigneeId: v ? Number(v) : null }));
+  const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -1159,15 +1254,13 @@ function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchi
             { value: 'medium', label: 'Средний' },
             { value: 'low', label: 'Низкий' },
           ]} />
-          <Select label="Исполнитель" value={form.assigneeId != null ? String(form.assigneeId) : ''} onChange={setAssignee} options={
-            [{ value: '', label: 'Не назначен' }, ...team.map((m) => ({ value: String(m.id), label: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }))]
-          } />
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
           } />
           <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
             categories.map((c) => ({ value: c.id, label: c.label }))
           } />
+          <AssigneeMultiSelect team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
           <Select label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
             { value: '', label: '— Без спринта —' },
             ...sprints.map((s) => ({ value: s.id, label: s.title })),
@@ -1331,6 +1424,7 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
     title: '',
     column,
     assigneeId: null as number | null,
+    assigneeIds: [] as number[],
     priority: 'medium' as Priority,
     tag: '',
     server: 'hfnew' as ServerId,
@@ -1341,7 +1435,7 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
-  const setAssignee = (v: string) => setForm((p) => ({ ...p, assigneeId: v ? Number(v) : null }));
+  const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -1388,15 +1482,13 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
             { value: 'medium', label: 'Средний' },
             { value: 'low', label: 'Низкий' },
           ]} />
-          <Select label="Исполнитель" value={form.assigneeId != null ? String(form.assigneeId) : ''} onChange={setAssignee} options={
-            [{ value: '', label: 'Не назначен' }, ...team.map((m) => ({ value: String(m.id), label: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }))]
-          } />
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
           } />
           <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
             categories.map((c) => ({ value: c.id, label: c.label }))
           } />
+          <AssigneeMultiSelect team={team} value={form.assigneeIds} onChange={setAssignees} />
           <Select label="Спринт" value={form.sprintId} onChange={(v) => set('sprintId', v)} options={[
             { value: '', label: '— Без спринта —' },
             ...sprints.map((s) => ({ value: s.id, label: s.title })),
@@ -1506,7 +1598,8 @@ function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardCli
       ) : (
         <div className="space-y-2.5">
           {tasks.map((t) => {
-            const a = resolveAssignee(team, t.assigneeId);
+            const ids = taskAssigneeIds(t);
+            const namesLabel = ids.length > 0 ? ids.map((id) => resolveAssignee(team, id).name).join(', ') : 'Не назначен';
             const om = outcomeMeta(t.outcome ?? 'done');
             return (
               <div
@@ -1522,9 +1615,9 @@ function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardCli
                 </span>
                 <button onClick={() => onCardClick(t)} className="flex-1 min-w-0 text-left">
                   <div className="text-sm font-medium truncate">{t.title}</div>
-                  <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {a.name}</div>
+                  <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {namesLabel}</div>
                 </button>
-                <AssigneeAvatar a={a} size={26} />
+                <AssigneeStack ids={ids} team={team} size={26} />
                 {confirmId === t.id ? (
                   <div className="shrink-0 flex items-center gap-1.5">
                     <span className="hidden sm:inline text-xs text-muted-foreground">Удалить навсегда?</span>
