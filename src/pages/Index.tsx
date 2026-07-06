@@ -386,6 +386,21 @@ export default function Index() {
     }
   }
 
+  async function handleDeleteArchivedTask(id: string) {
+    const task = tasks.find((t) => t.id === id);
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+    toast(`Задача удалена окончательно`, { description: task?.title });
+  }
+
   return (
     <div className="min-h-screen grid-bg text-foreground flex">
       {/* Sidebar */}
@@ -697,6 +712,7 @@ export default function Index() {
               onOutcomeFilter={setOutcomeFilter}
               onCardClick={setSelectedTask}
               onRestore={handleUnarchiveTask}
+              onDelete={handleDeleteArchivedTask}
             />
           )}
         </div>
@@ -1433,7 +1449,7 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
   );
 }
 
-function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore }: {
+function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore, onDelete }: {
   tasks: Task[];
   total: number;
   team: TeamMember[];
@@ -1441,7 +1457,9 @@ function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardCli
   onOutcomeFilter: (o: TaskOutcome | 'all') => void;
   onCardClick: (t: Task) => void;
   onRestore: (id: string) => void;
+  onDelete: (id: string) => void;
 }) {
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   return (
     <div className="max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
@@ -1507,14 +1525,41 @@ function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardCli
                   <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {a.name}</div>
                 </button>
                 <AssigneeAvatar a={a} size={26} />
-                <button
-                  onClick={() => onRestore(t.id)}
-                  title="Вернуть на доску"
-                  className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
-                >
-                  <Icon name="ArchiveRestore" size={13} />
-                  <span className="hidden sm:inline">Вернуть</span>
-                </button>
+                {confirmId === t.id ? (
+                  <div className="shrink-0 flex items-center gap-1.5">
+                    <span className="hidden sm:inline text-xs text-muted-foreground">Удалить навсегда?</span>
+                    <button
+                      onClick={() => { setConfirmId(null); onDelete(t.id); }}
+                      className="h-8 px-2.5 rounded-lg bg-destructive/90 text-white text-xs hover:bg-destructive transition-colors"
+                    >
+                      Да
+                    </button>
+                    <button
+                      onClick={() => setConfirmId(null)}
+                      className="h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Нет
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => onRestore(t.id)}
+                      title="Вернуть на доску"
+                      className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+                    >
+                      <Icon name="ArchiveRestore" size={13} />
+                      <span className="hidden sm:inline">Вернуть</span>
+                    </button>
+                    <button
+                      onClick={() => setConfirmId(t.id)}
+                      title="Удалить навсегда"
+                      className="shrink-0 h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center"
+                    >
+                      <Icon name="Trash2" size={13} />
+                    </button>
+                  </>
+                )}
               </div>
             );
           })}
