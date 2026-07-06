@@ -53,12 +53,14 @@ def _row_to_task(r):
         'deployStatus': r[10],
         'description': r[11],
         'links': r[12] if r[12] is not None else [],
+        'archived': bool(r[13]),
+        'outcome': r[14],
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, tag, version, server, category, "
-    "sprint_id, deploy_status, description, links"
+    "sprint_id, deploy_status, description, links, archived, outcome"
 )
 
 
@@ -177,6 +179,41 @@ def handler(event: dict, context) -> dict:
         )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Архивация задачи с исходом
+    if action == 'archive':
+        task_id = body.get('id')
+        outcome = body.get('outcome') or 'done'
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(
+            f"UPDATE {schema}.tasks SET archived = true, outcome = %s, archived_at = NOW(), updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (outcome, int(task_id))
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+
+    # Возврат задачи из архива
+    if action == 'unarchive':
+        task_id = body.get('id')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(
+            f"UPDATE {schema}.tasks SET archived = false, outcome = NULL, archived_at = NULL, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (int(task_id),)
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
     # Удаление задачи
     if action == 'delete':

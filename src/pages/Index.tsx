@@ -65,7 +65,8 @@ type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
 type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
-type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'needs_test' | 'tested_ok' | 'tested_rework';
+type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'needs_test' | 'tested_ok' | 'tested_rework' | 'unfeasible';
+type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 
 interface Comment {
   id: string;
@@ -82,7 +83,18 @@ const deployStatuses: { id: DeployStatus; label: string; color: string; icon: st
   { id: 'needs_test',    label: 'Требуется тест',                color: '35 85% 58%',  icon: 'ClipboardCheck' },
   { id: 'tested_ok',     label: 'Протестировано — всё ок',       color: '152 55% 50%', icon: 'CircleCheck' },
   { id: 'tested_rework', label: 'На доработку (есть замечания)', color: '0 65% 60%',   icon: 'CircleX' },
+  { id: 'unfeasible',    label: 'Нереализуемо',                  color: '0 0% 55%',    icon: 'Ban' },
 ];
+
+const outcomes: { id: TaskOutcome; label: string; color: string; icon: string }[] = [
+  { id: 'done',       label: 'Реализовано',   color: '152 55% 50%', icon: 'CircleCheck' },
+  { id: 'unfeasible', label: 'Нереализуемо',  color: '0 0% 55%',    icon: 'Ban' },
+  { id: 'cancelled',  label: 'Отменено',      color: '0 65% 60%',   icon: 'XCircle' },
+];
+
+function outcomeMeta(id: TaskOutcome) {
+  return outcomes.find((o) => o.id === id) ?? outcomes[0];
+}
 
 interface Server {
   id: ServerId;
@@ -137,6 +149,8 @@ interface Task {
   sprintId?: string;
   deployStatus?: DeployStatus;
   comments?: Comment[];
+  archived?: boolean;
+  outcome?: TaskOutcome | null;
 }
 
 interface Bug {
@@ -210,10 +224,11 @@ const priorityMap: Record<Priority, { label: string; color: string; bg: string }
 export default function Index() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [view, setView] = useState<'board' | 'bugs' | 'sprints'>('board');
+  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
+  const [outcomeFilter, setOutcomeFilter] = useState<TaskOutcome | 'all'>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -261,10 +276,16 @@ export default function Index() {
     return () => clearInterval(t);
   }, [loadTeam, loadTasks]);
 
-  const filteredTasks = tasks
+  const activeTasks = tasks.filter((t) => !t.archived);
+  const archivedTasks = tasks.filter((t) => t.archived);
+  const filteredTasks = activeTasks
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category)
     .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter);
+  const filteredArchive = archivedTasks
+    .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)
+    .filter((t) => server === 'all' || t.server === server)
+    .filter((t) => category === 'all' || t.category === category);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
 
   async function handleAddTask(task: Task) {
@@ -306,6 +327,33 @@ export default function Index() {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ action: 'delete', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleArchiveTask(id: string, outcome: TaskOutcome) {
+    setSelectedTask(null);
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true, outcome } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'archive', id, outcome }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleUnarchiveTask(id: string) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: false, outcome: null } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'unarchive', id }),
       });
     } catch {
       /* ignore */
@@ -443,6 +491,7 @@ export default function Index() {
               {view === 'board' && 'Доска задач'}
               {view === 'bugs' && 'Трекер ошибок'}
               {view === 'sprints' && 'Спринты'}
+              {view === 'archive' && 'Архив задач'}
             </span>
           </div>
           <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
@@ -450,6 +499,7 @@ export default function Index() {
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
               { k: 'sprints', label: 'Спринты', icon: 'Zap' },
+              { k: 'archive', label: 'Архив', icon: 'Archive' },
             ].map((t) => (
               <button
                 key={t.k}
@@ -605,10 +655,21 @@ export default function Index() {
           {view === 'sprints' && (
             <Sprints
               sprints={sprints}
-              tasks={tasks}
+              tasks={activeTasks}
               onUpdate={(updated) => setSprints((prev) => prev.map((s) => s.id === updated.id ? updated : s))}
               onDelete={(id) => setSprints((prev) => prev.filter((s) => s.id !== id))}
               onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
+            />
+          )}
+          {view === 'archive' && (
+            <Archive
+              tasks={filteredArchive}
+              total={archivedTasks.length}
+              team={team}
+              outcomeFilter={outcomeFilter}
+              onOutcomeFilter={setOutcomeFilter}
+              onCardClick={setSelectedTask}
+              onRestore={handleUnarchiveTask}
             />
           )}
         </div>
@@ -621,6 +682,8 @@ export default function Index() {
           onClose={() => setSelectedTask(null)}
           onSave={handleUpdateTask}
           onDelete={handleDeleteTask}
+          onArchive={handleArchiveTask}
+          onUnarchive={handleUnarchiveTask}
           sprints={sprints}
         />
       )}
@@ -764,12 +827,6 @@ function Board({
                           {t.comments.length}
                         </span>
                       )}
-                      {t.version && (
-                        <span className="ml-auto text-xs font-mono text-primary/70 flex items-center gap-1">
-                          <Icon name="Tag" size={10} />
-                          {t.version}
-                        </span>
-                      )}
                     </div>
                   </div>
                 );
@@ -890,12 +947,14 @@ function Select({ label, value, onChange, options }: {
 
 const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
 
-function TaskModal({ task, team, onClose, onSave, onDelete, sprints }: {
+function TaskModal({ task, team, onClose, onSave, onDelete, onArchive, onUnarchive, sprints }: {
   task: Task;
   team: TeamMember[];
   onClose: () => void;
   onSave: (t: Task) => void;
   onDelete: (id: string) => void;
+  onArchive: (id: string, outcome: TaskOutcome) => void;
+  onUnarchive: (id: string) => void;
   sprints: Sprint[];
 }) {
   const { user } = useAuth();
@@ -904,6 +963,7 @@ function TaskModal({ task, team, onClose, onSave, onDelete, sprints }: {
   const [comments, setComments] = useState<Comment[]>(task.comments ?? []);
   const [newComment, setNewComment] = useState('');
   const [newLink, setNewLink] = useState({ url: '', label: '' });
+  const [archiveMenu, setArchiveMenu] = useState(false);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignee = (v: string) => setForm((p) => ({ ...p, assigneeId: v ? Number(v) : null }));
 
@@ -945,8 +1005,53 @@ function TaskModal({ task, team, onClose, onSave, onDelete, sprints }: {
         <div className="flex items-center gap-3">
           <PriorityBadge p={form.priority} />
           <ServerBadge id={form.server} />
+          {task.archived && task.outcome && (
+            <span
+              className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md"
+              style={{ background: `hsl(${outcomeMeta(task.outcome).color} / 0.15)`, color: `hsl(${outcomeMeta(task.outcome).color})` }}
+            >
+              <Icon name={outcomeMeta(task.outcome).icon} size={12} />
+              {outcomeMeta(task.outcome).label}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
+          {task.archived ? (
+            <button
+              onClick={() => onUnarchive(task.id)}
+              className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+            >
+              <Icon name="ArchiveRestore" size={13} />
+              Вернуть на доску
+            </button>
+          ) : (
+            <div className="relative">
+              <button
+                onClick={() => setArchiveMenu((v) => !v)}
+                className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+              >
+                <Icon name="Archive" size={13} />
+                В архив
+                <Icon name="ChevronDown" size={12} />
+              </button>
+              {archiveMenu && (
+                <div className="absolute right-0 top-9 z-10 w-48 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
+                  {outcomes.map((o) => (
+                    <button
+                      key={o.id}
+                      onClick={() => { setArchiveMenu(false); onArchive(task.id, o.id); }}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                      style={{ color: `hsl(${o.color})` }}
+                    >
+                      <Icon name={o.icon} size={14} />
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <button
             onClick={() => onDelete(task.id)}
             className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors"
@@ -999,10 +1104,6 @@ function TaskModal({ task, team, onClose, onSave, onDelete, sprints }: {
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
-          </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
-            <input value={form.version ?? ''} onChange={(e) => set('version', e.target.value)} placeholder="v2.4.0" className={inputCls} />
           </div>
         </div>
 
@@ -1161,7 +1262,6 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
     assigneeId: null as number | null,
     priority: 'medium' as Priority,
     tag: '',
-    version: '',
     server: 'hfnew' as ServerId,
     category: 'other' as CategoryId,
     sprintId: activeSprint?.id ?? '',
@@ -1183,7 +1283,6 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
     onCreate({
       ...form,
       id: 't' + Date.now(),
-      version: form.version || undefined,
       links,
     } as Task);
   }
@@ -1235,10 +1334,6 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
             <input value={form.tag} onChange={(e) => set('tag', e.target.value)} placeholder="Геймплей..." className={inputCls} />
           </div>
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Версия</label>
-            <input value={form.version} onChange={(e) => set('version', e.target.value)} placeholder="v2.4.0" className={inputCls} />
-          </div>
         </div>
 
         <div>
@@ -1283,6 +1378,97 @@ function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
   );
 }
 
+function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore }: {
+  tasks: Task[];
+  total: number;
+  team: TeamMember[];
+  outcomeFilter: TaskOutcome | 'all';
+  onOutcomeFilter: (o: TaskOutcome | 'all') => void;
+  onCardClick: (t: Task) => void;
+  onRestore: (id: string) => void;
+}) {
+  return (
+    <div className="max-w-4xl animate-fade-in">
+      <div className="flex items-center gap-3 mb-1">
+        <Icon name="Archive" size={20} className="text-primary" />
+        <h2 className="font-display tracking-wide text-lg">Архив задач</h2>
+        <span className="text-sm text-muted-foreground">· {total} в архиве</span>
+      </div>
+      <p className="text-sm text-muted-foreground mb-5">Завершённые и закрытые задачи. Можно вернуть любую обратно на доску.</p>
+
+      <div className="flex flex-wrap gap-2 mb-5">
+        <button
+          onClick={() => onOutcomeFilter('all')}
+          className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+            outcomeFilter === 'all' ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-border hover:text-foreground'
+          }`}
+        >
+          Все
+        </button>
+        {outcomes.map((o) => {
+          const active = outcomeFilter === o.id;
+          return (
+            <button
+              key={o.id}
+              onClick={() => onOutcomeFilter(o.id)}
+              className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5"
+              style={{
+                background: active ? `hsl(${o.color} / 0.18)` : 'transparent',
+                borderColor: active ? `hsl(${o.color} / 0.5)` : 'hsl(var(--border))',
+                color: active ? `hsl(${o.color})` : 'hsl(var(--muted-foreground))',
+              }}
+            >
+              <Icon name={o.icon} size={12} />
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {tasks.length === 0 ? (
+        <div className="text-center py-16 text-muted-foreground">
+          <Icon name="Archive" size={40} className="mx-auto mb-3 opacity-40" />
+          <p className="text-sm">В архиве пока пусто</p>
+        </div>
+      ) : (
+        <div className="space-y-2.5">
+          {tasks.map((t) => {
+            const a = resolveAssignee(team, t.assigneeId);
+            const om = outcomeMeta(t.outcome ?? 'done');
+            return (
+              <div
+                key={t.id}
+                className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/40 transition-colors group"
+              >
+                <span
+                  className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md shrink-0"
+                  style={{ background: `hsl(${om.color} / 0.15)`, color: `hsl(${om.color})` }}
+                >
+                  <Icon name={om.icon} size={12} />
+                  {om.label}
+                </span>
+                <button onClick={() => onCardClick(t)} className="flex-1 min-w-0 text-left">
+                  <div className="text-sm font-medium truncate">{t.title}</div>
+                  <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {a.name}</div>
+                </button>
+                <AssigneeAvatar a={a} size={26} />
+                <button
+                  onClick={() => onRestore(t.id)}
+                  title="Вернуть на доску"
+                  className="shrink-0 h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+                >
+                  <Icon name="ArchiveRestore" size={13} />
+                  <span className="hidden sm:inline">Вернуть</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
   sprints: Sprint[];
   tasks: Task[];
@@ -1291,6 +1477,7 @@ function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
   onFilterBoard: (sprintId: string) => void;
 }) {
   const [editing, setEditing] = useState<Sprint | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
 
   const statusMeta: Record<Sprint['status'], { label: string; color: string; icon: string }> = {
     active:  { label: 'Активный', color: '152 55% 50%', icon: 'Zap' },
@@ -1302,16 +1489,10 @@ function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
     return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
   }
 
-  return (
-    <div className="max-w-3xl animate-fade-in">
-      <div className="flex items-center gap-3 mb-6">
-        <Icon name="Zap" size={20} className="text-primary" />
-        <h2 className="font-display tracking-wide text-lg">Спринты</h2>
-        <span className="text-sm text-muted-foreground">· {sprints.length} спринтов</span>
-      </div>
+  const activeSprints = sprints.filter((s) => s.status !== 'done');
+  const archivedSprints = sprints.filter((s) => s.status === 'done');
 
-      <div className="space-y-4">
-        {sprints.map((sp, i) => {
+  function renderSprint(sp: Sprint, i: number) {
           const spTasks = tasks.filter((t) => t.sprintId === sp.id);
           const done = spTasks.filter((t) => t.column === 'done').length;
           const total = spTasks.length;
@@ -1385,14 +1566,44 @@ function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
               </div>
             </div>
           );
-        })}
+  }
 
-        {sprints.length === 0 && (
+  return (
+    <div className="max-w-3xl animate-fade-in">
+      <div className="flex items-center gap-3 mb-6">
+        <Icon name="Zap" size={20} className="text-primary" />
+        <h2 className="font-display tracking-wide text-lg">Спринты</h2>
+        <span className="text-sm text-muted-foreground">· {activeSprints.length} активных</span>
+      </div>
+
+      <div className="space-y-4">
+        {activeSprints.map((sp, i) => renderSprint(sp, i))}
+
+        {activeSprints.length === 0 && (
           <div className="rounded-xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-            Спринтов пока нет — создай первый
+            Активных спринтов нет — создай новый
           </div>
         )}
       </div>
+
+      {archivedSprints.length > 0 && (
+        <div className="mt-8">
+          <button
+            onClick={() => setShowArchive((v) => !v)}
+            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
+          >
+            <Icon name={showArchive ? 'ChevronDown' : 'ChevronRight'} size={16} />
+            <Icon name="Archive" size={15} />
+            Архив спринтов
+            <span className="text-xs font-mono opacity-60">{archivedSprints.length}</span>
+          </button>
+          {showArchive && (
+            <div className="space-y-4 opacity-80">
+              {archivedSprints.map((sp, i) => renderSprint(sp, i))}
+            </div>
+          )}
+        </div>
+      )}
 
       {editing && (
         <SprintEditModal
