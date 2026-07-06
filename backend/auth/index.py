@@ -123,7 +123,7 @@ def handler(event: dict, context) -> dict:
     if not existing and username:
         # Заготовка из белого списка (telegram_id <= 0 означает, что реальный вход ещё не был)
         cur.execute(
-            f"SELECT id, role FROM {schema}.users WHERE lower(tg_username) = lower(%s) AND telegram_id <= 0 AND is_active = true LIMIT 1",
+            f"SELECT id, role FROM {schema}.users WHERE lower(tg_username) = lower(%s) AND telegram_id < 0 AND is_active = true ORDER BY id LIMIT 1",
             (username,)
         )
         placeholder = cur.fetchone()

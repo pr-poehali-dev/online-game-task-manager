@@ -99,14 +99,17 @@ def handler(event: dict, context) -> dict:
         _send_message(chat_id, 'Срок действия кода истёк. Получите новый код на странице входа.')
         return {'statusCode': 200, 'body': json.dumps({'ok': True})}
 
-    # ищем пользователя по telegram_id или по белому списку (username)
+    # Идентификация СТРОГО по реальному telegram_id (защита от подмены username).
     cur.execute(f"SELECT id, role, is_active FROM {schema}.users WHERE telegram_id = %s", (telegram_id,))
     existing = cur.fetchone()
 
+    # Плейсхолдер из белого списка: только приглашённые (telegram_id < 0), активные, ещё не привязанные.
     placeholder = None
     if not existing and username:
         cur.execute(
-            f"SELECT id, role FROM {schema}.users WHERE lower(tg_username) = lower(%s) AND telegram_id <= 0 AND is_active = true LIMIT 1",
+            f"SELECT id, role FROM {schema}.users "
+            f"WHERE lower(tg_username) = lower(%s) AND telegram_id < 0 AND is_active = true "
+            f"ORDER BY id LIMIT 1",
             (username,)
         )
         placeholder = cur.fetchone()
@@ -116,22 +119,35 @@ def handler(event: dict, context) -> dict:
         if not is_active:
             cur.execute(f"UPDATE {schema}.login_codes SET status = 'denied', error = 'inactive' WHERE id = %s", (code_id,))
             cur.close(); conn.close()
+            print(f"[tg-webhook] DENIED inactive: telegram_id={telegram_id} username={username!r}")
             _send_message(chat_id, 'Ваш доступ отключён. Обратитесь к руководителю.')
             return {'statusCode': 200, 'body': json.dumps({'ok': True})}
         cur.execute(
             f"UPDATE {schema}.users SET username = %s, first_name = %s, last_name = %s, updated_at = NOW() WHERE id = %s",
             (username, first_name, last_name, user_id)
         )
+        print(f"[tg-webhook] LOGIN existing: user_id={user_id} telegram_id={telegram_id} username={username!r} role={role}")
     elif placeholder:
         user_id, role = placeholder
+        # Атомарная привязка: занимаем плейсхолдер, только если он ВСЁ ЕЩЁ свободен (telegram_id < 0).
+        # Защищает от гонки и повторной привязки чужого аккаунта.
         cur.execute(
-            f"UPDATE {schema}.users SET telegram_id = %s, username = %s, first_name = %s, last_name = %s, updated_at = NOW() WHERE id = %s",
+            f"UPDATE {schema}.users SET telegram_id = %s, username = %s, first_name = %s, last_name = %s, updated_at = NOW() "
+            f"WHERE id = %s AND telegram_id < 0 RETURNING id",
             (telegram_id, username, first_name, last_name, user_id)
         )
+        if not cur.fetchone():
+            cur.execute(f"UPDATE {schema}.login_codes SET status = 'denied', error = 'not_allowed' WHERE id = %s", (code_id,))
+            cur.close(); conn.close()
+            print(f"[tg-webhook] DENIED race/taken placeholder: telegram_id={telegram_id} username={username!r}")
+            _send_message(chat_id, 'Не удалось привязать аккаунт. Попросите руководителя пригласить вас заново.')
+            return {'statusCode': 200, 'body': json.dumps({'ok': True})}
+        print(f"[tg-webhook] BIND placeholder: user_id={user_id} telegram_id={telegram_id} username={username!r} role={role}")
     else:
         # не в белом списке
         cur.execute(f"UPDATE {schema}.login_codes SET status = 'denied', error = 'not_allowed' WHERE id = %s", (code_id,))
         cur.close(); conn.close()
+        print(f"[tg-webhook] DENIED not_allowed: telegram_id={telegram_id} username={username!r}")
         uname = f"@{username}" if username else 'без username'
         _send_message(chat_id, f'У вашего аккаунта ({uname}) нет доступа. Попросите руководителя добавить вас в команду.')
         return {'statusCode': 200, 'body': json.dumps({'ok': True})}
