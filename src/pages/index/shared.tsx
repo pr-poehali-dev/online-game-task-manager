@@ -4,6 +4,7 @@ import func2url from '../../../backend/func2url.json';
 
 export const AUTH_URL = (func2url as Record<string, string>).auth;
 export const TASKS_URL = (func2url as Record<string, string>).tasks;
+export const IDEAS_URL = (func2url as Record<string, string>).ideas;
 export const TOKEN_KEY = 'era_auth_token';
 
 export function authHeaders(): Record<string, string> {
@@ -63,7 +64,7 @@ export function resolveAssignee(team: TeamMember[], id: number | null): Assignee
 }
 
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
-export type ColumnId = 'todo' | 'progress' | 'done';
+export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
 export type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'needs_test' | 'tested_ok' | 'tested_rework' | 'unfeasible';
@@ -154,6 +155,7 @@ export interface Task {
   archived?: boolean;
   outcome?: TaskOutcome | null;
   kbArticleIds?: number[];
+  restartDone?: boolean;
 }
 
 export interface Bug {

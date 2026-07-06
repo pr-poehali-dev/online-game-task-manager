@@ -57,12 +57,13 @@ def _row_to_task(r):
         'outcome': r[14],
         'assigneeIds': r[15] if r[15] is not None else [],
         'kbArticleIds': r[16] if r[16] is not None else [],
+        'restartDone': bool(r[17]),
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, tag, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done"
 )
 
 
@@ -181,7 +182,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, tag = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, updated_at = NOW() "
+            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
@@ -198,6 +199,7 @@ def handler(event: dict, context) -> dict:
                 body.get('description'),
                 links,
                 kb_ids,
+                bool(body.get('restartDone', False)),
                 int(task_id),
             )
         )
@@ -220,6 +222,41 @@ def handler(event: dict, context) -> dict:
         )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Перенос задачи в раздел «К рестарту»
+    if action == 'to_restart':
+        task_id = body.get('id')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(
+            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (int(task_id),)
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+
+    # Отметка задачи «К рестарту» выполненной / снятие отметки
+    if action == 'set_restart_done':
+        task_id = body.get('id')
+        done = bool(body.get('done', True))
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(
+            f"UPDATE {schema}.tasks SET restart_done = %s, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (done, int(task_id))
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
     # Архивация задачи с исходом
     if action == 'archive':

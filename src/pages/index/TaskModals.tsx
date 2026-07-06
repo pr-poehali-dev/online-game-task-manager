@@ -268,6 +268,7 @@ export function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSa
             { value: 'todo', label: 'To Do' },
             { value: 'progress', label: 'In Progress' },
             { value: 'done', label: 'Done' },
+            { value: 'restart', label: 'К рестарту' },
           ]} />
           <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
             { value: 'critical', label: 'Критический' },
@@ -524,6 +525,7 @@ export function CreateTaskModal({ column, team, kbArticles, preset, onClose, onC
             { value: 'todo', label: 'To Do' },
             { value: 'progress', label: 'In Progress' },
             { value: 'done', label: 'Done' },
+            { value: 'restart', label: 'К рестарту' },
           ]} />
           <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
             { value: 'critical', label: 'Критический' },

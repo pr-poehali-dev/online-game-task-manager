@@ -1,0 +1,197 @@
+import json
+import os
+
+import psycopg2
+
+
+def _cors_headers():
+    return {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, X-Auth-Token',
+        'Access-Control-Max-Age': '86400',
+        'Content-Type': 'application/json',
+    }
+
+
+def _schema():
+    return os.environ.get('MAIN_DB_SCHEMA', 'public')
+
+
+def _db():
+    conn = psycopg2.connect(os.environ['DATABASE_URL'])
+    conn.autocommit = True
+    return conn
+
+
+def _current_user(cur, schema, token):
+    if not token:
+        return None
+    cur.execute(
+        f"SELECT u.id, u.role FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+        f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
+        (token,)
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {'id': row[0], 'role': row[1]}
+
+
+def _topic_row(r):
+    return {
+        'id': str(r[0]),
+        'title': r[1],
+        'body': r[2],
+        'status': r[3],
+        'authorId': r[4],
+        'createdAt': r[5].isoformat() if r[5] else None,
+        'updatedAt': r[6].isoformat() if r[6] else None,
+    }
+
+
+def _comment_row(r):
+    return {
+        'id': str(r[0]),
+        'topicId': str(r[1]),
+        'authorId': r[2],
+        'text': r[3],
+        'createdAt': r[4].isoformat() if r[4] else None,
+    }
+
+
+TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at"
+COMMENT_COLS = "id, topic_id, author_id, text, created_at"
+
+
+def handler(event: dict, context) -> dict:
+    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Закрывать топик может автор или админ. Доступно авторизованным участникам.'''
+    method = event.get('httpMethod', 'GET')
+    if method == 'OPTIONS':
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+
+    schema = _schema()
+    headers = event.get('headers', {})
+    token = headers.get('X-Auth-Token') or headers.get('x-auth-token')
+
+    conn = _db()
+    cur = conn.cursor()
+
+    me = _current_user(cur, schema, token)
+    if not me:
+        cur.close(); conn.close()
+        return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unauthorized'})}
+
+    body = {}
+    if event.get('body'):
+        try:
+            body = json.loads(event['body'])
+        except Exception:
+            body = {}
+
+    qs = event.get('queryStringParameters') or {}
+    action = body.get('action') or qs.get('action') or ('list' if method == 'GET' else '')
+
+    # Список топиков (+ количество комментариев)
+    if action == 'list' or (method == 'GET' and not qs.get('id')):
+        cur.execute(
+            f"SELECT t.id, t.title, t.body, t.status, t.author_id, t.created_at, t.updated_at, "
+            f"(SELECT COUNT(*) FROM {schema}.idea_comments c WHERE c.topic_id = t.id) AS cnt "
+            f"FROM {schema}.idea_topics t ORDER BY t.updated_at DESC"
+        )
+        items = []
+        for r in cur.fetchall():
+            d = _topic_row(r[:7])
+            d['commentsCount'] = r[7]
+            items.append(d)
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topics': items})}
+
+    # Один топик с комментариями
+    if action == 'get' or (method == 'GET' and qs.get('id')):
+        tid = body.get('id') or qs.get('id')
+        cur.execute(f"SELECT {TOPIC_COLS} FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        topic = _topic_row(row)
+        cur.execute(f"SELECT {COMMENT_COLS} FROM {schema}.idea_comments WHERE topic_id = %s ORDER BY created_at ASC", (int(tid),))
+        comments = [_comment_row(c) for c in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic, 'comments': comments})}
+
+    # Создать топик
+    if action == 'create':
+        title = (body.get('title') or '').strip()
+        if not title:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
+        cur.execute(
+            f"INSERT INTO {schema}.idea_topics (title, body, author_id) VALUES (%s, %s, %s) RETURNING {TOPIC_COLS}",
+            (title, body.get('body') or '', me['id'])
+        )
+        topic = _topic_row(cur.fetchone())
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
+
+    # Добавить комментарий
+    if action == 'comment':
+        tid = body.get('topicId')
+        text = (body.get('text') or '').strip()
+        if not tid or not text:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(
+            f"INSERT INTO {schema}.idea_comments (topic_id, author_id, text) VALUES (%s, %s, %s) RETURNING {COMMENT_COLS}",
+            (int(tid), me['id'], text)
+        )
+        comment = _comment_row(cur.fetchone())
+        cur.execute(f"UPDATE {schema}.idea_topics SET updated_at = NOW() WHERE id = %s", (int(tid),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}
+
+    # Сменить статус топика (закрыть/переоткрыть). Только автор или админ.
+    if action == 'set_status':
+        tid = body.get('id')
+        status = body.get('status')
+        if not tid or status not in ('open', 'wont_do', 'sent'):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if row[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        cur.execute(
+            f"UPDATE {schema}.idea_topics SET status = %s, updated_at = NOW() WHERE id = %s RETURNING {TOPIC_COLS}",
+            (status, int(tid))
+        )
+        topic = _topic_row(cur.fetchone())
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
+
+    # Удалить топик. Только автор или админ.
+    if action == 'delete':
+        tid = body.get('id')
+        if not tid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if row[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        cur.execute(f"DELETE FROM {schema}.idea_comments WHERE topic_id = %s", (int(tid),))
+        cur.execute(f"DELETE FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    cur.close(); conn.close()
+    return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unknown_action'})}

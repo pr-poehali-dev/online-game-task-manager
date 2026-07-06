@@ -32,13 +32,15 @@ import type {
   ColumnId,
 } from './index/shared';
 import Board from './index/Board';
+import Restart from './index/Restart';
+import Ideas from './index/Ideas';
 import { TaskModal, CreateTaskModal } from './index/TaskModals';
 import { Bugs, Archive, Sprints, CreateSprintModal } from './index/SprintsBugsArchive';
 
 export default function Index() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive' | 'knowledge'>('board');
+  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -251,6 +253,32 @@ export default function Index() {
     }
   }
 
+  async function handleToRestart(id: string) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'restart', restartDone: false } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'to_restart', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function handleToggleRestartDone(id: string, done: boolean) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, restartDone: done } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'set_restart_done', id, done }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handleDeleteArchivedTask(id: string) {
     const task = tasks.find((t) => t.id === id);
     setTasks((prev) => prev.filter((t) => t.id !== id));
@@ -405,13 +433,17 @@ export default function Index() {
               {view === 'sprints' && 'Спринты'}
               {view === 'archive' && 'Архив задач'}
               {view === 'knowledge' && 'База знаний'}
+              {view === 'restart' && 'К рестарту'}
+              {view === 'ideas' && 'Идеи'}
             </span>
           </div>
           <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
             {[
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
+              { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
               { k: 'sprints', label: 'Спринты', icon: 'Zap' },
+              { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
               { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
               { k: 'archive', label: 'Архив', icon: 'Archive' },
             ].map((t) => (
@@ -469,7 +501,7 @@ export default function Index() {
                 <span className="hidden sm:inline">Войти</span>
               </button>
             )}
-            {view === 'sprints' ? (
+            {view === 'sprints' && (
               <button
                 onClick={() => setCreateSprint(true)}
                 className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
@@ -477,7 +509,8 @@ export default function Index() {
                 <Icon name="Plus" size={15} />
                 <span className="hidden sm:inline">Спринт</span>
               </button>
-            ) : (
+            )}
+            {view === 'board' && (
               <button
                 onClick={() => setCreateFor('todo')}
                 className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
@@ -628,6 +661,27 @@ export default function Index() {
               category={category as KbCategoryId | 'all'}
               initialArticleId={openArticleId}
               onConsumeInitial={() => setOpenArticleId(null)}
+              authors={team.map((m) => ({
+                id: m.id,
+                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
+                photo_url: m.photo_url,
+              }))}
+            />
+          )}
+          {view === 'restart' && (
+            <Restart
+              tasks={tasks}
+              team={team}
+              loading={tasksLoading}
+              onCardClick={setSelectedTask}
+              onAddClick={() => setCreateFor('restart')}
+              onToRestart={handleToRestart}
+              onToggleDone={handleToggleRestartDone}
+              onArchive={handleArchiveTask}
+            />
+          )}
+          {view === 'ideas' && (
+            <Ideas
               authors={team.map((m) => ({
                 id: m.id,
                 name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
