@@ -8,12 +8,14 @@ import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
 import { Placeholder } from '@tiptap/extension-placeholder';
 import { Underline } from '@tiptap/extension-underline';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 
 interface Props {
   content: string;
   onChange: (html: string) => void;
+  placeholder?: string;
+  onImageUpload?: (file: File) => Promise<string>;
 }
 
 function ToolBtn({
@@ -47,18 +49,20 @@ function Divider() {
   return <div className="w-px h-5 bg-border mx-0.5 shrink-0" />;
 }
 
-export default function RichEditor({ content, onChange }: Props) {
+export default function RichEditor({ content, onChange, placeholder, onImageUpload }: Props) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
   const [imgDialogOpen, setImgDialogOpen] = useState(false);
   const [imgUrl, setImgUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
     extensions: [
       StarterKit,
       Underline,
-      Placeholder.configure({ placeholder: 'Опишите задачу подробнее...' }),
+      Placeholder.configure({ placeholder: placeholder ?? 'Опишите задачу подробнее...' }),
       Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Image.configure({ inline: false }),
       Table.configure({ resizable: false }),
@@ -91,6 +95,21 @@ export default function RichEditor({ content, onChange }: Props) {
     editor!.chain().focus().setImage({ src: imgUrl }).run();
     setImgUrl('');
     setImgDialogOpen(false);
+  }
+
+  async function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !onImageUpload) return;
+    setUploading(true);
+    try {
+      const url = await onImageUpload(file);
+      if (url) editor!.chain().focus().setImage({ src: url }).run();
+    } catch {
+      /* ignore */
+    } finally {
+      setUploading(false);
+    }
   }
 
   function insertTable() {
@@ -146,9 +165,14 @@ export default function RichEditor({ content, onChange }: Props) {
         <ToolBtn title="Ссылка" active={editor.isActive('link')} onClick={() => { setLinkUrl(editor.getAttributes('link').href || ''); setLinkDialogOpen(true); }}>
           <Icon name="Link" size={14} />
         </ToolBtn>
-        <ToolBtn title="Изображение" active={false} onClick={() => setImgDialogOpen(true)}>
+        <ToolBtn title="Изображение по ссылке" active={false} onClick={() => setImgDialogOpen(true)}>
           <Icon name="Image" size={14} />
         </ToolBtn>
+        {onImageUpload && (
+          <ToolBtn title="Загрузить изображение" active={false} onClick={() => fileInputRef.current?.click()}>
+            <Icon name={uploading ? 'Loader2' : 'ImagePlus'} size={14} />
+          </ToolBtn>
+        )}
         <ToolBtn title="Таблица" active={false} onClick={insertTable}>
           <Icon name="Table" size={14} />
         </ToolBtn>
@@ -246,6 +270,8 @@ export default function RichEditor({ content, onChange }: Props) {
           </div>
         </div>
       )}
+
+      <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleFilePicked} />
     </div>
   );
 }

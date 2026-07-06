@@ -3,6 +3,8 @@ import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import KnowledgeBase from '@/components/KnowledgeBase';
+import type { KbCategoryId } from '@/components/KnowledgeBase';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import func2url from '../../backend/func2url.json';
@@ -231,7 +233,7 @@ const priorityMap: Record<Priority, { label: string; color: string; bg: string }
 export default function Index() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive'>('board');
+  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive' | 'knowledge'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -576,6 +578,7 @@ export default function Index() {
               {view === 'bugs' && 'Трекер ошибок'}
               {view === 'sprints' && 'Спринты'}
               {view === 'archive' && 'Архив задач'}
+              {view === 'knowledge' && 'База знаний'}
             </span>
           </div>
           <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
@@ -583,6 +586,7 @@ export default function Index() {
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'bugs', label: 'Баги', icon: 'Bug' },
               { k: 'sprints', label: 'Спринты', icon: 'Zap' },
+              { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
               { k: 'archive', label: 'Архив', icon: 'Archive' },
             ].map((t) => (
               <button
@@ -791,6 +795,16 @@ export default function Index() {
               onCardClick={setSelectedTask}
               onRestore={handleUnarchiveTask}
               onDelete={handleDeleteArchivedTask}
+            />
+          )}
+          {view === 'knowledge' && (
+            <KnowledgeBase
+              category={category as KbCategoryId | 'all'}
+              authors={team.map((m) => ({
+                id: m.id,
+                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
+                photo_url: m.photo_url,
+              }))}
             />
           )}
         </div>
