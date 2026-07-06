@@ -6,12 +6,17 @@ import urllib.error
 import psycopg2
 
 
-def _tg_send(chat_id, text):
+def _tg_send(chat_id, text, button_url=None):
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
     if not token or not chat_id:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({'chat_id': chat_id, 'text': text}).encode()
+    payload = {'chat_id': chat_id, 'text': text}
+    if button_url:
+        payload['reply_markup'] = {
+            'inline_keyboard': [[{'text': '🔗 Открыть задачу', 'url': button_url}]]
+        }
+    data = json.dumps(payload).encode()
     req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -33,9 +38,11 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id):
         (targets,)
     )
     rows = cur.fetchall()
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    button_url = app_url or None
     text = f"📌 Вам назначена задача:\n\n«{title}»\n\nОткройте таск-менеджер, чтобы посмотреть детали."
     for (tg_id,) in rows:
-        _tg_send(tg_id, text)
+        _tg_send(tg_id, text, button_url)
 
 
 def _cors_headers():
