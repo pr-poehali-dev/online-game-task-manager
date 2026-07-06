@@ -4,6 +4,7 @@ import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import func2url from '../../backend/func2url.json';
 
+// PERSISTENCE_MARKER_2024_PERM_CHECK — маркер проверки сохранения изменений
 const ADMIN_URL = (func2url as Record<string, string>).admin;
 const TOKEN_KEY = 'era_auth_token';
 
