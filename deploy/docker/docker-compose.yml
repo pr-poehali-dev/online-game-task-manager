@@ -1,0 +1,84 @@
+# Поднимает всё окружение в контейнерах: PostgreSQL, MinIO (S3) и backend.
+# Фронтенд (dist) раздаётся вашим Nginx на хосте (см. ../nginx.conf).
+#
+# Запуск:
+#   cd deploy/docker
+#   cp .env.example .env   # заполните значения
+#   docker compose up -d
+#
+# Миграции применятся автоматически при первом старте postgres
+# (файлы из ../../db_migrations монтируются в init-папку).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      # SQL-миграции применятся по порядку при первой инициализации БД
+      - ../../db_migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "127.0.0.1:9000:9000"   # S3 API
+      - "127.0.0.1:9001:9001"   # веб-консоль MinIO
+
+  # Создаёт публичный bucket "files" при старте
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set local http://minio:9000 ${AWS_ACCESS_KEY_ID} ${AWS_SECRET_ACCESS_KEY}) do echo 'ждём minio...'; sleep 2; done;
+      /usr/bin/mc mb --ignore-existing local/files;
+      /usr/bin/mc anonymous set download local/files;
+      echo 'bucket files готов';
+      exit 0;
+      "
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      MAIN_DB_SCHEMA: ${MAIN_DB_SCHEMA}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
+      APP_URL: ${APP_URL}
+      BACKEND_DIR: /app/backend
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL}
+    ports:
+      # backend наружу отдаёт хостовый Nginx через proxy_pass на этот порт
+      - "127.0.0.1:8000:8000"
+
+volumes:
+  pg_data:
+  minio_data:
