@@ -1,33 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
-import TelegramLoginButton from '@/components/TelegramLoginButton';
+import BotLoginButton from '@/components/BotLoginButton';
 import { useAuth } from '@/lib/auth';
-import type { TelegramAuthData } from '@/lib/auth';
+import type { AuthUser } from '@/lib/auth';
 
 export default function Login() {
   const navigate = useNavigate();
-  const { loginWithTelegram } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [debug, setDebug] = useState<string | null>(null);
 
-  async function handleAuth(data: TelegramAuthData) {
-    setBusy(true);
+  function handleSuccess(user: AuthUser) {
     setError(null);
-    setDebug(`Telegram передал: @${data.username ?? '—'} · ${data.first_name ?? ''} · id ${data.id}`);
-    try {
-      const user = await loginWithTelegram(data);
-      navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'login_failed';
-      if (msg === 'not_allowed') setError('У вашего аккаунта нет доступа. Обратитесь к руководителю, чтобы вас добавили в команду.');
-      else if (msg === 'inactive') setError('Ваш аккаунт деактивирован. Обратитесь к руководителю.');
-      else if (msg === 'bad_signature') setError('Не удалось подтвердить вход через Telegram. Попробуйте ещё раз.');
-      else setError('Ошибка входа. Попробуйте ещё раз.');
-    } finally {
-      setBusy(false);
-    }
+    navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
   }
 
   return (
@@ -39,30 +23,17 @@ export default function Login() {
           </div>
           <h1 className="text-xl font-semibold mb-2">Вход для команды</h1>
           <p className="text-sm text-muted-foreground">
-            Авторизуйтесь через Telegram, чтобы попасть в свой кабинет
+            Войдите через Telegram-бота, чтобы попасть в свой кабинет
           </p>
         </div>
 
         <div className="rounded-2xl border border-border bg-card p-6 flex flex-col items-center gap-4">
-          {busy ? (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
-              <Icon name="Loader2" size={16} className="animate-spin" />
-              Входим...
-            </div>
-          ) : (
-            <TelegramLoginButton onAuth={handleAuth} />
-          )}
+          <BotLoginButton onSuccess={handleSuccess} onError={setError} />
 
           {error && (
             <div className="w-full flex items-start gap-2 text-sm text-destructive bg-destructive/10 rounded-lg px-3 py-2">
               <Icon name="TriangleAlert" size={15} className="shrink-0 mt-0.5" />
               <span>{error}</span>
-            </div>
-          )}
-
-          {debug && (
-            <div className="w-full text-xs text-muted-foreground bg-secondary/50 rounded-lg px-3 py-2 font-mono break-all">
-              {debug}
             </div>
           )}
         </div>

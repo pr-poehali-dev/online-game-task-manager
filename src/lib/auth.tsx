@@ -32,6 +32,7 @@ interface AuthContextValue {
   loading: boolean;
   isAdmin: boolean;
   loginWithTelegram: (data: TelegramAuthData) => Promise<AuthUser>;
+  applySession: (token: string, user: AuthUser) => void;
   logout: () => Promise<void>;
 }
 
@@ -88,6 +89,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return result.user;
   }, []);
 
+  const applySession = useCallback((token: string, u: AuthUser) => {
+    localStorage.setItem(TOKEN_KEY, token);
+    setUser(u);
+  }, []);
+
   const logout = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_KEY);
@@ -102,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', loginWithTelegram, logout }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', loginWithTelegram, applySession, logout }}>
       {children}
     </AuthContext.Provider>
   );

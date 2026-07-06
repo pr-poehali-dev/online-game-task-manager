@@ -1,0 +1,29 @@
+{
+  "tests": [
+    {
+      "name": "Create login code",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create"},
+      "expectedStatus": 200,
+      "expectedBody": {"code": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Status of unknown code returns expired",
+      "method": "GET",
+      "path": "/?action=status&code=ZZZZZZ",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "expired"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Status without code returns error",
+      "method": "GET",
+      "path": "/?action=status",
+      "expectedStatus": 400,
+      "expectedBody": {"error": "no_code"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

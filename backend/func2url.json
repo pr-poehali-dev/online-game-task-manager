@@ -1,4 +1,6 @@
 {
+  "login-code": "https://functions.poehali.dev/4fd04e50-8d09-492e-89e1-aec5962144f1",
+  "tg-webhook": "https://functions.poehali.dev/372e14c9-0993-428e-a2f1-d0517cf6deb5",
   "admin": "https://functions.poehali.dev/34ab7e5c-02b0-4be8-9dbb-823221f2b24c",
   "auth": "https://functions.poehali.dev/bd45a664-c262-4040-baa1-d545163eaf50"
 }
