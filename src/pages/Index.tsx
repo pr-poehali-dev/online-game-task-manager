@@ -7,7 +7,12 @@ import { useAuth } from '@/lib/auth';
 import func2url from '../../backend/func2url.json';
 
 const AUTH_URL = (func2url as Record<string, string>).auth;
+const TASKS_URL = (func2url as Record<string, string>).tasks;
 const TOKEN_KEY = 'era_auth_token';
+
+function authHeaders(): Record<string, string> {
+  return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
+}
 
 interface TeamMember {
   id: number;
@@ -34,6 +39,26 @@ function initials(first: string, last: string | null): string {
   const b = (last || '').trim();
   if (a && b) return (a[0] + b[0]).toUpperCase();
   return (a.slice(0, 2) || '?').toUpperCase();
+}
+
+interface AssigneeView {
+  name: string;
+  short: string;
+  color: string;
+  photo_url: string | null;
+}
+
+function resolveAssignee(team: TeamMember[], id: number | null): AssigneeView {
+  const m = id != null ? team.find((t) => t.id === id) : undefined;
+  if (!m) {
+    return { name: 'Не назначен', short: '—', color: '215 15% 50%', photo_url: null };
+  }
+  return {
+    name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
+    short: initials(m.first_name, m.last_name),
+    color: hueFor(m.tg_username || m.first_name || String(m.id)),
+    photo_url: m.photo_url,
+  };
 }
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
@@ -97,20 +122,11 @@ function categoryMeta(id: CategoryId) {
   return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
 }
 
-interface Member {
-  id: string;
-  name: string;
-  role: string;
-  short: string;
-  color: string;
-  tg?: string;
-}
-
 interface Task {
   id: string;
   title: string;
   column: ColumnId;
-  assignee: string;
+  assigneeId: number | null;
   priority: Priority;
   tag: string;
   version?: string;
@@ -141,32 +157,13 @@ interface Sprint {
   status: 'active' | 'planned' | 'done';
 }
 
-const members: Member[] = [
-  { id: 'prog2', name: 'Вы', role: 'Программист · Руководитель', short: 'РП', color: '152 60% 48%' },
-  { id: 'prog1', name: 'Программист 1', role: 'Разработка', short: 'П1', color: '210 80% 60%', tg: '' },
-  { id: 'cm', name: 'Комьюнити-менеджер', role: 'Админ · Веб · Обновления', short: 'КМ', color: '270 65% 65%', tg: '' },
-  { id: 'smm', name: 'СММ', role: 'Соцсети · Баннеры · Розыгрыши', short: 'СМ', color: '330 70% 62%', tg: '' },
-  { id: 'support', name: 'Саппорт', role: 'Поддержка · Тестирование', short: 'СП', color: '35 85% 58%', tg: '' },
-  { id: 'mods', name: 'Модераторы', role: 'Новости · Игроки', short: 'МД', color: '190 70% 55%', tg: '' },
-];
-
 const columns: { id: ColumnId; title: string; icon: string }[] = [
   { id: 'todo', title: 'To Do', icon: 'Circle' },
   { id: 'progress', title: 'In Progress', icon: 'Timer' },
   { id: 'done', title: 'Done', icon: 'CheckCircle2' },
 ];
 
-const initialTasks: Task[] = [
-  { id: 't1', title: 'Баланс нового рейд-босса «Владыка Бездны»', column: 'progress', assignee: 'prog1', priority: 'high', tag: 'Геймплей', version: 'v2.4.0', server: 'hfnew', category: 'server-ext', sprintId: 's2' },
-  { id: 't2', title: 'Баннер к весеннему розыгрышу', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Контент', server: 'c4x1', category: 'social', sprintId: 's2' },
-  { id: 't3', title: 'Обновить лендинг под патч 2.4', column: 'todo', assignee: 'cm', priority: 'medium', tag: 'Сайт', version: 'v2.4.0', server: 'hfnew', category: 'web', sprintId: 's2' },
-  { id: 't4', title: 'Тест системы гильдейских войн', column: 'progress', assignee: 'support', priority: 'high', tag: 'QA', version: 'v2.4.0', server: 'hfx3old', category: 'client', sprintId: 's3' },
-  { id: 't5', title: 'Скрипт античита для торговли', column: 'progress', assignee: 'prog2', priority: 'critical', tag: 'Безопасность', server: 'hfx3old', category: 'server-scripts', sprintId: 's1' },
-  { id: 't6', title: 'Новость о начале ивента «Затмение»', column: 'done', assignee: 'mods', priority: 'low', tag: 'Новости', server: 'c4x1', category: 'social', sprintId: 's2' },
-  { id: 't7', title: 'Патчноут v2.3.5 в соцсети', column: 'done', assignee: 'smm', priority: 'medium', tag: 'Контент', version: 'v2.3.5', server: 'hfx3old', category: 'social', sprintId: 's1' },
-  { id: 't8', title: 'Обновить лаунчер — новый фон патча', column: 'todo', assignee: 'prog1', priority: 'high', tag: 'UI', server: 'hfnew', category: 'launcher', sprintId: 's2' },
-  { id: 't9', title: 'Настроить таргетинг рекламы ВКонтакте', column: 'todo', assignee: 'smm', priority: 'medium', tag: 'Продвижение', server: 'hfnew', category: 'ads', sprintId: 's3' },
-];
+
 
 const initialSprints: Sprint[] = [
   {
@@ -210,10 +207,6 @@ const priorityMap: Record<Priority, { label: string; color: string; bg: string }
   low: { label: 'Низкий', color: '152 50% 55%', bg: '152 50% 50% / 0.15' },
 };
 
-function member(id: string) {
-  return members.find((m) => m.id === id)!;
-}
-
 export default function Index() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
@@ -221,12 +214,13 @@ export default function Index() {
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
   const [createSprint, setCreateSprint] = useState(false);
   const [team, setTeam] = useState<TeamMember[]>([]);
+  const [tasksLoading, setTasksLoading] = useState(true);
 
   const loadTeam = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -246,11 +240,26 @@ export default function Index() {
     }
   }, []);
 
+  const loadTasks = useCallback(async () => {
+    try {
+      const res = await fetch(TASKS_URL, { method: 'GET', headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks(data.tasks || []);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setTasksLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadTeam();
+    loadTasks();
     const t = setInterval(loadTeam, 30000);
     return () => clearInterval(t);
-  }, [loadTeam]);
+  }, [loadTeam, loadTasks]);
 
   const filteredTasks = tasks
     .filter((t) => server === 'all' || t.server === server)
@@ -258,19 +267,49 @@ export default function Index() {
     .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter);
   const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
 
-  function handleAddTask(task: Task) {
-    setTasks((prev) => [...prev, task]);
+  async function handleAddTask(task: Task) {
     setCreateFor(null);
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'create', ...task }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTasks((prev) => [...prev, data.task]);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
-  function handleUpdateTask(updated: Task) {
+  async function handleUpdateTask(updated: Task) {
+    setSelectedTask(null);
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    setSelectedTask(null);
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'update', ...updated }),
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
-  function handleDeleteTask(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
+  async function handleDeleteTask(id: string) {
     setSelectedTask(null);
+    setTasks((prev) => prev.filter((t) => t.id !== id));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
   return (
@@ -340,11 +379,7 @@ export default function Index() {
               const hue = hueFor(m.tg_username || m.first_name || String(m.id));
               const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
               const tg = (m.tg_username || '').replace('@', '');
-              const demo = members.find(
-                (d) => d.name.toLowerCase() === displayName.toLowerCase() ||
-                       (!!m.tg_username && d.tg?.replace('@', '').toLowerCase() === tg.toLowerCase() && !!tg)
-              );
-              const openTasks = demo ? tasks.filter((t) => t.assignee === demo.id && t.column !== 'done').length : 0;
+              const openTasks = tasks.filter((t) => t.assigneeId === m.id && t.column !== 'done').length;
               return (
                 <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
                   <div className="relative shrink-0">
@@ -568,6 +603,8 @@ export default function Index() {
           {view === 'board' && (
             <Board
               tasks={filteredTasks}
+              team={team}
+              loading={tasksLoading}
               onCardClick={setSelectedTask}
               onAddClick={setCreateFor}
             />
@@ -588,6 +625,7 @@ export default function Index() {
       {selectedTask && (
         <TaskModal
           task={selectedTask}
+          team={team}
           onClose={() => setSelectedTask(null)}
           onSave={handleUpdateTask}
           onDelete={handleDeleteTask}
@@ -597,6 +635,7 @@ export default function Index() {
       {createFor && (
         <CreateTaskModal
           column={createFor}
+          team={team}
           onClose={() => setCreateFor(null)}
           onCreate={handleAddTask}
           sprints={sprints}
@@ -656,15 +695,41 @@ function CategoryBadge({ id }: { id: CategoryId }) {
   );
 }
 
+function AssigneeAvatar({ a, size = 24 }: { a: AssigneeView; size?: number }) {
+  if (a.photo_url) {
+    return <img src={a.photo_url} alt={a.name} title={a.name} className="rounded-md object-cover shrink-0" style={{ width: size, height: size }} />;
+  }
+  return (
+    <div
+      className="rounded-md flex items-center justify-center text-xs font-semibold shrink-0"
+      style={{ width: size, height: size, background: `hsl(${a.color} / 0.18)`, color: `hsl(${a.color})` }}
+      title={a.name}
+    >
+      {a.short}
+    </div>
+  );
+}
+
 function Board({
   tasks,
+  team,
+  loading,
   onCardClick,
   onAddClick,
 }: {
   tasks: Task[];
+  team: TeamMember[];
+  loading: boolean;
   onCardClick: (t: Task) => void;
   onAddClick: (col: ColumnId) => void;
 }) {
+  if (loading) {
+    return (
+      <div className="flex justify-center py-16">
+        <Icon name="Loader2" size={26} className="animate-spin text-primary" />
+      </div>
+    );
+  }
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-fade-in">
       {columns.map((col) => {
@@ -680,7 +745,7 @@ function Board({
             </div>
             <div className="space-y-3">
               {colTasks.map((t, i) => {
-                const m = member(t.assignee);
+                const a = resolveAssignee(team, t.assigneeId);
                 return (
                   <div
                     key={t.id}
@@ -699,13 +764,7 @@ function Board({
                       </div>
                     )}
                     <div className="flex items-center gap-2">
-                      <div
-                        className="h-6 w-6 rounded-md flex items-center justify-center text-xs font-semibold"
-                        style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
-                        title={m.name}
-                      >
-                        {m.short}
-                      </div>
+                      <AssigneeAvatar a={a} size={24} />
                       <ServerBadge id={t.server} />
                       {t.comments && t.comments.length > 0 && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -839,19 +898,22 @@ function Select({ label, value, onChange, options }: {
 
 const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
 
-function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
+function TaskModal({ task, team, onClose, onSave, onDelete, sprints }: {
   task: Task;
+  team: TeamMember[];
   onClose: () => void;
   onSave: (t: Task) => void;
   onDelete: (id: string) => void;
   sprints: Sprint[];
 }) {
+  const { user } = useAuth();
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
   const [comments, setComments] = useState<Comment[]>(task.comments ?? []);
   const [newComment, setNewComment] = useState('');
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const setAssignee = (v: string) => setForm((p) => ({ ...p, assigneeId: v ? Number(v) : null }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -868,7 +930,7 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
     if (!newComment.trim()) return;
     const c: Comment = {
       id: 'c' + Date.now(),
-      authorId: 'prog2',
+      authorId: user ? String(user.id) : '',
       text: newComment.trim(),
       createdAt: new Date().toISOString(),
     };
@@ -929,8 +991,8 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
             { value: 'medium', label: 'Средний' },
             { value: 'low', label: 'Низкий' },
           ]} />
-          <Select label="Исполнитель" value={form.assignee} onChange={(v) => set('assignee', v)} options={
-            members.map((m) => ({ value: m.id, label: m.name }))
+          <Select label="Исполнитель" value={form.assigneeId != null ? String(form.assigneeId) : ''} onChange={setAssignee} options={
+            [{ value: '', label: 'Не назначен' }, ...team.map((m) => ({ value: String(m.id), label: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }))]
           } />
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
@@ -1036,15 +1098,10 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
           {comments.length > 0 && (
             <div className="flex flex-col gap-2 mb-3">
               {comments.map((c) => {
-                const auth = member(c.authorId);
+                const auth = resolveAssignee(team, c.authorId ? Number(c.authorId) : null);
                 return (
                   <div key={c.id} className="flex gap-2.5 group">
-                    <div
-                      className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5"
-                      style={{ background: `hsl(${auth.color} / 0.18)`, color: `hsl(${auth.color})` }}
-                    >
-                      {auth.short}
-                    </div>
+                    <AssigneeAvatar a={auth} size={28} />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-xs font-medium">{auth.name}</span>
@@ -1098,8 +1155,9 @@ function TaskModal({ task, onClose, onSave, onDelete, sprints }: {
   );
 }
 
-function CreateTaskModal({ column, onClose, onCreate, sprints }: {
+function CreateTaskModal({ column, team, onClose, onCreate, sprints }: {
   column: ColumnId;
+  team: TeamMember[];
   onClose: () => void;
   onCreate: (t: Task) => void;
   sprints: Sprint[];
@@ -1108,7 +1166,7 @@ function CreateTaskModal({ column, onClose, onCreate, sprints }: {
   const [form, setForm] = useState({
     title: '',
     column,
-    assignee: 'prog2',
+    assigneeId: null as number | null,
     priority: 'medium' as Priority,
     tag: '',
     version: '',
@@ -1120,6 +1178,7 @@ function CreateTaskModal({ column, onClose, onCreate, sprints }: {
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const setAssignee = (v: string) => setForm((p) => ({ ...p, assigneeId: v ? Number(v) : null }));
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -1167,8 +1226,8 @@ function CreateTaskModal({ column, onClose, onCreate, sprints }: {
             { value: 'medium', label: 'Средний' },
             { value: 'low', label: 'Низкий' },
           ]} />
-          <Select label="Исполнитель" value={form.assignee} onChange={(v) => set('assignee', v)} options={
-            members.map((m) => ({ value: m.id, label: m.name }))
+          <Select label="Исполнитель" value={form.assigneeId != null ? String(form.assigneeId) : ''} onChange={setAssignee} options={
+            [{ value: '', label: 'Не назначен' }, ...team.map((m) => ({ value: String(m.id), label: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }))]
           } />
           <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
             servers.map((s) => ({ value: s.id, label: s.label }))
