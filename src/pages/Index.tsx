@@ -121,7 +121,7 @@ export default function Index() {
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category);
   const myOpenCount = user
-    ? activeTasks.filter((t) => t.column !== 'done' && taskAssigneeIds(t).includes(user.id)).length
+    ? activeTasks.filter((t) => t.column !== 'done' && t.column !== 'restart' && taskAssigneeIds(t).includes(user.id)).length
     : 0;
 
   function handleOpenArticle(id: string) {
