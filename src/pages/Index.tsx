@@ -114,7 +114,7 @@ export default function Index() {
   const filteredTasks = activeTasks
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category)
-    .filter((t) => sprintFilter === 'all' || t.sprintId === sprintFilter)
+    .filter((t) => sprintFilter === 'all' || (sprintFilter === 'none' ? !t.sprintId : t.sprintId === sprintFilter))
     .filter((t) => assigneeFilter === 'all' || taskAssigneeIds(t).includes(assigneeFilter));
   const filteredArchive = archivedTasks
     .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)
@@ -585,13 +585,21 @@ export default function Index() {
                 >
                   Все спринты
                 </button>
+                <button
+                  onClick={() => setSprintFilter(sprintFilter === 'none' ? 'all' : 'none')}
+                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
+                    sprintFilter === 'none' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                  }`}
+                >
+                  Без спринта
+                </button>
                 {sprints.map((sp) => {
                   const active = sprintFilter === sp.id;
                   const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
                   return (
                     <button
                       key={sp.id}
-                      onClick={() => setSprintFilter(sp.id)}
+                      onClick={() => setSprintFilter(active ? 'all' : sp.id)}
                       className="text-xs font-medium px-2.5 py-1 rounded-md transition-all shrink-0 flex items-center gap-1.5 border"
                       style={{
                         background: active ? `hsl(${statusColor} / 0.18)` : 'transparent',
@@ -601,6 +609,7 @@ export default function Index() {
                     >
                       {sp.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
                       {sp.title}
+                      {active && <Icon name="X" size={11} />}
                     </button>
                   );
                 })}
