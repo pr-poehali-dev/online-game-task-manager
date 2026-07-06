@@ -1,0 +1,31 @@
+# systemd-сервис для backend (FastAPI через gunicorn+uvicorn).
+# Скопируйте в /etc/systemd/system/era-backend.service
+# Затем: sudo systemctl daemon-reload && sudo systemctl enable --now era-backend
+
+[Unit]
+Description=ERA Task Manager Backend
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+
+# Папка с обёрткой server.py
+WorkingDirectory=/var/www/era/deploy
+
+# Загружаем секреты из .env
+EnvironmentFile=/var/www/era/deploy/.env
+
+# Запуск: 2 воркера, слушаем localhost:8000 (наружу отдаёт Nginx)
+ExecStart=/var/www/era/venv/bin/gunicorn server:app \
+    --workers 2 \
+    --worker-class uvicorn.workers.UvicornWorker \
+    --bind 127.0.0.1:8000 \
+    --timeout 60
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
