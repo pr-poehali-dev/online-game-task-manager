@@ -1,9 +1,40 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import { useAuth } from '@/lib/auth';
+import func2url from '../../backend/func2url.json';
+
+const AUTH_URL = (func2url as Record<string, string>).auth;
+const TOKEN_KEY = 'era_auth_token';
+
+interface TeamMember {
+  id: number;
+  first_name: string;
+  last_name: string | null;
+  photo_url: string | null;
+  role: 'admin' | 'member';
+  tg_username: string | null;
+  specialization: string | null;
+  pending: boolean;
+  online: boolean;
+}
+
+const AVATAR_HUES = ['152 60% 48%', '210 80% 60%', '270 65% 65%', '330 70% 62%', '35 85% 58%', '190 70% 55%', '0 65% 60%', '45 90% 55%'];
+
+function hueFor(seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_HUES[h % AVATAR_HUES.length];
+}
+
+function initials(first: string, last: string | null): string {
+  const a = (first || '').trim();
+  const b = (last || '').trim();
+  if (a && b) return (a[0] + b[0]).toUpperCase();
+  return (a.slice(0, 2) || '?').toUpperCase();
+}
 
 type Priority = 'low' | 'medium' | 'high' | 'critical';
 type ColumnId = 'todo' | 'progress' | 'done';
@@ -195,6 +226,31 @@ export default function Index() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
   const [createSprint, setCreateSprint] = useState(false);
+  const [team, setTeam] = useState<TeamMember[]>([]);
+
+  const loadTeam = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    try {
+      const res = await fetch(AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+        body: JSON.stringify({ action: 'team' }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setTeam(data.members || []);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTeam();
+    const t = setInterval(loadTeam, 30000);
+    return () => clearInterval(t);
+  }, [loadTeam]);
 
   const filteredTasks = tasks
     .filter((t) => server === 'all' || t.server === server)
@@ -270,34 +326,59 @@ export default function Index() {
         </div>
 
         <div className="px-4 pt-3 pb-2 mt-auto">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Команда</div>
+          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1 flex items-center gap-1.5">
+            Команда
+            <span className="text-[10px] font-mono opacity-60">
+              {team.filter((m) => m.online).length}/{team.length} онлайн
+            </span>
+          </div>
           <div className="space-y-0.5">
-            {members.map((m) => (
-              <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
-                <div
-                  className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold shrink-0"
-                  style={{ background: `hsl(${m.color} / 0.18)`, color: `hsl(${m.color})` }}
-                >
-                  {m.short}
+            {team.length === 0 && (
+              <div className="text-xs text-muted-foreground px-2 py-1.5">Пока никого нет</div>
+            )}
+            {team.map((m) => {
+              const hue = hueFor(m.tg_username || m.first_name || String(m.id));
+              const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
+              const tg = (m.tg_username || '').replace('@', '');
+              return (
+                <div key={m.id} className="flex items-center gap-2.5 px-2 py-1.5 rounded-lg hover:bg-secondary/50 transition-colors group">
+                  <div className="relative shrink-0">
+                    {m.photo_url ? (
+                      <img src={m.photo_url} alt="" className="h-7 w-7 rounded-md object-cover" />
+                    ) : (
+                      <div
+                        className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold"
+                        style={{ background: `hsl(${hue} / 0.18)`, color: `hsl(${hue})` }}
+                      >
+                        {initials(m.first_name, m.last_name)}
+                      </div>
+                    )}
+                    <span
+                      title={m.pending ? 'Ожидает входа' : m.online ? 'Онлайн' : 'Оффлайн'}
+                      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${m.online ? 'bg-green-500' : 'bg-muted-foreground/40'}`}
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium truncate">{displayName}</div>
+                    <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>
+                      {m.specialization || (m.role === 'admin' ? 'Администратор' : 'Участник')}
+                    </div>
+                  </div>
+                  {tg && (
+                    <a
+                      href={`https://t.me/${tg}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={`Написать ${displayName} в Telegram`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
+                    >
+                      <Icon name="Send" size={12} />
+                    </a>
+                  )}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium truncate">{m.name}</div>
-                  <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>{m.role}</div>
-                </div>
-                {m.tg && (
-                  <a
-                    href={`https://t.me/${m.tg.replace('@', '')}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    title={`Написать ${m.name} в Telegram`}
-                    onClick={(e) => e.stopPropagation()}
-                    className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                  >
-                    <Icon name="Send" size={12} />
-                  </a>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

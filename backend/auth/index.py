@@ -94,6 +94,38 @@ def handler(event: dict, context) -> dict:
         }
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'user': user})}
 
+    # Список команды для доски (онлайн-статус по активной сессии)
+    if action == 'team':
+        if not token:
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_token'})}
+        cur.execute(
+            f"SELECT 1 FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+            f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
+            (token,)
+        )
+        if not cur.fetchone():
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'invalid_session'})}
+        cur.execute(
+            f"SELECT u.id, u.first_name, u.last_name, u.photo_url, u.role, u.tg_username, u.username, "
+            f"u.specialization, u.telegram_id, "
+            f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions "
+            f"FROM {schema}.users u WHERE u.is_active = true AND u.is_hidden = false "
+            f"ORDER BY u.role DESC, u.created_at ASC"
+        )
+        members = []
+        for r in cur.fetchall():
+            tg = r[5] or r[6]
+            members.append({
+                'id': r[0], 'first_name': r[1], 'last_name': r[2], 'photo_url': r[3],
+                'role': r[4], 'tg_username': tg, 'specialization': r[7],
+                'pending': (r[8] is not None and r[8] < 0),
+                'online': (r[9] or 0) > 0,
+            })
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'members': members})}
+
     # Выход
     if action == 'logout':
         if token:
