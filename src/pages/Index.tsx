@@ -568,25 +568,6 @@ export default function Index() {
                 )}
                 <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
-                <button
-                  onClick={() => setSprintFilter('all')}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
-                    sprintFilter === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                  }`}
-                >
-                  Все спринты
-                </button>
-                <button
-                  onClick={() => setSprintFilter(sprintFilter === 'none' ? 'all' : 'none')}
-                  className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 ${
-                    sprintFilter === 'none' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                  }`}
-                >
-                  Без спринта
-                  <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center ${sprintFilter === 'none' ? 'bg-primary-foreground/25 text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>
-                    {activeTasks.filter((t) => !t.sprintId).length}
-                  </span>
-                </button>
                 {sprints.map((sp) => {
                   const active = sprintFilter === sp.id;
                   const count = activeTasks.filter((t) => t.sprintId === sp.id).length;
