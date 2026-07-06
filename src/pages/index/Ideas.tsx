@@ -82,11 +82,17 @@ export default function Ideas({ authors }: { authors: Author[] }) {
 
   async function openTopic(id: string) {
     try {
-      const res = await fetch(`${IDEAS_URL}?id=${id}`, { method: 'GET', headers: authHeaders() });
+      const res = await fetch(IDEAS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'get', id }),
+      });
       if (res.ok) {
         const data = await res.json();
-        setCurrent(data.topic);
-        setComments(data.comments || []);
+        if (data.topic) {
+          setCurrent(data.topic);
+          setComments(data.comments || []);
+        }
       }
     } catch {
       /* ignore */
