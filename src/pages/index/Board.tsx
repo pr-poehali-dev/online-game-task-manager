@@ -3,6 +3,30 @@ import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome } from './shared';
 import { taskAssigneeIds, columns, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
 
+type SortMode = 'none' | 'priority' | 'date_new' | 'date_old';
+
+const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+const SORT_OPTIONS: { id: SortMode; label: string; icon: string }[] = [
+  { id: 'none', label: 'По умолчанию', icon: 'ArrowUpDown' },
+  { id: 'priority', label: 'По приоритету', icon: 'Flame' },
+  { id: 'date_new', label: 'Сначала новые', icon: 'ArrowDown10' },
+  { id: 'date_old', label: 'Сначала старые', icon: 'ArrowUp10' },
+];
+
+function sortTasks(list: Task[], mode: SortMode): Task[] {
+  if (mode === 'none') return list;
+  const arr = [...list];
+  if (mode === 'priority') {
+    arr.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9));
+  } else if (mode === 'date_new') {
+    arr.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  } else if (mode === 'date_old') {
+    arr.sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime());
+  }
+  return arr;
+}
+
 export default function Board({
   tasks,
   team,
@@ -19,6 +43,8 @@ export default function Board({
   onArchive: (id: string, outcome: TaskOutcome) => void;
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [sortMode, setSortMode] = useState<SortMode>('none');
+  const [sortOpen, setSortOpen] = useState(false);
   if (loading) {
     return (
       <div className="flex justify-center py-16">
@@ -26,10 +52,40 @@ export default function Board({
       </div>
     );
   }
+  const activeSort = SORT_OPTIONS.find((o) => o.id === sortMode)!;
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 animate-fade-in">
+    <div className="animate-fade-in">
+      <div className="flex justify-end mb-3 relative">
+        <button
+          onClick={() => setSortOpen((v) => !v)}
+          className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+            sortMode !== 'none' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+          }`}
+        >
+          <Icon name={activeSort.icon} size={13} />
+          {activeSort.label}
+          <Icon name="ChevronDown" size={12} />
+        </button>
+        {sortOpen && (
+          <div className="absolute right-0 top-9 z-20 w-48 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+            {SORT_OPTIONS.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => { setSortMode(o.id); setSortOpen(false); }}
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm transition-colors ${
+                  sortMode === o.id ? 'bg-primary/15 text-primary' : 'hover:bg-secondary/60'
+                }`}
+              >
+                <Icon name={o.icon} size={14} />
+                {o.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
       {columns.map((col) => {
-        const colTasks = tasks.filter((t) => t.column === col.id);
+        const colTasks = sortTasks(tasks.filter((t) => t.column === col.id), sortMode);
         return (
           <div key={col.id} className="flex flex-col">
             <div className="flex items-center gap-2 mb-4 px-1">
@@ -114,6 +170,7 @@ export default function Board({
           </div>
         );
       })}
+    </div>
     </div>
   );
 }

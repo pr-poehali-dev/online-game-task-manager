@@ -158,6 +158,7 @@ export interface Task {
   outcome?: TaskOutcome | null;
   kbArticleIds?: number[];
   restartDone?: boolean;
+  createdAt?: string | null;
 }
 
 

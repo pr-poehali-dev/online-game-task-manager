@@ -130,12 +130,13 @@ def _row_to_task(r):
         'assigneeIds': r[15] if r[15] is not None else [],
         'kbArticleIds': r[16] if r[16] is not None else [],
         'restartDone': bool(r[17]),
+        'createdAt': r[18].isoformat() if r[18] else None,
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, tag, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at"
 )
 
 
@@ -207,7 +208,7 @@ def handler(event: dict, context) -> dict:
         tasks = []
         for r in cur.fetchall():
             d = _row_to_task(r)
-            d['commentCount'] = r[18]
+            d['commentCount'] = r[19]
             tasks.append(d)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'tasks': tasks})}
