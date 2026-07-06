@@ -87,10 +87,10 @@ export default function Board({
                     <div className="flex items-center gap-2">
                       <AssigneeStack ids={assignees} team={team} size={24} />
                       <ServerBadge id={t.server} />
-                      {t.comments && t.comments.length > 0 && (
+                      {t.commentCount != null && t.commentCount > 0 && (
                         <span className="flex items-center gap-1 text-xs text-muted-foreground">
                           <Icon name="MessageSquare" size={11} />
-                          {t.comments.length}
+                          {t.commentCount}
                         </span>
                       )}
                       {t.kbArticleIds && t.kbArticleIds.length > 0 && (

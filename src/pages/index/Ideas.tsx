@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import { IDEAS_URL, authHeaders } from './shared';
+import MentionInput, { extractMentions } from './MentionInput';
 
 type IdeaStatus = 'open' | 'wont_do' | 'sent';
 
@@ -28,6 +29,8 @@ interface IdeaComment {
   authorId: number | null;
   text: string;
   createdAt: string | null;
+  parentId: string | null;
+  mentions: number[];
 }
 
 const statusMeta: Record<IdeaStatus, { label: string; color: string; icon: string }> = {
@@ -49,6 +52,27 @@ function initialsFor(name: string) {
   return (name.slice(0, 2) || '?').toUpperCase();
 }
 
+// Подсветка @упоминаний в тексте комментария
+function renderText(text: string, names: string[]) {
+  if (names.length === 0) return text;
+  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
+  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
+  const parts: (string | { m: string })[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push({ m: match[0] });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.map((p, i) =>
+    typeof p === 'string'
+      ? <span key={i}>{p}</span>
+      : <span key={i} className="text-primary font-medium">{p.m}</span>
+  );
+}
+
 export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
   authors: Author[];
   initialTopicId?: string | null;
@@ -63,7 +87,9 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
   const [newComment, setNewComment] = useState('');
+  const [replyTo, setReplyTo] = useState<IdeaComment | null>(null);
 
+  const mentionMembers = authors.map((a) => ({ id: a.id, name: a.name }));
   const authorName = (id: number | null) => (id != null ? authors.find((a) => a.id === id)?.name ?? 'Участник' : 'Участник');
   const authorPhoto = (id: number | null) => (id != null ? authors.find((a) => a.id === id)?.photo_url ?? null : null);
   const canManage = (t: TopicListItem) => !!user && (t.authorId === user.id || isAdmin);
@@ -132,17 +158,32 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
 
   async function addComment() {
     if (!newComment.trim() || !current) return;
+    const mentions = extractMentions(newComment, mentionMembers);
     try {
       const res = await fetch(IDEAS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'comment', topicId: current.id, text: newComment.trim() }),
+        body: JSON.stringify({ action: 'comment', topicId: current.id, text: newComment.trim(), parentId: replyTo?.id ?? null, mentions }),
       });
       if (res.ok) {
         const data = await res.json();
         setComments((prev) => [...prev, data.comment]);
         setNewComment('');
+        setReplyTo(null);
       }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function deleteComment(id: string) {
+    setComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id));
+    try {
+      await fetch(IDEAS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_delete', id }),
+      });
     } catch {
       /* ignore */
     }
@@ -179,6 +220,50 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
     }
     setCurrent(null);
     loadList();
+  }
+
+  const topLevel = comments.filter((c) => !c.parentId);
+  const mentionNames = mentionMembers.map((m) => m.name);
+
+  function renderComment(c: IdeaComment, isReply = false) {
+    const photo = authorPhoto(c.authorId);
+    const name = authorName(c.authorId);
+    const canDelete = !!user && (c.authorId === user.id || isAdmin);
+    return (
+      <div className="flex gap-2.5 group">
+        {photo ? (
+          <img src={photo} alt="" className={`rounded-md object-cover shrink-0 mt-0.5 ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`} />
+        ) : (
+          <div className={`rounded-md bg-secondary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 text-muted-foreground ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`}>
+            {initialsFor(name)}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-xs font-medium">{name}</span>
+            <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</span>
+            {!isReply && (
+              <button
+                onClick={() => { setReplyTo(c); }}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                <Icon name="CornerDownRight" size={11} /> Ответить
+              </button>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => deleteComment(c.id)}
+                className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+                title="Удалить комментарий"
+              >
+                <Icon name="Trash2" size={12} />
+              </button>
+            )}
+          </div>
+          <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderText(c.text, mentionNames)}</div>
+        </div>
+      </div>
+    );
   }
 
   // Создание топика
@@ -275,47 +360,51 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
         </div>
 
         <div className="space-y-3 mb-4">
-          {comments.map((c) => {
-            const photo = authorPhoto(c.authorId);
-            const name = authorName(c.authorId);
+          {topLevel.map((c) => {
+            const replies = comments.filter((r) => r.parentId === c.id);
             return (
-              <div key={c.id} className="flex gap-2.5">
-                {photo ? (
-                  <img src={photo} alt="" className="h-8 w-8 rounded-md object-cover shrink-0 mt-0.5" />
-                ) : (
-                  <div className="h-8 w-8 rounded-md bg-secondary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 text-muted-foreground">
-                    {initialsFor(name)}
+              <div key={c.id}>
+                {renderComment(c)}
+                {replies.length > 0 && (
+                  <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
+                    {replies.map((r) => (
+                      <div key={r.id}>{renderComment(r, true)}</div>
+                    ))}
                   </div>
                 )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <span className="text-xs font-medium">{name}</span>
-                    <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</span>
-                  </div>
-                  <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap">{c.text}</div>
-                </div>
               </div>
             );
           })}
           {comments.length === 0 && <div className="text-sm text-muted-foreground">Комментариев пока нет — начните обсуждение.</div>}
         </div>
 
-        <div className="flex gap-2">
-          <textarea
-            value={newComment}
-            onChange={(e) => setNewComment(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addComment(); }}
-            placeholder="Написать комментарий... (Ctrl+Enter для отправки)"
-            rows={2}
-            className={inputCls + ' resize-none flex-1'}
-          />
-          <button
-            onClick={addComment}
-            disabled={!newComment.trim()}
-            className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
-          >
-            <Icon name="Send" size={15} />
-          </button>
+        <div>
+          {replyTo && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
+              <Icon name="CornerDownRight" size={13} className="text-primary" />
+              Ответ для <span className="font-medium text-foreground">{authorName(replyTo.authorId)}</span>
+              <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
+                <Icon name="X" size={13} />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <MentionInput
+              value={newComment}
+              onChange={setNewComment}
+              members={mentionMembers}
+              onSubmit={addComment}
+              placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
+              className={inputCls + ' resize-none w-full'}
+            />
+            <button
+              onClick={addComment}
+              disabled={!newComment.trim()}
+              className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
+            >
+              <Icon name="Send" size={15} />
+            </button>
+          </div>
         </div>
       </div>
     );

@@ -1,10 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import { useAuth } from '@/lib/auth';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
-import type { Task, TeamMember, Comment, Priority, ServerId, CategoryId, TaskOutcome, Sprint, ColumnId } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls } from './shared';
+import type { Task, TeamMember, Priority, ServerId, CategoryId, TaskOutcome, Sprint, ColumnId } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders } from './shared';
+import MentionInput, { extractMentions } from './MentionInput';
+
+interface TaskComment {
+  id: string;
+  taskId: string;
+  authorId: number | null;
+  text: string;
+  createdAt: string | null;
+  parentId: string | null;
+  mentions: number[];
+}
+
+function renderMentionText(text: string, names: string[]) {
+  if (names.length === 0) return text;
+  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
+  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
+  const parts: (string | { m: string })[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    if (match.index > last) parts.push(text.slice(last, match.index));
+    parts.push({ m: match[0] });
+    last = match.index + match[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.map((p, i) => typeof p === 'string' ? <span key={i}>{p}</span> : <span key={i} className="text-primary font-medium">{p.m}</span>);
+}
 
 function AssigneeMultiSelect({ team, value, onChange }: {
   team: TeamMember[];
@@ -143,16 +170,38 @@ export function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSa
   onUnarchive: (id: string) => void;
   sprints: Sprint[];
 }) {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
-  const [comments, setComments] = useState<Comment[]>(task.comments ?? []);
+  const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [archiveMenu, setArchiveMenu] = useState(false);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+
+  const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
+  const mentionNames = mentionMembers.map((m) => m.name);
+
+  const loadComments = useCallback(async () => {
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comments', taskId: task.id }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments(data.comments || []);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [task.id]);
+
+  useEffect(() => { loadComments(); }, [loadComments]);
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -165,24 +214,75 @@ export function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSa
     setLinks((prev) => prev.filter((_, idx) => idx !== i));
   }
 
-  function addComment() {
+  async function addComment() {
     if (!newComment.trim()) return;
-    const c: Comment = {
-      id: 'c' + Date.now(),
-      authorId: user ? String(user.id) : '',
-      text: newComment.trim(),
-      createdAt: new Date().toISOString(),
-    };
-    setComments((prev) => [...prev, c]);
-    setNewComment('');
+    const mentions = extractMentions(newComment, mentionMembers);
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment', taskId: task.id, text: newComment.trim(), parentId: replyTo?.id ?? null, mentions }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => [...prev, data.comment]);
+        setNewComment('');
+        setReplyTo(null);
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
-  function removeComment(id: string) {
-    setComments((prev) => prev.filter((c) => c.id !== id));
+  async function removeComment(id: string) {
+    setComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_delete', id }),
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
   function handleSave() {
-    onSave({ ...form, links, comments });
+    onSave({ ...form, links });
+  }
+
+  const topLevel = comments.filter((c) => !c.parentId);
+
+  function renderComment(c: TaskComment, isReply = false) {
+    const auth = resolveAssignee(team, c.authorId != null ? Number(c.authorId) : null);
+    const canDel = !!user && (Number(c.authorId) === user.id || isAdmin);
+    return (
+      <div className="flex gap-2.5 group">
+        <AssigneeAvatar a={auth} size={isReply ? 24 : 28} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-xs font-medium">{auth.name}</span>
+            <span className="text-xs text-muted-foreground">
+              {c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+            </span>
+            {!isReply && (
+              <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
+                <Icon name="CornerDownRight" size={11} /> Ответить
+              </button>
+            )}
+            {canDel && (
+              <button
+                onClick={() => removeComment(c.id)}
+                className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-xs"
+              >
+                <Icon name="X" size={12} />
+              </button>
+            )}
+          </div>
+          <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -398,41 +498,40 @@ export function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSa
             <Icon name="MessageSquare" size={12} />
             Комментарии {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
           </label>
-          {comments.length > 0 && (
+          {topLevel.length > 0 && (
             <div className="flex flex-col gap-2 mb-3">
-              {comments.map((c) => {
-                const auth = resolveAssignee(team, c.authorId ? Number(c.authorId) : null);
+              {topLevel.map((c) => {
+                const replies = comments.filter((r) => r.parentId === c.id);
                 return (
-                  <div key={c.id} className="flex gap-2.5 group">
-                    <AssigneeAvatar a={auth} size={28} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-medium">{auth.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        <button
-                          onClick={() => removeComment(c.id)}
-                          className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-xs"
-                        >
-                          <Icon name="X" size={12} />
-                        </button>
+                  <div key={c.id}>
+                    {renderComment(c)}
+                    {replies.length > 0 && (
+                      <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
+                        {replies.map((r) => <div key={r.id}>{renderComment(r, true)}</div>)}
                       </div>
-                      <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap">{c.text}</div>
-                    </div>
+                    )}
                   </div>
                 );
               })}
             </div>
           )}
+          {replyTo && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
+              <Icon name="CornerDownRight" size={13} className="text-primary" />
+              Ответ для <span className="font-medium text-foreground">{resolveAssignee(team, replyTo.authorId != null ? Number(replyTo.authorId) : null).name}</span>
+              <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
+                <Icon name="X" size={13} />
+              </button>
+            </div>
+          )}
           <div className="flex gap-2">
-            <textarea
+            <MentionInput
               value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) addComment(); }}
-              placeholder="Написать комментарий... (Ctrl+Enter для отправки)"
-              rows={2}
-              className={inputCls + ' resize-none flex-1'}
+              onChange={setNewComment}
+              members={mentionMembers}
+              onSubmit={addComment}
+              placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
+              className={inputCls + ' resize-none w-full'}
             />
             <button
               onClick={addComment}

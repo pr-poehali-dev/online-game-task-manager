@@ -153,6 +153,7 @@ export interface Task {
   sprintId?: string;
   deployStatus?: DeployStatus;
   comments?: Comment[];
+  commentCount?: number;
   archived?: boolean;
   outcome?: TaskOutcome | null;
   kbArticleIds?: number[];

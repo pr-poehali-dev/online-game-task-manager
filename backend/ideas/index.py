@@ -57,11 +57,25 @@ def _comment_row(r):
         'authorId': r[2],
         'text': r[3],
         'createdAt': r[4].isoformat() if r[4] else None,
+        'parentId': str(r[5]) if len(r) > 5 and r[5] else None,
+        'mentions': (r[6] if len(r) > 6 and r[6] is not None else []),
     }
 
 
+def _norm_ids(raw):
+    result = []
+    for v in (raw or []):
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv not in result:
+            result.append(iv)
+    return result
+
+
 TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at"
-COMMENT_COLS = "id, topic_id, author_id, text, created_at"
+COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions"
 
 
 def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, actor_id):
@@ -146,26 +160,63 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
-    # Добавить комментарий
+    # Добавить комментарий (+ ответ + упоминания)
     if action == 'comment':
         tid = body.get('topicId')
         text = (body.get('text') or '').strip()
         if not tid or not text:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        parent_id = body.get('parentId')
+        parent_id = int(parent_id) if parent_id else None
+        mentions = _norm_ids(body.get('mentions'))
         cur.execute(
-            f"INSERT INTO {schema}.idea_comments (topic_id, author_id, text) VALUES (%s, %s, %s) RETURNING {COMMENT_COLS}",
-            (int(tid), me['id'], text)
+            f"INSERT INTO {schema}.idea_comments (topic_id, author_id, text, parent_id, mentions) "
+            f"VALUES (%s, %s, %s, %s, %s) RETURNING {COMMENT_COLS}",
+            (int(tid), me['id'], text, parent_id, json.dumps(mentions))
         )
         comment = _comment_row(cur.fetchone())
         cur.execute(f"UPDATE {schema}.idea_topics SET updated_at = NOW() WHERE id = %s", (int(tid),))
-        # Уведомить автора темы о новом комментарии
         cur.execute(f"SELECT author_id, title FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
         trow = cur.fetchone()
-        if trow:
-            _add_notification(cur, schema, trow[0], 'idea_comment', 'Новый комментарий к вашей идее', trow[1], tid, me['id'])
+        topic_title = trow[1] if trow else 'идея'
+        notified = set()
+        # Ответ автору родительского комментария
+        if parent_id:
+            cur.execute(f"SELECT author_id FROM {schema}.idea_comments WHERE id = %s", (parent_id,))
+            prow = cur.fetchone()
+            if prow and prow[0] and prow[0] != me['id']:
+                _add_notification(cur, schema, prow[0], 'idea_reply', 'Ответ на ваш комментарий', topic_title, tid, me['id'])
+                notified.add(prow[0])
+        # Упоминания
+        for uid in mentions:
+            if uid not in notified:
+                _add_notification(cur, schema, uid, 'idea_mention', 'Вас упомянули в обсуждении', topic_title, tid, me['id'])
+                notified.add(uid)
+        # Уведомить автора темы (если это не ответ и не упоминание ему)
+        if trow and trow[0] and trow[0] != me['id'] and trow[0] not in notified:
+            _add_notification(cur, schema, trow[0], 'idea_comment', 'Новый комментарий к вашей идее', topic_title, tid, me['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}
+
+    # Удалить комментарий идеи (автор или админ)
+    if action == 'comment_delete':
+        cid = body.get('id')
+        if not cid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT author_id FROM {schema}.idea_comments WHERE id = %s", (int(cid),))
+        crow = cur.fetchone()
+        if not crow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if crow[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        cur.execute(f"UPDATE {schema}.idea_comments SET parent_id = NULL WHERE parent_id = %s", (int(cid),))
+        cur.execute(f"DELETE FROM {schema}.idea_comments WHERE id = %s", (int(cid),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
     # Сменить статус топика (закрыть/переоткрыть). Только автор или админ.
     if action == 'set_status':

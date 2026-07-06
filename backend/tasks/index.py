@@ -53,6 +53,29 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
         _tg_send(tg_id, text, button_url)
 
 
+def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entity_id, actor_id):
+    '''Создаёт внутреннее уведомление (не самому себе).'''
+    if not user_id or user_id == actor_id:
+        return
+    cur.execute(
+        f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id)
+    )
+
+
+def _norm_ids(raw):
+    result = []
+    for v in (raw or []):
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv not in result:
+            result.append(iv)
+    return result
+
+
 def _cors_headers():
     return {
         'Access-Control-Allow-Origin': '*',
@@ -176,8 +199,16 @@ def handler(event: dict, context) -> dict:
 
     # Список задач
     if action == 'list' or method == 'GET':
-        cur.execute(f"SELECT {TASK_COLUMNS} FROM {schema}.tasks ORDER BY created_at ASC")
-        tasks = [_row_to_task(r) for r in cur.fetchall()]
+        cur.execute(
+            f"SELECT {TASK_COLUMNS}, "
+            f"(SELECT COUNT(*) FROM {schema}.task_comments c WHERE c.task_id = t.id::text) AS cc "
+            f"FROM {schema}.tasks t ORDER BY t.created_at ASC"
+        )
+        tasks = []
+        for r in cur.fetchall():
+            d = _row_to_task(r)
+            d['commentCount'] = r[18]
+            tasks.append(d)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'tasks': tasks})}
 
@@ -356,7 +387,89 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"DELETE FROM {schema}.task_comments WHERE task_id = %s", (str(task_id),))
         cur.execute(f"DELETE FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Список комментариев задачи
+    if action == 'comments':
+        task_id = body.get('taskId') or (event.get('queryStringParameters') or {}).get('taskId')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_task_id'})}
+        cur.execute(
+            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions "
+            f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
+            (str(task_id),)
+        )
+        comments = [{
+            'id': str(r[0]), 'taskId': str(r[1]), 'authorId': r[2], 'text': r[3],
+            'createdAt': r[4].isoformat() if r[4] else None,
+            'parentId': str(r[5]) if r[5] else None,
+            'mentions': r[6] if r[6] is not None else [],
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comments': comments})}
+
+    # Добавить комментарий к задаче (+ ответ + упоминания)
+    if action == 'comment':
+        task_id = body.get('taskId')
+        text = (body.get('text') or '').strip()
+        if not task_id or not text:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        parent_id = body.get('parentId')
+        parent_id = int(parent_id) if parent_id else None
+        mentions = _norm_ids(body.get('mentions'))
+        cur.execute(
+            f"INSERT INTO {schema}.task_comments (task_id, user_id, text, parent_id, mentions) "
+            f"VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+            (str(task_id), me['id'], text, parent_id, json.dumps(mentions))
+        )
+        new = cur.fetchone()
+        # Заголовок задачи для уведомлений
+        cur.execute(f"SELECT title FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        trow = cur.fetchone()
+        task_title = trow[0] if trow else 'задача'
+        notified = set()
+        # Ответ автору родительского комментария
+        if parent_id:
+            cur.execute(f"SELECT user_id FROM {schema}.task_comments WHERE id = %s", (parent_id,))
+            prow = cur.fetchone()
+            if prow and prow[0] and prow[0] != me['id']:
+                _add_notif(cur, schema, prow[0], 'task_reply', 'Ответ на ваш комментарий', task_title, 'task', task_id, me['id'])
+                notified.add(prow[0])
+        # Упоминания
+        for uid in mentions:
+            if uid not in notified:
+                _add_notif(cur, schema, uid, 'task_mention', 'Вас упомянули в задаче', task_title, 'task', task_id, me['id'])
+                notified.add(uid)
+        comment = {
+            'id': str(new[0]), 'taskId': str(task_id), 'authorId': me['id'], 'text': text,
+            'createdAt': new[1].isoformat() if new[1] else None,
+            'parentId': str(parent_id) if parent_id else None, 'mentions': mentions,
+        }
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}
+
+    # Удалить комментарий задачи (автор комментария или админ)
+    if action == 'comment_delete':
+        cid = body.get('id')
+        if not cid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT user_id FROM {schema}.task_comments WHERE id = %s", (int(cid),))
+        crow = cur.fetchone()
+        if not crow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if crow[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        # переносим ответы на верхний уровень, затем удаляем
+        cur.execute(f"UPDATE {schema}.task_comments SET parent_id = NULL WHERE parent_id = %s", (int(cid),))
+        cur.execute(f"DELETE FROM {schema}.task_comments WHERE id = %s", (int(cid),))
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
