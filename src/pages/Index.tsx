@@ -662,6 +662,20 @@ export default function Index() {
             })}
             {view === 'board' && (
               <>
+                {user && (
+                  <>
+                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
+                    <button
+                      onClick={() => setAssigneeFilter(assigneeFilter === user.id ? 'all' : user.id)}
+                      className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 ${
+                        assigneeFilter === user.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                      }`}
+                    >
+                      <Icon name="UserCheck" size={12} />
+                      Мои задачи
+                    </button>
+                  </>
+                )}
                 <div className="w-px h-4 bg-border mx-1 shrink-0" />
                 <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
                 <button
