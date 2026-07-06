@@ -1,76 +1,7 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import type { Task, TeamMember, Bug, Sprint, TaskOutcome } from './shared';
-import { resolveAssignee, taskAssigneeIds, categoryMeta, outcomes, outcomeMeta, AssigneeAvatar, AssigneeStack, PriorityBadge, ServerBadge, ModalOverlay, Select, inputCls } from './shared';
-
-export function Bugs({ bugs: list, tasks, onBugClick }: { bugs: Bug[]; tasks: Task[]; onBugClick: (b: Bug) => void }) {
-  const statusMeta: Record<Bug['status'], { label: string; color: string }> = {
-    open: { label: 'Открыт', color: '35 85% 58%' },
-    fixing: { label: 'В работе', color: '210 80% 60%' },
-    closed: { label: 'Закрыт', color: '152 50% 50%' },
-  };
-  const norm = (s: string) => s.toLowerCase().replace(/[«»"'.,!?]/g, '').trim();
-  const hasTask = (b: Bug) => {
-    const bn = norm(b.title);
-    return tasks.some((t) => {
-      const tn = norm(t.title);
-      return tn === bn || tn.includes(bn) || bn.includes(tn);
-    });
-  };
-  return (
-    <div className="max-w-4xl animate-fade-in">
-      <div className="flex items-center gap-3 mb-1">
-        <Icon name="Bug" size={20} className="text-destructive" />
-        <h2 className="font-display tracking-wide text-lg">Трекер ошибок</h2>
-        <span className="text-sm text-muted-foreground">· {list.filter((b) => b.status !== 'closed').length} активных</span>
-      </div>
-      <p className="text-sm text-muted-foreground mb-5">Нажмите на ошибку, чтобы открыть связанную задачу или создать новую.</p>
-      {list.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-          На выбранном сервере ошибок нет
-        </div>
-      ) : (
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          {list.map((b, i) => {
-            const st = statusMeta[b.status];
-            const linked = hasTask(b);
-            return (
-              <button
-                key={b.id}
-                onClick={() => onBugClick(b)}
-                className="w-full text-left flex items-center gap-4 px-5 py-4 border-b border-border last:border-0 hover:bg-secondary/40 transition-colors animate-fade-in group"
-                style={{ animationDelay: `${i * 50}ms` }}
-              >
-                <span className="font-mono text-xs text-muted-foreground w-10">{b.id.toUpperCase()}</span>
-                <PriorityBadge p={b.priority} />
-                <span className="text-sm font-medium flex-1 min-w-0 truncate">{b.title}</span>
-                <span
-                  className="hidden lg:flex items-center gap-1 text-xs shrink-0"
-                  style={{ color: linked ? 'hsl(210 80% 62%)' : 'hsl(var(--muted-foreground))' }}
-                  title={linked ? 'Открыть связанную задачу' : 'Создать задачу из ошибки'}
-                >
-                  <Icon name={linked ? 'ExternalLink' : 'Plus'} size={12} />
-                  {linked ? 'Задача' : 'В задачу'}
-                </span>
-                <span className="hidden md:block">
-                  <ServerBadge id={b.server} />
-                </span>
-                <span className="text-xs font-mono text-primary hidden sm:block">{b.version}</span>
-                <span
-                  className="text-xs font-medium px-2.5 py-1 rounded-md shrink-0"
-                  style={{ background: `hsl(${st.color} / 0.15)`, color: `hsl(${st.color})` }}
-                >
-                  {st.label}
-                </span>
-                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+import type { Task, TeamMember, Sprint, TaskOutcome } from './shared';
+import { resolveAssignee, taskAssigneeIds, categoryMeta, outcomes, outcomeMeta, AssigneeStack, ModalOverlay, Select, inputCls } from './shared';
 
 export function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore, onDelete }: {
   tasks: Task[];

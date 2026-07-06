@@ -17,7 +17,6 @@ import {
   servers,
   categories,
   initialSprints,
-  bugs,
   hueFor,
   initials,
 } from './index/shared';
@@ -25,7 +24,6 @@ import type {
   TeamMember,
   Task,
   Sprint,
-  Bug,
   ServerId,
   CategoryId,
   TaskOutcome,
@@ -35,12 +33,12 @@ import Board from './index/Board';
 import Restart from './index/Restart';
 import Ideas from './index/Ideas';
 import { TaskModal, CreateTaskModal } from './index/TaskModals';
-import { Bugs, Archive, Sprints, CreateSprintModal } from './index/SprintsBugsArchive';
+import { Archive, Sprints, CreateSprintModal } from './index/SprintsBugsArchive';
 
 export default function Index() {
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [view, setView] = useState<'board' | 'bugs' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas'>('board');
+  const [view, setView] = useState<'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas'>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -120,7 +118,6 @@ export default function Index() {
     .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category);
-  const filteredBugs = server === 'all' ? bugs : bugs.filter((b) => b.server === server);
   const myOpenCount = user
     ? activeTasks.filter((t) => t.column !== 'done' && taskAssigneeIds(t).includes(user.id)).length
     : 0;
@@ -129,30 +126,6 @@ export default function Index() {
     setSelectedTask(null);
     setOpenArticleId(id);
     setView('knowledge');
-  }
-
-  function normalize(s: string) {
-    return s.toLowerCase().replace(/[«»"'.,!?]/g, '').trim();
-  }
-
-  function handleBugClick(bug: Bug) {
-    const bn = normalize(bug.title);
-    const match = tasks.find((t) => {
-      const tn = normalize(t.title);
-      return tn === bn || tn.includes(bn) || bn.includes(tn);
-    });
-    if (match) {
-      setSelectedTask(match);
-    } else {
-      setCreatePreset({
-        title: bug.title,
-        priority: bug.priority,
-        server: bug.server,
-        category: 'client',
-        tag: 'Баг',
-      });
-      setCreateFor('todo');
-    }
   }
 
   async function handleAddTask(task: Task) {
@@ -431,7 +404,6 @@ export default function Index() {
             <span className="text-muted-foreground/40 text-sm">/</span>
             <span className="text-sm text-muted-foreground">
               {view === 'board' && 'Доска задач'}
-              {view === 'bugs' && 'Трекер ошибок'}
               {view === 'sprints' && 'Спринты'}
               {view === 'archive' && 'Архив задач'}
               {view === 'knowledge' && 'База знаний'}
@@ -443,7 +415,6 @@ export default function Index() {
             {[
               { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
               { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
-              { k: 'bugs', label: 'Баги', icon: 'Bug' },
               { k: 'sprints', label: 'Спринты', icon: 'Zap' },
               { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
               { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
@@ -525,7 +496,7 @@ export default function Index() {
         </header>
 
         {/* Filter bar — server + sprint */}
-        {(view === 'board' || view === 'bugs') && (
+        {view === 'board' && (
           <div className="flex items-center gap-2 px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
             <Icon name="Server" size={12} className="text-muted-foreground shrink-0" />
             <button
@@ -655,7 +626,6 @@ export default function Index() {
               onArchive={handleArchiveTask}
             />
           )}
-          {view === 'bugs' && <Bugs bugs={filteredBugs} tasks={tasks} onBugClick={handleBugClick} />}
           {view === 'sprints' && (
             <Sprints
               sprints={sprints}

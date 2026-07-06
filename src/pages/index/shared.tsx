@@ -158,14 +158,6 @@ export interface Task {
   restartDone?: boolean;
 }
 
-export interface Bug {
-  id: string;
-  title: string;
-  priority: Priority;
-  version: string;
-  status: 'open' | 'fixing' | 'closed';
-  server: ServerId;
-}
 
 export interface Sprint {
   id: string;
@@ -209,14 +201,6 @@ export const initialSprints: Sprint[] = [
     endDate: '2025-08-03',
     status: 'planned',
   },
-];
-
-export const bugs: Bug[] = [
-  { id: 'b1', title: 'Вылет клиента при входе в подземелье', priority: 'critical', version: 'v2.3.5', status: 'fixing', server: 'hfnew' },
-  { id: 'b2', title: 'Некорректный расчёт урона по площади', priority: 'high', version: 'v2.3.5', status: 'open', server: 'hfx3old' },
-  { id: 'b3', title: 'Пропадает иконка гильдии в чате', priority: 'medium', version: 'v2.3.4', status: 'open', server: 'c4x1' },
-  { id: 'b4', title: 'Дюп золота через торговлю', priority: 'critical', version: 'v2.3.5', status: 'fixing', server: 'hfx3old' },
-  { id: 'b5', title: 'Опечатка в описании квеста', priority: 'low', version: 'v2.3.5', status: 'closed', server: 'c4x1' },
 ];
 
 export const priorityMap: Record<Priority, { label: string; color: string; bg: string }> = {
