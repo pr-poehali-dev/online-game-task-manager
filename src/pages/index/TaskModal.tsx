@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
@@ -174,7 +174,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               { value: 'done', label: 'Done' },
             ]} />
           )}
-          {canFullEdit && (
+          {canFullEdit ? (
             <>
               <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
                 { value: 'critical', label: 'Критический' },
@@ -196,6 +196,32 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               <div className="md:col-span-4">
                 <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
               </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Категория</label>
+                <CategoryBadge id={form.category} />
+              </div>
+              {taskAssigneeIds(form).length > 0 && (
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-muted-foreground mb-1.5">Исполнители</label>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {taskAssigneeIds(form).map((id) => (
+                      <span key={id} className="inline-flex items-center gap-1.5 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
+                        <AssigneeAvatar a={resolveAssignee(team, id)} size={16} />
+                        {resolveAssignee(team, id).name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Спринт</label>
+                  <span className="text-sm">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -274,8 +300,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           </div>
         )}
 
-        {canFullEdit && (
-          /* Links */
+        {(canFullEdit || links.length > 0) && (
+          /* Links — видно всем, у кого открыта задача; редактирование только при полном доступе */
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
             {links.length > 0 && (
@@ -286,50 +312,38 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                     <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
                       {l.label}
                     </a>
-                    <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
-                      <Icon name="X" size={13} />
-                    </button>
+                    {canFullEdit && (
+                      <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                        <Icon name="X" size={13} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
             )}
-            <div className="flex gap-2">
-              <input
-                value={newLink.label}
-                onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
-                placeholder="Название (напр. Тикет #1234)"
-                className={inputCls + ' flex-1'}
-              />
-              <input
-                value={newLink.url}
-                onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
-                onKeyDown={(e) => e.key === 'Enter' && addLink()}
-                placeholder="https://..."
-                className={inputCls + ' flex-1'}
-              />
-              <button
-                onClick={addLink}
-                className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
-              >
-                <Icon name="Plus" size={16} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!canFullEdit && links.length > 0 && (
-          <div>
-            <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
-            <div className="flex flex-col gap-1.5">
-              {links.map((l, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2">
-                  <Icon name="Link" size={13} className="text-primary shrink-0" />
-                  <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
-                    {l.label}
-                  </a>
-                </div>
-              ))}
-            </div>
+            {canFullEdit && (
+              <div className="flex gap-2">
+                <input
+                  value={newLink.label}
+                  onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
+                  placeholder="Название (напр. Тикет #1234)"
+                  className={inputCls + ' flex-1'}
+                />
+                <input
+                  value={newLink.url}
+                  onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && addLink()}
+                  placeholder="https://..."
+                  className={inputCls + ' flex-1'}
+                />
+                <button
+                  onClick={addLink}
+                  className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+                >
+                  <Icon name="Plus" size={16} />
+                </button>
+              </div>
+            )}
           </div>
         )}
 
