@@ -137,7 +137,7 @@ export default function UserList({
               <Icon name="BarChart3" size={15} />
             </button>
 
-            {u.is_active && !pending && u.id !== currentUserId && (
+            {u.is_active && u.id !== currentUserId && (
               <button
                 onClick={() => impersonate(u)}
                 disabled={impersonatingId !== null}
