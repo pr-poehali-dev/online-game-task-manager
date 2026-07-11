@@ -78,6 +78,19 @@ export function formatMskDateTime(iso: string | null | undefined): string {
   }) + ' МСК';
 }
 
+export function taskAge(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const created = new Date(iso).getTime();
+  if (Number.isNaN(created)) return '';
+  const diffMs = Date.now() - created;
+  if (diffMs < 0) return '0ч';
+  const totalHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  if (days > 0) return `${days}д ${hours}ч`;
+  return `${hours}ч`;
+}
+
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome } from './shared';
-import { taskAssigneeIds, columns, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
+import { taskAssigneeIds, columns, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, taskAge } from './shared';
 
 type SortMode = 'none' | 'priority' | 'date_new' | 'date_old';
 
@@ -153,6 +153,12 @@ export default function Board({
                         <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Есть связанные статьи">
                           <Icon name="BookOpen" size={11} />
                           {t.kbArticleIds.length}
+                        </span>
+                      )}
+                      {t.createdAt && (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground ml-auto" title="Время жизни задачи">
+                          <Icon name="Clock" size={11} />
+                          {taskAge(t.createdAt)}
                         </span>
                       )}
                     </div>
