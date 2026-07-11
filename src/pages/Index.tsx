@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import Icon from '@/components/ui/icon';
-import KnowledgeBase, { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
-import type { KbCategoryId, KbArticleBrief } from '@/components/KnowledgeBase';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
+import { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
+import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import {
   authHeaders,
   AUTH_URL,
@@ -12,13 +10,7 @@ import {
   SPRINTS_URL,
   TOKEN_KEY,
   taskAssigneeIds,
-  resolveAssignee,
   outcomeMeta,
-  categoryMeta,
-  servers,
-  categories,
-  hueFor,
-  initials,
 } from './index/shared';
 import type {
   TeamMember,
@@ -28,18 +20,15 @@ import type {
   CategoryId,
   TaskOutcome,
   ColumnId,
+  ViewId,
 } from './index/shared';
-import Board from './index/Board';
-import Restart from './index/Restart';
-import Ideas from './index/Ideas';
-import NotificationBell from './index/NotificationBell';
-import { TaskModal, CreateTaskModal } from './index/TaskModals';
-import { Archive, Sprints, CreateSprintModal } from './index/SprintsBugsArchive';
+import IndexSidebar from './index/IndexSidebar';
+import IndexTopbar from './index/IndexTopbar';
+import IndexMain from './index/IndexMain';
 
 export default function Index() {
-  const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
-  const [view, setView] = useState<'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas'>('board');
+  const [view, setView] = useState<ViewId>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -355,436 +344,85 @@ export default function Index() {
 
   return (
     <div className="min-h-screen grid-bg text-foreground flex">
-      {/* Sidebar */}
-      <aside className="w-72 shrink-0 border-r border-border bg-card/60 backdrop-blur-sm hidden lg:flex flex-col">
-        {/* Logo — L2 style */}
-        <div className="px-5 pt-5 pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: 'linear-gradient(135deg, hsl(35 85% 40%), hsl(45 90% 55%))' }}>
-              <Icon name="Swords" size={20} className="text-black/80" />
-            </div>
-            <div>
-              <div className="font-display text-xl leading-none tracking-widest text-foreground" style={{ letterSpacing: '0.18em' }}>ЭРА</div>
-              <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Task Command</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Categories nav */}
-        <div className="px-4 pt-4 pb-2">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Категории</div>
-          <div className="space-y-0.5">
-            <button
-              onClick={() => setCategory('all')}
-              className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${category === 'all' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
-            >
-              <Icon name="LayoutGrid" size={14} />
-              {view === 'knowledge' ? 'Все статьи' : 'Все задачи'}
-              <span className="ml-auto text-xs font-mono opacity-60">{view === 'knowledge' ? kbArticles.length : tasks.length}</span>
-            </button>
-            {categories.map((cat) => {
-              const count = view === 'knowledge'
-                ? kbArticles.filter((a) => a.category === cat.id).length
-                : tasks.filter((t) => t.category === cat.id).length;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setCategory(cat.id)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors"
-                  style={{
-                    background: category === cat.id ? `hsl(${cat.color} / 0.12)` : 'transparent',
-                    color: category === cat.id ? `hsl(${cat.color})` : 'hsl(var(--muted-foreground))',
-                    fontWeight: category === cat.id ? 500 : 400,
-                  }}
-                >
-                  <Icon name={cat.icon} size={14} />
-                  {cat.label}
-                  <span className="ml-auto text-xs font-mono opacity-60">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="px-4 pt-3 pb-2 mt-auto">
-          <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1 flex items-center gap-1.5">
-            Команда
-            <span className="text-[10px] font-mono opacity-60">
-              {team.filter((m) => m.online).length}/{team.length} онлайн
-            </span>
-          </div>
-          <div className="space-y-0.5">
-            {team.length === 0 && (
-              <div className="text-xs text-muted-foreground px-2 py-1.5">Пока никого нет</div>
-            )}
-            {team.map((m) => {
-              const hue = hueFor(m.tg_username || m.first_name || String(m.id));
-              const displayName = `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`;
-              const tg = (m.tg_username || '').replace('@', '');
-              const openTasks = tasks.filter((t) => !t.archived && t.column !== 'done' && taskAssigneeIds(t).includes(m.id)).length;
-              const filterActive = assigneeFilter === m.id;
-              return (
-                <div
-                  key={m.id}
-                  onClick={() => { setAssigneeFilter(filterActive ? 'all' : m.id); setView('board'); }}
-                  title={filterActive ? 'Показать все задачи' : `Показать задачи: ${displayName}`}
-                  className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors group cursor-pointer ${filterActive ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/50'}`}
-                >
-                  <div className="relative shrink-0">
-                    {m.photo_url ? (
-                      <img src={m.photo_url} alt="" className="h-7 w-7 rounded-md object-cover" />
-                    ) : (
-                      <div
-                        className="h-7 w-7 rounded-md flex items-center justify-center text-xs font-semibold"
-                        style={{ background: `hsl(${hue} / 0.18)`, color: `hsl(${hue})` }}
-                      >
-                        {initials(m.first_name, m.last_name)}
-                      </div>
-                    )}
-                    <span
-                      title={m.pending ? 'Ожидает входа' : m.online ? 'Онлайн' : 'Оффлайн'}
-                      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card ${m.online ? 'bg-green-500' : 'bg-muted-foreground/40'}`}
-                    />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium truncate">{displayName}</div>
-                    <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>
-                      {m.specialization || (m.role === 'admin' ? 'Администратор' : 'Участник')}
-                    </div>
-                  </div>
-                  {openTasks > 0 && (
-                    <span
-                      title={`Открытых задач: ${openTasks}`}
-                      className="shrink-0 min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center group-hover:opacity-0 transition-opacity"
-                    >
-                      {openTasks}
-                    </span>
-                  )}
-                  {tg && (
-                    <a
-                      href={`https://t.me/${tg}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      title={`Написать ${displayName} в Telegram`}
-                      onClick={(e) => e.stopPropagation()}
-                      className="opacity-0 group-hover:opacity-100 shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all"
-                    >
-                      <Icon name="Send" size={12} />
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </aside>
+      <IndexSidebar
+        view={view}
+        category={category}
+        setCategory={setCategory}
+        kbArticles={kbArticles}
+        tasks={tasks}
+        team={team}
+        assigneeFilter={assigneeFilter}
+        setAssigneeFilter={setAssigneeFilter}
+        setView={setView}
+      />
 
       {/* Main */}
       <main className="flex-1 min-w-0 flex flex-col">
-        {/* Topbar */}
-        <header className="h-14 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm"
-          style={{ borderBottom: '1px solid hsl(var(--border))', boxShadow: '0 1px 0 hsl(35 85% 45% / 0.08)' }}>
-          <div className="flex items-center gap-2">
-            <span className="font-display tracking-widest text-base" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
-            <span className="text-muted-foreground/40 text-sm">/</span>
-            <span className="text-sm text-muted-foreground">
-              {view === 'board' && 'Доска задач'}
-              {view === 'sprints' && 'Спринты'}
-              {view === 'archive' && 'Архив задач'}
-              {view === 'knowledge' && 'База знаний'}
-              {view === 'restart' && 'К рестарту'}
-              {view === 'ideas' && 'Идеи'}
-            </span>
-          </div>
-          <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
-            {[
-              { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
-              { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
-              { k: 'sprints', label: 'Спринты', icon: 'Zap' },
-              { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
-              { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
-              { k: 'archive', label: 'Архив', icon: 'Archive' },
-            ].map((t) => (
-              <button
-                key={t.k}
-                onClick={() => setView(t.k as typeof view)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  view === t.k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <Icon name={t.icon} size={15} />
-                {t.label}
-              </button>
-            ))}
-          </nav>
-          <div className="ml-auto flex items-center gap-2">
-            {category !== 'all' && (
-              <button
-                onClick={() => setCategory('all')}
-                className="hidden md:flex items-center gap-1.5 h-8 px-3 rounded-lg text-xs font-medium border transition-colors hover:opacity-80"
-                style={{
-                  borderColor: `hsl(${categoryMeta(category as CategoryId).color} / 0.4)`,
-                  background: `hsl(${categoryMeta(category as CategoryId).color} / 0.1)`,
-                  color: `hsl(${categoryMeta(category as CategoryId).color})`,
-                }}
-              >
-                <Icon name={categoryMeta(category as CategoryId).icon} size={12} />
-                {categoryMeta(category as CategoryId).label}
-                <Icon name="X" size={11} />
-              </button>
-            )}
-            {user && (
-              <NotificationBell
-                onOpenTask={handleOpenTaskById}
-                onOpenIdea={handleOpenIdeaById}
-              />
-            )}
-            {user ? (
-              <button
-                onClick={() => navigate(isAdmin ? '/admin' : '/cabinet')}
-                title={isAdmin ? 'Админка' : 'Личный кабинет'}
-                className="h-8 px-2.5 rounded-lg bg-secondary/60 flex items-center gap-2 hover:bg-secondary transition-colors"
-              >
-                {user.photo_url ? (
-                  <img src={user.photo_url} alt="" className="h-5 w-5 rounded-full object-cover" />
-                ) : (
-                  <Icon name={isAdmin ? 'Shield' : 'User'} size={15} />
-                )}
-                <span className="hidden sm:inline text-sm">{user.first_name}</span>
-              </button>
-            ) : (
-              <button
-                onClick={() => navigate('/login')}
-                className="h-8 px-3 rounded-lg bg-secondary/60 flex items-center gap-2 hover:bg-secondary transition-colors text-sm"
-              >
-                <Icon name="LogIn" size={15} />
-                <span className="hidden sm:inline">Войти</span>
-              </button>
-            )}
-            {view === 'sprints' && (
-              <button
-                onClick={() => setCreateSprint(true)}
-                className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                <Icon name="Plus" size={15} />
-                <span className="hidden sm:inline">Спринт</span>
-              </button>
-            )}
-            {view === 'board' && (
-              <button
-                onClick={() => setCreateFor('todo')}
-                className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-              >
-                <Icon name="Plus" size={15} />
-                <span className="hidden sm:inline">Задача</span>
-              </button>
-            )}
-          </div>
-        </header>
+        <IndexTopbar
+          view={view}
+          setView={setView}
+          category={category}
+          setCategory={setCategory}
+          user={user}
+          isAdmin={isAdmin}
+          onOpenTaskById={handleOpenTaskById}
+          onOpenIdeaById={handleOpenIdeaById}
+          setCreateSprint={setCreateSprint}
+          setCreateFor={setCreateFor}
+          server={server}
+          setServer={setServer}
+          assigneeFilter={assigneeFilter}
+          setAssigneeFilter={setAssigneeFilter}
+          myOpenCount={myOpenCount}
+          sprints={sprints}
+          sprintFilter={sprintFilter}
+          setSprintFilter={setSprintFilter}
+          activeTasks={activeTasks}
+          team={team}
+        />
 
-        {/* Filter bar — server + sprint */}
-        {view === 'board' && (
-          <div className="flex items-center gap-2 px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
-            <Icon name="Server" size={12} className="text-muted-foreground shrink-0" />
-            <button
-              onClick={() => setServer('all')}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 ${
-                server === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-              }`}
-            >
-              Все серверы
-            </button>
-            {servers.map((s) => {
-              const active = server === s.id;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setServer(s.id)}
-                  className="text-xs font-medium px-2.5 py-1 rounded-md transition-all shrink-0 flex items-center gap-1.5 border"
-                  style={{
-                    background: active ? `hsl(${s.color} / 0.18)` : 'transparent',
-                    borderColor: active ? `hsl(${s.color} / 0.4)` : 'hsl(var(--border))',
-                    color: active ? `hsl(${s.color})` : 'hsl(var(--muted-foreground))',
-                  }}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${s.color})` }} />
-                  {s.label}
-                </button>
-              );
-            })}
-            {view === 'board' && (
-              <>
-                {user && (
-                  <>
-                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
-                    <button
-                      onClick={() => setAssigneeFilter(assigneeFilter === user.id ? 'all' : user.id)}
-                      className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 ${
-                        assigneeFilter === user.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
-                      }`}
-                    >
-                      <Icon name="UserCheck" size={12} />
-                      Мои задачи
-                      {myOpenCount > 0 && (
-                        <span className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center ${
-                          assigneeFilter === user.id ? 'bg-primary-foreground/25 text-primary-foreground' : 'bg-primary/20 text-primary'
-                        }`}>
-                          {myOpenCount}
-                        </span>
-                      )}
-                    </button>
-                  </>
-                )}
-                <div className="w-px h-4 bg-border mx-1 shrink-0" />
-                <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
-                {sprints.map((sp) => {
-                  const active = sprintFilter === sp.id;
-                  const count = activeTasks.filter((t) => t.sprintId === sp.id).length;
-                  const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
-                  return (
-                    <button
-                      key={sp.id}
-                      onClick={() => setSprintFilter(active ? 'all' : sp.id)}
-                      className="text-xs font-medium px-2.5 py-1 rounded-md transition-all shrink-0 flex items-center gap-1.5 border"
-                      style={{
-                        background: active ? `hsl(${statusColor} / 0.18)` : 'transparent',
-                        borderColor: active ? `hsl(${statusColor} / 0.4)` : 'hsl(var(--border))',
-                        color: active ? `hsl(${statusColor})` : 'hsl(var(--muted-foreground))',
-                      }}
-                    >
-                      {sp.status === 'active' && <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse" />}
-                      {sp.title}
-                      <span
-                        className="min-w-4 h-4 px-1 rounded-full text-[10px] font-semibold flex items-center justify-center"
-                        style={{ background: active ? `hsl(${statusColor} / 0.25)` : 'hsl(var(--secondary))', color: active ? `hsl(${statusColor})` : 'hsl(var(--muted-foreground))' }}
-                      >
-                        {count}
-                      </span>
-                      {active && <Icon name="X" size={11} />}
-                    </button>
-                  );
-                })}
-                {assigneeFilter !== 'all' && (
-                  <>
-                    <div className="w-px h-4 bg-border mx-1 shrink-0" />
-                    <button
-                      onClick={() => setAssigneeFilter('all')}
-                      title="Сбросить фильтр по исполнителю"
-                      className="text-xs font-medium px-2.5 py-1 rounded-md transition-colors shrink-0 flex items-center gap-1.5 bg-primary/15 text-primary border border-primary/40"
-                    >
-                      <Icon name="User" size={11} />
-                      {resolveAssignee(team, assigneeFilter).name}
-                      <Icon name="X" size={11} />
-                    </button>
-                  </>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        <div className="flex-1 overflow-auto p-6 scrollbar-thin">
-          {view === 'board' && (
-            <Board
-              tasks={filteredTasks}
-              team={team}
-              loading={tasksLoading}
-              onCardClick={setSelectedTask}
-              onAddClick={setCreateFor}
-              onArchive={handleArchiveTask}
-            />
-          )}
-          {view === 'sprints' && (
-            <Sprints
-              sprints={sprints}
-              tasks={activeTasks}
-              onUpdate={handleUpdateSprint}
-              onDelete={handleDeleteSprint}
-              onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
-            />
-          )}
-          {view === 'archive' && (
-            <Archive
-              tasks={filteredArchive}
-              total={archivedTasks.length}
-              team={team}
-              outcomeFilter={outcomeFilter}
-              onOutcomeFilter={setOutcomeFilter}
-              onCardClick={setSelectedTask}
-              onRestore={handleUnarchiveTask}
-              onDelete={handleDeleteArchivedTask}
-            />
-          )}
-          {view === 'knowledge' && (
-            <KnowledgeBase
-              category={category as KbCategoryId | 'all'}
-              initialArticleId={openArticleId}
-              onConsumeInitial={() => setOpenArticleId(null)}
-              authors={team.map((m) => ({
-                id: m.id,
-                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
-                photo_url: m.photo_url,
-              }))}
-            />
-          )}
-          {view === 'restart' && (
-            <Restart
-              tasks={tasks}
-              team={team}
-              loading={tasksLoading}
-              onCardClick={setSelectedTask}
-              onAddClick={() => setCreateFor('restart')}
-              onToRestart={handleToRestart}
-              onToggleDone={handleToggleRestartDone}
-              onArchive={handleArchiveTask}
-            />
-          )}
-          {view === 'ideas' && (
-            <Ideas
-              initialTopicId={openTopicId}
-              onConsumeInitial={() => setOpenTopicId(null)}
-              authors={team.map((m) => ({
-                id: m.id,
-                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
-                photo_url: m.photo_url,
-              }))}
-            />
-          )}
-        </div>
+        <IndexMain
+          view={view}
+          filteredTasks={filteredTasks}
+          team={team}
+          tasksLoading={tasksLoading}
+          setSelectedTask={setSelectedTask}
+          setCreateFor={setCreateFor}
+          handleArchiveTask={handleArchiveTask}
+          sprints={sprints}
+          activeTasks={activeTasks}
+          handleUpdateSprint={handleUpdateSprint}
+          handleDeleteSprint={handleDeleteSprint}
+          setSprintFilter={setSprintFilter}
+          setView={setView}
+          filteredArchive={filteredArchive}
+          archivedTasks={archivedTasks}
+          outcomeFilter={outcomeFilter}
+          setOutcomeFilter={setOutcomeFilter}
+          handleUnarchiveTask={handleUnarchiveTask}
+          handleDeleteArchivedTask={handleDeleteArchivedTask}
+          category={category}
+          openArticleId={openArticleId}
+          setOpenArticleId={setOpenArticleId}
+          tasks={tasks}
+          handleToRestart={handleToRestart}
+          handleToggleRestartDone={handleToggleRestartDone}
+          openTopicId={openTopicId}
+          setOpenTopicId={setOpenTopicId}
+          selectedTask={selectedTask}
+          kbArticles={kbArticles}
+          handleOpenArticle={handleOpenArticle}
+          handleUpdateTask={handleUpdateTask}
+          handleDeleteTask={handleDeleteTask}
+          createFor={createFor}
+          createPreset={createPreset}
+          setCreatePreset={setCreatePreset}
+          handleAddTask={handleAddTask}
+          createSprint={createSprint}
+          setCreateSprint={setCreateSprint}
+          handleCreateSprint={handleCreateSprint}
+        />
       </main>
-
-      {selectedTask && (
-        <TaskModal
-          task={selectedTask}
-          team={team}
-          kbArticles={kbArticles}
-          onOpenArticle={handleOpenArticle}
-          onClose={() => setSelectedTask(null)}
-          onSave={handleUpdateTask}
-          onDelete={handleDeleteTask}
-          onArchive={handleArchiveTask}
-          onUnarchive={handleUnarchiveTask}
-          sprints={sprints}
-        />
-      )}
-      {createFor && (
-        <CreateTaskModal
-          column={createFor}
-          team={team}
-          kbArticles={kbArticles}
-          preset={createPreset}
-          onClose={() => { setCreateFor(null); setCreatePreset(null); }}
-          onCreate={handleAddTask}
-          sprints={sprints}
-        />
-      )}
-      {createSprint && (
-        <CreateSprintModal
-          onClose={() => setCreateSprint(false)}
-          onCreate={handleCreateSprint}
-        />
-      )}
     </div>
   );
 }
