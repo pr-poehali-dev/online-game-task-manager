@@ -27,6 +27,7 @@ export interface AuthUser {
   member_id: string | null;
   tg_username: string | null;
   permissions?: Partial<Record<PermissionKey, boolean>>;
+  theme?: 'light' | 'dark';
 }
 
 export interface TelegramAuthData {

@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Cabinet() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function Cabinet() {
         <span className="text-muted-foreground/40 text-sm">/</span>
         <span className="text-sm text-muted-foreground">Личный кабинет</span>
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           {isAdmin && (
             <button
               onClick={() => navigate('/admin')}

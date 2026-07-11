@@ -4,6 +4,7 @@ import Icon from '@/components/ui/icon';
 import BotLoginButton from '@/components/BotLoginButton';
 import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
+import ThemeToggle from '@/components/ThemeToggle';
 // === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ ===
 import DevLoginPanel from '@/components/DevLoginPanel';
 // === DEV_LOGIN_END ===
@@ -18,7 +19,10 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className="min-h-screen flex items-center justify-center bg-background px-4 relative">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2 mb-4">

@@ -9,6 +9,7 @@ import SessionsModal from './admin/SessionsModal';
 import StatsModal from './admin/StatsModal';
 import { ADMIN_URL, TOKEN_KEY, authFetch } from './admin/adminShared';
 import type { TeamUser, SessionInfo, UserStats, Permissions } from './admin/adminShared';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Admin() {
   const navigate = useNavigate();
@@ -159,6 +160,7 @@ export default function Admin() {
         <span className="text-muted-foreground/40 text-sm">/</span>
         <span className="text-sm text-muted-foreground flex items-center gap-1.5"><Icon name="Shield" size={14} /> Админка</span>
         <div className="ml-auto flex items-center gap-2">
+          <ThemeToggle />
           <button onClick={() => navigate('/')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
             <Icon name="LayoutGrid" size={15} /> Доска
           </button>

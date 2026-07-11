@@ -22,6 +22,15 @@
       "expectedStatus": 403,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST set_theme without token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "set_theme", "theme": "light"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

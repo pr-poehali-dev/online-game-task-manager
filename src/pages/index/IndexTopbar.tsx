@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import type { AuthUser, PermissionKey } from '@/lib/auth';
 import NotificationBell from './NotificationBell';
+import ThemeToggle from '@/components/ThemeToggle';
 import {
   resolveAssignee,
   categoryMeta,
@@ -118,6 +119,7 @@ export default function IndexTopbar({
               <Icon name="X" size={11} />
             </button>
           )}
+          <ThemeToggle />
           {user && (
             <NotificationBell
               onOpenTask={onOpenTaskById}
