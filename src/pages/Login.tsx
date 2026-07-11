@@ -4,6 +4,9 @@ import Icon from '@/components/ui/icon';
 import BotLoginButton from '@/components/BotLoginButton';
 import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
+// === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ ===
+import DevLoginPanel from '@/components/DevLoginPanel';
+// === DEV_LOGIN_END ===
 
 export default function Login() {
   const navigate = useNavigate();
@@ -37,6 +40,10 @@ export default function Login() {
             </div>
           )}
         </div>
+
+        {/* === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ === */}
+        <DevLoginPanel onSuccess={handleSuccess} onError={setError} />
+        {/* === DEV_LOGIN_END === */}
 
         <button
           onClick={() => navigate('/')}
