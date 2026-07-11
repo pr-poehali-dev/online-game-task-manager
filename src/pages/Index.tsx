@@ -27,7 +27,7 @@ import IndexTopbar from './index/IndexTopbar';
 import IndexMain from './index/IndexMain';
 
 export default function Index() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, can } = useAuth();
   const [view, setView] = useState<ViewId>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
@@ -372,6 +372,7 @@ export default function Index() {
           setCategory={setCategory}
           user={user}
           isAdmin={isAdmin}
+          can={can}
           onOpenTaskById={handleOpenTaskById}
           onOpenIdeaById={handleOpenIdeaById}
           setCreateSprint={setCreateSprint}
@@ -429,6 +430,8 @@ export default function Index() {
           setCreateSprint={setCreateSprint}
           handleCreateSprint={handleCreateSprint}
           isAdmin={isAdmin}
+          can={can}
+          currentUserId={user?.id ?? null}
           archivedSprints={archivedSprints}
           handleRestoreSprint={handleRestoreSprint}
           handleDeleteSprintPermanently={handleDeleteSprint}

@@ -5,6 +5,7 @@ import Restart from './Restart';
 import Ideas from './Ideas';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
+import type { PermissionKey } from '@/lib/auth';
 import type {
   TeamMember,
   Task,
@@ -56,6 +57,8 @@ export default function IndexMain({
   setCreateSprint,
   handleCreateSprint,
   isAdmin,
+  can,
+  currentUserId,
   archivedSprints,
   handleRestoreSprint,
   handleDeleteSprintPermanently,
@@ -100,6 +103,8 @@ export default function IndexMain({
   setCreateSprint: (v: boolean) => void;
   handleCreateSprint: (s: Sprint) => void;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
+  currentUserId: number | null;
   archivedSprints: Sprint[];
   handleRestoreSprint: (id: string) => void;
   handleDeleteSprintPermanently: (id: string) => void;
@@ -116,6 +121,7 @@ export default function IndexMain({
             onAddClick={setCreateFor}
             onArchive={handleArchiveTask}
             isAdmin={isAdmin}
+            can={can}
           />
         )}
         {view === 'sprints' && (
@@ -126,6 +132,7 @@ export default function IndexMain({
             onDelete={handleDeleteSprint}
             onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
             isAdmin={isAdmin}
+            can={can}
           />
         )}
         {view === 'archive' && (
@@ -149,6 +156,8 @@ export default function IndexMain({
             category={category as KbCategoryId | 'all'}
             initialArticleId={openArticleId}
             onConsumeInitial={() => setOpenArticleId(null)}
+            can={can}
+            isAdmin={isAdmin}
             authors={team.map((m) => ({
               id: m.id,
               name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
@@ -167,6 +176,8 @@ export default function IndexMain({
             onToggleDone={handleToggleRestartDone}
             onArchive={handleArchiveTask}
             isAdmin={isAdmin}
+            can={can}
+            currentUserId={currentUserId}
           />
         )}
         {view === 'ideas' && (
@@ -195,6 +206,8 @@ export default function IndexMain({
           onUnarchive={handleUnarchiveTask}
           sprints={sprints}
           isAdmin={isAdmin}
+          can={can}
+          currentUserId={currentUserId}
         />
       )}
       {createFor && (

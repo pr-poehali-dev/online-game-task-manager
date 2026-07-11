@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import type { PermissionKey } from '@/lib/auth';
 import func2url from '../../backend/func2url.json';
 
 export const KNOWLEDGE_URL = (func2url as Record<string, string>).knowledge;
@@ -76,11 +77,13 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-export default function KnowledgeBase({ category, authors, initialArticleId, onConsumeInitial }: {
+export default function KnowledgeBase({ category, authors, initialArticleId, onConsumeInitial, can, isAdmin }: {
   category: KbCategoryId | 'all';
   authors: Author[];
   initialArticleId?: string | null;
   onConsumeInitial?: () => void;
+  can: (key: PermissionKey) => boolean;
+  isAdmin: boolean;
 }) {
   const [list, setList] = useState<ArticleListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,6 +193,8 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
         onBack={() => setCurrent(null)}
         onEdit={() => setEditing(current)}
         onDelete={() => deleteArticle(current.id)}
+        canEdit={can('kb_edit')}
+        canDelete={isAdmin}
       />
     );
   }
@@ -213,13 +218,15 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
             className={inputCls + ' pl-9'}
           />
         </div>
-        <button
-          onClick={() => setEditing('new')}
-          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
-        >
-          <Icon name="Plus" size={15} />
-          <span className="hidden sm:inline">Статья</span>
-        </button>
+        {can('kb_create') && (
+          <button
+            onClick={() => setEditing('new')}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
+          >
+            <Icon name="Plus" size={15} />
+            <span className="hidden sm:inline">Статья</span>
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -257,12 +264,14 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
   );
 }
 
-function ArticleView({ article, authorName, onBack, onEdit, onDelete }: {
+function ArticleView({ article, authorName, onBack, onEdit, onDelete, canEdit, canDelete }: {
   article: Article;
   authorName: (id: number | null) => string;
   onBack: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  canEdit: boolean;
+  canDelete: boolean;
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   return (
@@ -273,11 +282,13 @@ function ArticleView({ article, authorName, onBack, onEdit, onDelete }: {
           К списку
         </button>
         <div className="ml-auto flex items-center gap-2">
-          <button onClick={onEdit} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
-            <Icon name="Pencil" size={13} />
-            Редактировать
-          </button>
-          {confirmDel ? (
+          {canEdit && (
+            <button onClick={onEdit} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+              <Icon name="Pencil" size={13} />
+              Редактировать
+            </button>
+          )}
+          {canDelete && (confirmDel ? (
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-muted-foreground hidden sm:inline">Удалить?</span>
               <button onClick={onDelete} className="h-8 px-2.5 rounded-lg bg-destructive/90 text-white text-xs hover:bg-destructive transition-colors">Да</button>
@@ -287,7 +298,7 @@ function ArticleView({ article, authorName, onBack, onEdit, onDelete }: {
             <button onClick={() => setConfirmDel(true)} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
               <Icon name="Trash2" size={14} />
             </button>
-          )}
+          ))}
         </div>
       </div>
 

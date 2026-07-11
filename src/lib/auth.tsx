@@ -5,6 +5,17 @@ import func2url from '../../backend/func2url.json';
 const AUTH_URL = (func2url as Record<string, string>).auth;
 const TOKEN_KEY = 'era_auth_token';
 
+export type PermissionKey =
+  | 'task_create'
+  | 'task_edit_own'
+  | 'task_view_others'
+  | 'task_restart'
+  | 'idea_create'
+  | 'kb_create'
+  | 'kb_edit'
+  | 'sprint_create'
+  | 'sprint_edit';
+
 export interface AuthUser {
   id: number;
   telegram_id: number;
@@ -15,6 +26,7 @@ export interface AuthUser {
   role: 'admin' | 'member';
   member_id: string | null;
   tg_username: string | null;
+  permissions?: Partial<Record<PermissionKey, boolean>>;
 }
 
 export interface TelegramAuthData {
@@ -31,6 +43,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
   loginWithTelegram: (data: TelegramAuthData) => Promise<AuthUser>;
   applySession: (token: string, user: AuthUser) => void;
   logout: () => Promise<void>;
@@ -107,8 +120,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const can = useCallback((key: PermissionKey) => {
+    if (!user) return false;
+    const explicit = user.permissions?.[key];
+    if (explicit != null) return explicit;
+    return user.role === 'admin';
+  }, [user]);
+
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', loginWithTelegram, applySession, logout }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', can, loginWithTelegram, applySession, logout }}>
       {children}
     </AuthContext.Provider>
   );

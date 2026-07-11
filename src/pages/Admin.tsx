@@ -2,11 +2,56 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
+import type { PermissionKey } from '@/lib/auth';
 import func2url from '../../backend/func2url.json';
 
 // PERSISTENCE_MARKER_2024_PERM_CHECK — маркер проверки сохранения изменений
 const ADMIN_URL = (func2url as Record<string, string>).admin;
 const TOKEN_KEY = 'era_auth_token';
+
+type Permissions = Partial<Record<PermissionKey, boolean>>;
+
+interface PermissionGroup {
+  title: string;
+  icon: string;
+  items: { key: PermissionKey; label: string }[];
+}
+
+const PERMISSION_GROUPS: PermissionGroup[] = [
+  {
+    title: 'Задачи',
+    icon: 'ClipboardList',
+    items: [
+      { key: 'task_create', label: 'Создание задач' },
+      { key: 'task_edit_own', label: 'Редактирование своих задач (созданных самим)' },
+      { key: 'task_view_others', label: 'Просмотр чужих задач' },
+      { key: 'task_restart', label: 'Перенос своих задач в «К рестарту»' },
+    ],
+  },
+  {
+    title: 'Идеи',
+    icon: 'Lightbulb',
+    items: [
+      { key: 'idea_create', label: 'Создание идей' },
+    ],
+  },
+  {
+    title: 'База знаний',
+    icon: 'BookOpen',
+    items: [
+      { key: 'kb_create', label: 'Создание статей' },
+      { key: 'kb_edit', label: 'Редактирование статей' },
+    ],
+  },
+  {
+    title: 'Спринты',
+    icon: 'Zap',
+    items: [
+      { key: 'sprint_create', label: 'Создание спринтов' },
+      { key: 'sprint_edit', label: 'Редактирование спринтов' },
+    ],
+  },
+];
 
 interface TeamUser {
   id: number;
@@ -23,6 +68,7 @@ interface TeamUser {
   specialization: string | null;
   online: boolean;
   active_sessions: number;
+  permissions: Permissions;
 }
 
 interface SessionInfo {
@@ -55,6 +101,9 @@ export default function Admin() {
   const [sessionsLoading, setSessionsLoading] = useState(false);
   const [editSpecId, setEditSpecId] = useState<number | null>(null);
   const [editSpecValue, setEditSpecValue] = useState('');
+  const [permsForId, setPermsForId] = useState<number | null>(null);
+  const [permsDraft, setPermsDraft] = useState<Permissions>({});
+  const [permsSaving, setPermsSaving] = useState(false);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY) || '';
@@ -118,6 +167,19 @@ export default function Admin() {
   async function hideUser(u: TeamUser) {
     if (!confirm(`Скрыть ${u.first_name} из команды? Аккаунт будет отключён и убран из списка.`)) return;
     await authFetch({ action: 'set_hidden', user_id: u.id, is_hidden: true });
+    load();
+  }
+
+  function openPerms(u: TeamUser) {
+    setPermsForId(u.id);
+    setPermsDraft({ ...u.permissions });
+  }
+
+  async function savePerms(id: number) {
+    setPermsSaving(true);
+    await authFetch({ action: 'set_permissions', user_id: id, permissions: permsDraft });
+    setPermsSaving(false);
+    setPermsForId(null);
     load();
   }
 
@@ -193,7 +255,8 @@ export default function Admin() {
             {users.map((u) => {
               const pending = u.telegram_id <= 0;
               return (
-                <div key={u.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+                <div key={u.id}>
+                <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
                   <div className="relative shrink-0">
                     {u.photo_url ? (
                       <img src={u.photo_url} alt="" className="h-10 w-10 rounded-lg object-cover" />
@@ -250,6 +313,17 @@ export default function Admin() {
                     {u.active_sessions > 0 && <span>{u.active_sessions}</span>}
                   </button>
 
+                  <button
+                    onClick={() => (permsForId === u.id ? setPermsForId(null) : openPerms(u))}
+                    title="Индивидуальные права"
+                    className={`h-8 px-2 rounded-lg flex items-center gap-1 text-xs transition-colors ${
+                      permsForId === u.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                    }`}
+                  >
+                    <Icon name="KeySquare" size={15} />
+                    <Icon name={permsForId === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} />
+                  </button>
+
                   <select
                     value={u.role}
                     onChange={(e) => setRole(u.id, e.target.value as 'member' | 'admin')}
@@ -278,6 +352,66 @@ export default function Admin() {
                       <Icon name="Trash2" size={16} />
                     </button>
                   )}
+                </div>
+
+                {permsForId === u.id && (
+                  <div className="mt-1.5 rounded-xl border border-border bg-card/60 p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-muted-foreground">
+                        Индивидуальные права — приоритетнее роли «{u.role === 'admin' ? 'Администратор' : 'Участник'}».
+                        Не отмеченные права наследуются от роли по умолчанию.
+                      </p>
+                      <button
+                        onClick={() => setPermsForId(null)}
+                        className="h-7 w-7 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      >
+                        <Icon name="X" size={14} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {PERMISSION_GROUPS.map((group) => (
+                        <div key={group.title} className="rounded-lg border border-border/60 p-3">
+                          <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
+                            <Icon name={group.icon} size={13} className="text-primary" />
+                            {group.title}
+                          </div>
+                          <div className="space-y-1.5">
+                            {group.items.map((item) => (
+                              <label key={item.key} className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={!!permsDraft[item.key]}
+                                  onChange={(e) =>
+                                    setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-border accent-primary"
+                                />
+                                {item.label}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={() => setPermsForId(null)}
+                        className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Отмена
+                      </button>
+                      <button
+                        onClick={() => savePerms(u.id)}
+                        disabled={permsSaving}
+                        className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
+                      >
+                        Сохранить
+                      </button>
+                    </div>
+                  </div>
+                )}
                 </div>
               );
             })}

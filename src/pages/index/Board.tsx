@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome } from './shared';
 import { taskAssigneeIds, columns, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, taskAge } from './shared';
+import type { PermissionKey } from '@/lib/auth';
 
 type SortMode = 'none' | 'priority' | 'date_new' | 'date_old';
 
@@ -35,6 +36,7 @@ export default function Board({
   onAddClick,
   onArchive,
   isAdmin,
+  can,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -43,6 +45,7 @@ export default function Board({
   onAddClick: (col: ColumnId) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('none');
@@ -169,7 +172,7 @@ export default function Board({
                   </div>
                 );
               })}
-              {isAdmin && (
+              {can('task_create') && (
                 <button
                   onClick={() => onAddClick(col.id)}
                   className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"

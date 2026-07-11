@@ -1,5 +1,6 @@
 import Icon from '@/components/ui/icon';
 import type { Task, Sprint } from './shared';
+import type { PermissionKey } from '@/lib/auth';
 
 const statusMeta: Record<Sprint['status'], { label: string; color: string; icon: string }> = {
   active:  { label: 'Активный', color: '152 55% 50%', icon: 'Zap' },
@@ -11,7 +12,7 @@ function formatDate(d: string) {
   return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
 }
 
-export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit, onDelete, isAdmin }: {
+export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit, onDelete, isAdmin, can }: {
   sprint: Sprint;
   index: number;
   tasks: Task[];
@@ -19,6 +20,7 @@ export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit
   onEdit: (s: Sprint) => void;
   onDelete: (id: string) => void;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
 }) {
   const sp = sprint;
   const i = index;
@@ -62,21 +64,21 @@ export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit
             <Icon name="LayoutGrid" size={13} />
             Доска
           </button>
+          {can('sprint_edit') && (
+            <button
+              onClick={() => onEdit({ ...sp })}
+              className="h-8 w-8 rounded-lg bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center justify-center"
+            >
+              <Icon name="Pencil" size={13} />
+            </button>
+          )}
           {isAdmin && (
-            <>
-              <button
-                onClick={() => onEdit({ ...sp })}
-                className="h-8 w-8 rounded-lg bg-secondary/60 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center justify-center"
-              >
-                <Icon name="Pencil" size={13} />
-              </button>
-              <button
-                onClick={() => onDelete(sp.id)}
-                className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center"
-              >
-                <Icon name="Trash2" size={13} />
-              </button>
-            </>
+            <button
+              onClick={() => onDelete(sp.id)}
+              className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center"
+            >
+              <Icon name="Trash2" size={13} />
+            </button>
           )}
         </div>
       </div>

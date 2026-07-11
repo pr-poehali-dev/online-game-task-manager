@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
-import type { AuthUser } from '@/lib/auth';
+import type { AuthUser, PermissionKey } from '@/lib/auth';
 import NotificationBell from './NotificationBell';
 import {
   resolveAssignee,
@@ -24,6 +24,7 @@ export default function IndexTopbar({
   setCategory,
   user,
   isAdmin,
+  can,
   onOpenTaskById,
   onOpenIdeaById,
   setCreateSprint,
@@ -45,6 +46,7 @@ export default function IndexTopbar({
   setCategory: (c: CategoryId | 'all') => void;
   user: AuthUser | null;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
   onOpenTaskById: (taskId: string) => void;
   onOpenIdeaById: (ideaId: string) => void;
   setCreateSprint: (v: boolean) => void;
@@ -144,7 +146,7 @@ export default function IndexTopbar({
               <span className="hidden sm:inline">Войти</span>
             </button>
           )}
-          {view === 'sprints' && isAdmin && (
+          {view === 'sprints' && can('sprint_create') && (
             <button
               onClick={() => setCreateSprint(true)}
               className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
@@ -153,7 +155,7 @@ export default function IndexTopbar({
               <span className="hidden sm:inline">Спринт</span>
             </button>
           )}
-          {view === 'board' && isAdmin && (
+          {view === 'board' && can('task_create') && (
             <button
               onClick={() => setCreateFor('todo')}
               className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"

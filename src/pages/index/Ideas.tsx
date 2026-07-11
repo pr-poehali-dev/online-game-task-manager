@@ -78,7 +78,7 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
   initialTopicId?: string | null;
   onConsumeInitial?: () => void;
 }) {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, can } = useAuth();
   const [list, setList] = useState<TopicListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [current, setCurrent] = useState<TopicListItem | null>(null);
@@ -420,15 +420,17 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
       </div>
       <p className="text-sm text-muted-foreground mb-5">Предложения и размышления о том, что стоило бы сделать. Обсуждайте в комментариях, закрывайте решённые темы.</p>
 
-      <div className="flex justify-end mb-4">
-        <button
-          onClick={() => setCreating(true)}
-          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          <Icon name="Plus" size={15} />
-          Новая идея
-        </button>
-      </div>
+      {can('idea_create') && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setCreating(true)}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            <Icon name="Plus" size={15} />
+            Новая идея
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-16">

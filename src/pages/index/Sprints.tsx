@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { Task, Sprint } from './shared';
+import type { PermissionKey } from '@/lib/auth';
 import SprintCard from './SprintCard';
 import { SprintEditModal } from './SprintModals';
 
-export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard, isAdmin }: {
+export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard, isAdmin, can }: {
   sprints: Sprint[];
   tasks: Task[];
   onUpdate: (s: Sprint) => void;
   onDelete: (id: string) => void;
   onFilterBoard: (sprintId: string) => void;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
 }) {
   const [editing, setEditing] = useState<Sprint | null>(null);
 
@@ -35,6 +37,7 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
             onEdit={setEditing}
             onDelete={onDelete}
             isAdmin={isAdmin}
+            can={can}
           />
         ))}
 

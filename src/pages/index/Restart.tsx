@@ -2,6 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, TaskOutcome } from './shared';
 import { taskAssigneeIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
+import type { PermissionKey } from '@/lib/auth';
 
 export default function Restart({
   tasks,
@@ -13,6 +14,8 @@ export default function Restart({
   onToggleDone,
   onArchive,
   isAdmin,
+  can,
+  currentUserId,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -23,15 +26,18 @@ export default function Restart({
   onToggleDone: (id: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
+  currentUserId: number | null;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [archiveMenu, setArchiveMenu] = useState<string | null>(null);
 
   const restartTasks = tasks.filter((t) => !t.archived && t.column === 'restart');
   // Кандидаты на перенос: не в архиве, не в рестарте, готовы к заливке на лайв или в колонке Done
-  const candidates = tasks.filter(
-    (t) => !t.archived && t.column !== 'restart' && (t.deployStatus === 'ready_live' || t.column === 'done')
-  );
+  const canRestart = isAdmin || can('task_restart');
+  const candidates = tasks
+    .filter((t) => !t.archived && t.column !== 'restart' && (t.deployStatus === 'ready_live' || t.column === 'done'))
+    .filter((t) => isAdmin || taskAssigneeIds(t).includes(currentUserId ?? -1) || t.creatorId === currentUserId);
 
   if (loading) {
     return (
@@ -50,44 +56,48 @@ export default function Restart({
       </div>
       <p className="text-sm text-muted-foreground mb-5">Короткие задачи, которые применяются во время плановых технических работ. Отметьте «Готово» после выполнения и отправьте в архив.</p>
 
-      {isAdmin && (
+      {(can('task_create') || canRestart) && (
         <div className="flex items-center gap-2 mb-5">
-          <button
-            onClick={onAddClick}
-            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Icon name="Plus" size={15} />
-            Новая задача
-          </button>
-          <div className="relative">
+          {can('task_create') && (
             <button
-              onClick={() => setPickerOpen((v) => !v)}
-              className="flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              onClick={onAddClick}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
             >
-              <Icon name="ArrowDownToLine" size={15} />
-              Перенести задачу
-              <Icon name="ChevronDown" size={13} />
+              <Icon name="Plus" size={15} />
+              Новая задача
             </button>
-            {pickerOpen && (
-              <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-card shadow-lg p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1.5">Готовы к заливке / из «Готово»</div>
-                {candidates.length === 0 && (
-                  <div className="text-xs text-muted-foreground px-2 py-3">Нет подходящих задач</div>
-                )}
-                {candidates.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => { setPickerOpen(false); onToRestart(t.id); }}
-                    className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-md text-sm hover:bg-secondary/60 transition-colors"
-                  >
-                    <Icon name="ArrowRight" size={13} className="text-primary shrink-0" />
-                    <span className="truncate flex-1">{t.title}</span>
-                    {t.deployStatus === 'ready_live' && <Icon name="Rocket" size={12} className="text-[hsl(45_90%_55%)] shrink-0" />}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          )}
+          {canRestart && (
+            <div className="relative">
+              <button
+                onClick={() => setPickerOpen((v) => !v)}
+                className="flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+              >
+                <Icon name="ArrowDownToLine" size={15} />
+                Перенести задачу
+                <Icon name="ChevronDown" size={13} />
+              </button>
+              {pickerOpen && (
+                <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-card shadow-lg p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1.5">Готовы к заливке / из «Готово»</div>
+                  {candidates.length === 0 && (
+                    <div className="text-xs text-muted-foreground px-2 py-3">Нет подходящих задач</div>
+                  )}
+                  {candidates.map((t) => (
+                    <button
+                      key={t.id}
+                      onClick={() => { setPickerOpen(false); onToRestart(t.id); }}
+                      className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                    >
+                      <Icon name="ArrowRight" size={13} className="text-primary shrink-0" />
+                      <span className="truncate flex-1">{t.title}</span>
+                      {t.deployStatus === 'ready_live' && <Icon name="Rocket" size={12} className="text-[hsl(45_90%_55%)] shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

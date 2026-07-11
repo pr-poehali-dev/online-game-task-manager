@@ -6,8 +6,9 @@ import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
 import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
+import type { PermissionKey } from '@/lib/auth';
 
-export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin }: {
+export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId }: {
   task: Task;
   team: TeamMember[];
   kbArticles: KbArticleBrief[];
@@ -19,11 +20,15 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   onUnarchive: (id: string) => void;
   sprints: Sprint[];
   isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
+  currentUserId: number | null;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [archiveMenu, setArchiveMenu] = useState(false);
+  const isCreator = task.creatorId != null && task.creatorId === currentUserId;
+  const canFullEdit = isAdmin || (can('task_edit_own') && isCreator);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
@@ -40,8 +45,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   }
 
   function handleSave() {
-    if (!isAdmin) {
-      // Участник может изменить только колонку (перенос по доске To Do / In Progress / Done)
+    if (!canFullEdit) {
+      // Без полного доступа участник может изменить только колонку (перенос по доске To Do / In Progress / Done)
       onSave({ ...task, column: form.column });
       return;
     }
@@ -122,7 +127,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           <input
             value={form.title}
             onChange={(e) => set('title', e.target.value)}
-            readOnly={!isAdmin}
+            readOnly={!canFullEdit}
             className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors"
             placeholder="Название задачи"
           />
@@ -162,7 +167,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                   { value: 'done', label: 'Done' },
                 ]
           } />
-          {isAdmin && (
+          {canFullEdit && (
             <>
               <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
                 { value: 'critical', label: 'Критический' },
@@ -216,7 +221,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         {/* Description */}
         <div>
           <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
-          {isAdmin ? (
+          {canFullEdit ? (
             <RichEditor
               content={form.description ?? ''}
               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
@@ -229,7 +234,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
         </div>
 
-        {isAdmin && (
+        {canFullEdit && (
           <>
             {/* Deploy status */}
             <div>
@@ -299,7 +304,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           </>
         )}
 
-        {!isAdmin && links.length > 0 && (
+        {!canFullEdit && links.length > 0 && (
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
             <div className="flex flex-col gap-1.5">
