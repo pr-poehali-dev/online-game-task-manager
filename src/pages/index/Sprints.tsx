@@ -13,10 +13,8 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
   isAdmin: boolean;
 }) {
   const [editing, setEditing] = useState<Sprint | null>(null);
-  const [showArchive, setShowArchive] = useState(false);
 
   const activeSprints = sprints.filter((s) => s.status !== 'done');
-  const archivedSprints = sprints.filter((s) => s.status === 'done');
 
   return (
     <div className="max-w-3xl animate-fade-in">
@@ -46,36 +44,6 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
           </div>
         )}
       </div>
-
-      {archivedSprints.length > 0 && (
-        <div className="mt-8">
-          <button
-            onClick={() => setShowArchive((v) => !v)}
-            className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
-          >
-            <Icon name={showArchive ? 'ChevronDown' : 'ChevronRight'} size={16} />
-            <Icon name="Archive" size={15} />
-            Архив спринтов
-            <span className="text-xs font-mono opacity-60">{archivedSprints.length}</span>
-          </button>
-          {showArchive && (
-            <div className="space-y-4 opacity-80">
-              {archivedSprints.map((sp, i) => (
-                <SprintCard
-                  key={sp.id}
-                  sprint={sp}
-                  index={i}
-                  tasks={tasks}
-                  onFilterBoard={onFilterBoard}
-                  onEdit={setEditing}
-                  onDelete={onDelete}
-                  isAdmin={isAdmin}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {editing && (
         <SprintEditModal

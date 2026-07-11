@@ -56,6 +56,9 @@ export default function IndexMain({
   setCreateSprint,
   handleCreateSprint,
   isAdmin,
+  archivedSprints,
+  handleRestoreSprint,
+  handleDeleteSprintPermanently,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -97,6 +100,9 @@ export default function IndexMain({
   setCreateSprint: (v: boolean) => void;
   handleCreateSprint: (s: Sprint) => void;
   isAdmin: boolean;
+  archivedSprints: Sprint[];
+  handleRestoreSprint: (id: string) => void;
+  handleDeleteSprintPermanently: (id: string) => void;
 }) {
   return (
     <>
@@ -133,6 +139,9 @@ export default function IndexMain({
             onRestore={handleUnarchiveTask}
             onDelete={handleDeleteArchivedTask}
             isAdmin={isAdmin}
+            archivedSprints={archivedSprints}
+            onRestoreSprint={handleRestoreSprint}
+            onDeleteSprint={handleDeleteSprintPermanently}
           />
         )}
         {view === 'knowledge' && (

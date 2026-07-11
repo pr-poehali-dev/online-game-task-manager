@@ -168,8 +168,15 @@ export default function Index() {
     }
   }
 
+  function handleRestoreSprint(id: string) {
+    const sp = sprints.find((s) => s.id === id);
+    if (!sp) return;
+    handleUpdateSprint({ ...sp, status: 'planned' });
+  }
+
   const activeTasks = tasks.filter((t) => !t.archived);
   const archivedTasks = tasks.filter((t) => t.archived);
+  const archivedSprints = sprints.filter((s) => s.status === 'done');
   const filteredTasks = activeTasks
     .filter((t) => server === 'all' || t.server === server)
     .filter((t) => category === 'all' || t.category === category)
@@ -422,6 +429,9 @@ export default function Index() {
           setCreateSprint={setCreateSprint}
           handleCreateSprint={handleCreateSprint}
           isAdmin={isAdmin}
+          archivedSprints={archivedSprints}
+          handleRestoreSprint={handleRestoreSprint}
+          handleDeleteSprintPermanently={handleDeleteSprint}
         />
       </main>
     </div>
