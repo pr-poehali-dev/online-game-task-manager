@@ -90,7 +90,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           <AssigneeMultiSelect team={team} value={form.assigneeIds} onChange={setAssignees} />
           <Select label="Спринт" value={form.sprintId} onChange={(v) => set('sprintId', v)} options={[
             { value: '', label: '— Без спринта —' },
-            ...sprints.map((s) => ({ value: s.id, label: s.title })),
+            ...sprints.filter((s) => s.status !== 'done').map((s) => ({ value: s.id, label: s.title })),
           ]} />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>

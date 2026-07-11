@@ -222,7 +222,7 @@ export default function IndexTopbar({
               )}
               <div className="w-px h-4 bg-border mx-1 shrink-0" />
               <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
-              {sprints.map((sp) => {
+              {sprints.filter((s) => s.status !== 'done').map((sp) => {
                 const active = sprintFilter === sp.id;
                 const count = activeTasks.filter((t) => t.sprintId === sp.id).length;
                 const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
