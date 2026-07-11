@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
@@ -60,6 +60,12 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         <div className="flex items-center gap-3">
           <PriorityBadge p={form.priority} />
           <ServerBadge id={form.server} />
+          {canFullEdit && (
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
+              <Icon name={columns.find((c) => c.id === form.column)?.icon ?? 'Circle'} size={12} />
+              {columns.find((c) => c.id === form.column)?.title ?? form.column}
+            </span>
+          )}
           {task.archived && task.outcome && (
             <span
               className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md"
@@ -153,20 +159,13 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={
-            isAdmin
-              ? [
-                  { value: 'todo', label: 'To Do' },
-                  { value: 'progress', label: 'In Progress' },
-                  { value: 'done', label: 'Done' },
-                  { value: 'restart', label: 'К рестарту' },
-                ]
-              : [
-                  { value: 'todo', label: 'To Do' },
-                  { value: 'progress', label: 'In Progress' },
-                  { value: 'done', label: 'Done' },
-                ]
-          } />
+          {!canFullEdit && (
+            <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
+              { value: 'todo', label: 'To Do' },
+              { value: 'progress', label: 'In Progress' },
+              { value: 'done', label: 'Done' },
+            ]} />
+          )}
           {canFullEdit && (
             <>
               <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
@@ -236,28 +235,38 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {canFullEdit && (
           <>
-            {/* Deploy status */}
+            {/* Deploy status — определяет колонку доски автоматически */}
             <div>
               <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
-              <div className="flex flex-wrap gap-2">
-                {deployStatuses.map((ds) => {
-                  const active = (form.deployStatus ?? 'none') === ds.id;
-                  return (
-                    <button
-                      key={ds.id}
-                      onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id }))}
-                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
-                      style={{
-                        background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
-                        borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
-                        color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
-                      }}
-                    >
-                      <Icon name={ds.icon} size={12} />
-                      {ds.label}
-                    </button>
-                  );
-                })}
+              <div className="space-y-3">
+                {columns.map((col) => (
+                  <div key={col.id}>
+                    <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <Icon name={col.icon} size={11} />
+                      {col.title}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
+                        const active = (form.deployStatus ?? 'none') === ds.id;
+                        return (
+                          <button
+                            key={ds.id}
+                            onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
+                            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                            style={{
+                              background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                              borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                              color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                            }}
+                          >
+                            <Icon name={ds.icon} size={12} />
+                            {ds.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

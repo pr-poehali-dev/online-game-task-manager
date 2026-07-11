@@ -95,7 +95,7 @@ export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
-export type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'needs_test' | 'tested_ok' | 'tested_rework' | 'unfeasible';
+export type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas';
 
@@ -106,16 +106,20 @@ export interface Comment {
   createdAt: string;
 }
 
-export const deployStatuses: { id: DeployStatus; label: string; color: string; icon: string }[] = [
-  { id: 'none',          label: 'Без статуса',                   color: '215 15% 50%', icon: 'Minus' },
-  { id: 'local',         label: 'Готово локально у скриптера',   color: '270 65% 65%', icon: 'Code2' },
-  { id: 'test',          label: 'Залито на тестовый',            color: '210 80% 62%', icon: 'FlaskConical' },
-  { id: 'ready_live',    label: 'Можно заливать на лайв',        color: '45 90% 55%',  icon: 'Rocket' },
-  { id: 'needs_test',    label: 'Требуется тест',                color: '35 85% 58%',  icon: 'ClipboardCheck' },
-  { id: 'tested_ok',     label: 'Протестировано — всё ок',       color: '152 55% 50%', icon: 'CircleCheck' },
-  { id: 'tested_rework', label: 'На доработку (есть замечания)', color: '0 65% 60%',   icon: 'CircleX' },
-  { id: 'unfeasible',    label: 'Нереализуемо',                  color: '0 0% 55%',    icon: 'Ban' },
+// Каждый статус деплоя жёстко привязан к колонке доски — выбор статуса переключает колонку задачи автоматически.
+export const deployStatuses: { id: DeployStatus; label: string; color: string; icon: string; column: ColumnId }[] = [
+  { id: 'none',          label: 'Без статуса',                     color: '215 15% 50%', icon: 'Minus',          column: 'todo' },
+  { id: 'unfeasible',    label: 'Нереализуемо',                    color: '0 0% 55%',    icon: 'Ban',            column: 'todo' },
+  { id: 'tested_rework', label: 'На доработку (есть замечания)',   color: '0 65% 60%',   icon: 'CircleX',        column: 'todo' },
+  { id: 'local',         label: 'Готово локально у скриптера',     color: '270 65% 65%', icon: 'Code2',          column: 'progress' },
+  { id: 'test',          label: 'На тестировании (залито на тестовый)', color: '210 80% 62%', icon: 'FlaskConical', column: 'progress' },
+  { id: 'tested_ok',     label: 'Протестировано — всё ок',         color: '152 55% 50%', icon: 'CircleCheck',    column: 'progress' },
+  { id: 'ready_live',    label: 'Можно заливать на лайв',          color: '45 90% 55%',  icon: 'Rocket',         column: 'done' },
 ];
+
+export function deployStatusMeta(id: DeployStatus) {
+  return deployStatuses.find((d) => d.id === id) ?? deployStatuses[0];
+}
 
 export const outcomes: { id: TaskOutcome; label: string; color: string; icon: string }[] = [
   { id: 'done',       label: 'Реализовано',   color: '152 55% 50%', icon: 'CircleCheck' },

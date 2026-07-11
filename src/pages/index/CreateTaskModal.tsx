@@ -2,8 +2,8 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
-import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId } from './shared';
-import { servers, categories, Select, ModalOverlay, inputCls } from './shared';
+import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus } from './shared';
+import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -16,9 +16,11 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   sprints: Sprint[];
 }) {
   const activeSprint = sprints.find((s) => s.status === 'active');
+  const initialDeployStatus = (deployStatuses.find((ds) => ds.column === column)?.id ?? 'none') as DeployStatus;
   const [form, setForm] = useState({
     title: preset?.title ?? '',
     column,
+    deployStatus: initialDeployStatus,
     assigneeId: null as number | null,
     assigneeIds: [] as number[],
     kbArticleIds: [] as number[],
@@ -68,13 +70,49 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors placeholder:text-muted-foreground/50"
         />
 
+        {form.column === 'restart' ? (
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
+            <Icon name="RotateCcw" size={12} />
+            К рестарту
+          </div>
+        ) : (
+          <div>
+            <label className="block text-xs text-muted-foreground mb-2">Статус деплоя (определяет колонку)</label>
+            <div className="space-y-3">
+              {columns.map((col) => (
+                <div key={col.id}>
+                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <Icon name={col.icon} size={11} />
+                    {col.title}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
+                      const active = form.deployStatus === ds.id;
+                      return (
+                        <button
+                          key={ds.id}
+                          type="button"
+                          onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                          style={{
+                            background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                            borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                            color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                          }}
+                        >
+                          <Icon name={ds.icon} size={12} />
+                          {ds.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
-            { value: 'todo', label: 'To Do' },
-            { value: 'progress', label: 'In Progress' },
-            { value: 'done', label: 'Done' },
-            { value: 'restart', label: 'К рестарту' },
-          ]} />
           <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
             { value: 'critical', label: 'Критический' },
             { value: 'high', label: 'Высокий' },
