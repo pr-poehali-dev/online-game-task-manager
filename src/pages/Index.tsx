@@ -9,6 +9,7 @@ import {
   authHeaders,
   AUTH_URL,
   TASKS_URL,
+  SPRINTS_URL,
   TOKEN_KEY,
   taskAssigneeIds,
   resolveAssignee,
@@ -16,7 +17,6 @@ import {
   categoryMeta,
   servers,
   categories,
-  initialSprints,
   hueFor,
   initials,
 } from './index/shared';
@@ -46,7 +46,7 @@ export default function Index() {
   const [outcomeFilter, setOutcomeFilter] = useState<TaskOutcome | 'all'>('all');
   const [assigneeFilter, setAssigneeFilter] = useState<number | 'all'>('all');
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [sprints, setSprints] = useState<Sprint[]>(initialSprints);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
   const [createPreset, setCreatePreset] = useState<Partial<Task> | null>(null);
@@ -101,13 +101,83 @@ export default function Index() {
     }
   }, []);
 
+  const loadSprints = useCallback(async () => {
+    try {
+      const res = await fetch(SPRINTS_URL, { method: 'GET', headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setSprints(data.sprints || []);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     loadTeam();
     loadTasks();
     loadKbArticles();
+    loadSprints();
     const t = setInterval(loadTeam, 30000);
     return () => clearInterval(t);
-  }, [loadTeam, loadTasks, loadKbArticles]);
+  }, [loadTeam, loadTasks, loadKbArticles, loadSprints]);
+
+  async function handleCreateSprint(sprint: Sprint) {
+    try {
+      const res = await fetch(SPRINTS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'create', ...sprint }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSprints((prev) => [...prev, data.sprint]);
+      } else {
+        toast.error('Не удалось создать спринт');
+      }
+    } catch {
+      toast.error('Не удалось создать спринт');
+    }
+    setCreateSprint(false);
+  }
+
+  async function handleUpdateSprint(sprint: Sprint) {
+    const prevSprints = sprints;
+    setSprints((prev) => prev.map((s) => (s.id === sprint.id ? sprint : s)));
+    try {
+      const res = await fetch(SPRINTS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'update', ...sprint }),
+      });
+      if (!res.ok) {
+        setSprints(prevSprints);
+        toast.error('Не удалось сохранить спринт');
+      }
+    } catch {
+      setSprints(prevSprints);
+      toast.error('Не удалось сохранить спринт');
+    }
+  }
+
+  async function handleDeleteSprint(id: string) {
+    const prevSprints = sprints;
+    setSprints((prev) => prev.filter((s) => s.id !== id));
+    try {
+      const res = await fetch(SPRINTS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+      if (!res.ok) {
+        setSprints(prevSprints);
+        toast.error('Не удалось удалить спринт');
+      }
+    } catch {
+      setSprints(prevSprints);
+      toast.error('Не удалось удалить спринт');
+    }
+  }
 
   const activeTasks = tasks.filter((t) => !t.archived);
   const archivedTasks = tasks.filter((t) => t.archived);
@@ -629,8 +699,8 @@ export default function Index() {
             <Sprints
               sprints={sprints}
               tasks={activeTasks}
-              onUpdate={(updated) => setSprints((prev) => prev.map((s) => s.id === updated.id ? updated : s))}
-              onDelete={(id) => setSprints((prev) => prev.filter((s) => s.id !== id))}
+              onUpdate={handleUpdateSprint}
+              onDelete={handleDeleteSprint}
               onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
             />
           )}
@@ -712,7 +782,7 @@ export default function Index() {
       {createSprint && (
         <CreateSprintModal
           onClose={() => setCreateSprint(false)}
-          onCreate={(sp) => { setSprints((prev) => [...prev, sp]); setCreateSprint(false); }}
+          onCreate={handleCreateSprint}
         />
       )}
     </div>

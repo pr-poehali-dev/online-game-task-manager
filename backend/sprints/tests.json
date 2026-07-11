@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET without token unauthorized",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401
+    },
+    {
+      "name": "POST create without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "create", "title": "Test"},
+      "expectedStatus": 401
+    }
+  ]
+}
