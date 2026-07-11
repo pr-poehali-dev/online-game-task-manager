@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { taskAssigneeIds, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, Select, ModalOverlay, inputCls } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, PriorityBadge, ServerBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 
@@ -118,6 +118,24 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             placeholder="Название задачи"
           />
         </div>
+
+        {/* Creation meta: дата создания по МСК + автор */}
+        {(task.createdAt || task.creatorId != null) && (
+          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground -mt-2">
+            {task.createdAt && (
+              <span className="flex items-center gap-1.5">
+                <Icon name="Calendar" size={12} />
+                Создана {formatMskDateTime(task.createdAt)}
+              </span>
+            )}
+            {task.creatorId != null && (
+              <span className="flex items-center gap-1.5">
+                <AssigneeAvatar a={resolveAssignee(team, task.creatorId)} size={18} />
+                {resolveAssignee(team, task.creatorId).name}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

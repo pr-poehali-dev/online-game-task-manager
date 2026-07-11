@@ -65,6 +65,19 @@ export function resolveAssignee(team: TeamMember[], id: number | null): Assignee
   };
 }
 
+export function formatMskDateTime(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }) + ' МСК';
+}
+
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
@@ -161,6 +174,7 @@ export interface Task {
   kbArticleIds?: number[];
   restartDone?: boolean;
   createdAt?: string | null;
+  creatorId?: number | null;
 }
 
 
