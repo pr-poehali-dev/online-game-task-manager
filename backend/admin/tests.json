@@ -22,6 +22,15 @@
       "expectedStatus": 403,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST impersonate without token forbidden",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "impersonate", "user_id": 1},
+      "expectedStatus": 403,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

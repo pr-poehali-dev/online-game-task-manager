@@ -23,6 +23,8 @@ export default function UserList({
   setRole,
   toggleActive,
   hideUser,
+  impersonate,
+  impersonatingId,
 }: {
   users: TeamUser[];
   loading: boolean;
@@ -44,6 +46,8 @@ export default function UserList({
   setRole: (id: number, role: 'member' | 'admin') => void;
   toggleActive: (u: TeamUser) => void;
   hideUser: (u: TeamUser) => void;
+  impersonate: (u: TeamUser) => void;
+  impersonatingId: number | null;
 }) {
   if (loading) {
     return (
@@ -132,6 +136,21 @@ export default function UserList({
             >
               <Icon name="BarChart3" size={15} />
             </button>
+
+            {u.is_active && !pending && u.id !== currentUserId && (
+              <button
+                onClick={() => impersonate(u)}
+                disabled={impersonatingId !== null}
+                title="Войти как этот участник"
+                className="h-8 px-2 rounded-lg flex items-center gap-1 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+              >
+                {impersonatingId === u.id ? (
+                  <Icon name="Loader2" size={15} className="animate-spin" />
+                ) : (
+                  <Icon name="LogIn" size={15} />
+                )}
+              </button>
+            )}
 
             <select
               value={u.role}

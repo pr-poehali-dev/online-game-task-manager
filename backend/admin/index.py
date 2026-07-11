@@ -1,6 +1,7 @@
 import json
 import os
-from datetime import datetime, timezone
+import secrets
+from datetime import datetime, timedelta, timezone
 
 import psycopg2
 
@@ -68,7 +69,7 @@ def _parse_dt(s):
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности. Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -216,6 +217,34 @@ def handler(event: dict, context) -> dict:
                 'timeSpentSeconds': int(total_seconds),
             })
         }
+
+    if action == 'impersonate':
+        target = body.get('user_id')
+        if not target:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
+        cur.execute(
+            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, permissions, theme "
+            f"FROM {schema}.users WHERE id = %s AND is_hidden = false",
+            (target,)
+        )
+        r = cur.fetchone()
+        if not r or not r[9]:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'user_inactive'})}
+        session_token = secrets.token_urlsafe(48)
+        expires = datetime.now(timezone.utc) + timedelta(days=30)
+        cur.execute(
+            f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+            (r[0], session_token, expires)
+        )
+        user = {
+            'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3],
+            'last_name': r[4], 'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
+            'permissions': _effective_perms(r[6], r[10]), 'theme': r[11],
+        }
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'token': session_token, 'user': user})}
 
     if action == 'set_permissions':
         target = body.get('user_id')

@@ -13,9 +13,10 @@ import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Admin() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, applySession } = useAuth();
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [loading, setLoading] = useState(true);
+  const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
   const [inviteSpec, setInviteSpec] = useState('');
@@ -102,6 +103,22 @@ export default function Admin() {
     if (!confirm(`Скрыть ${u.first_name} из команды? Аккаунт будет отключён и убран из списка.`)) return;
     await authFetch({ action: 'set_hidden', user_id: u.id, is_hidden: true });
     load();
+  }
+
+  async function impersonate(u: TeamUser) {
+    setImpersonatingId(u.id);
+    try {
+      const res = await authFetch({ action: 'impersonate', user_id: u.id });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) {
+        alert('Не удалось войти под этим участником.');
+        return;
+      }
+      applySession(data.token, data.user);
+      navigate(data.user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
+    } finally {
+      setImpersonatingId(null);
+    }
   }
 
   function openPerms(u: TeamUser) {
@@ -206,6 +223,8 @@ export default function Admin() {
           setRole={setRole}
           toggleActive={toggleActive}
           hideUser={hideUser}
+          impersonate={impersonate}
+          impersonatingId={impersonatingId}
         />
       </main>
 
