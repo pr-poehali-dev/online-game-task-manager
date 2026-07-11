@@ -12,6 +12,7 @@ export default function Restart({
   onToRestart,
   onToggleDone,
   onArchive,
+  isAdmin,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -21,6 +22,7 @@ export default function Restart({
   onToRestart: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
+  isAdmin: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [archiveMenu, setArchiveMenu] = useState<string | null>(null);
@@ -48,44 +50,46 @@ export default function Restart({
       </div>
       <p className="text-sm text-muted-foreground mb-5">Короткие задачи, которые применяются во время плановых технических работ. Отметьте «Готово» после выполнения и отправьте в архив.</p>
 
-      <div className="flex items-center gap-2 mb-5">
-        <button
-          onClick={onAddClick}
-          className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          <Icon name="Plus" size={15} />
-          Новая задача
-        </button>
-        <div className="relative">
+      {isAdmin && (
+        <div className="flex items-center gap-2 mb-5">
           <button
-            onClick={() => setPickerOpen((v) => !v)}
-            className="flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            onClick={onAddClick}
+            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
           >
-            <Icon name="ArrowDownToLine" size={15} />
-            Перенести задачу
-            <Icon name="ChevronDown" size={13} />
+            <Icon name="Plus" size={15} />
+            Новая задача
           </button>
-          {pickerOpen && (
-            <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-card shadow-lg p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
-              <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1.5">Готовы к заливке / из «Готово»</div>
-              {candidates.length === 0 && (
-                <div className="text-xs text-muted-foreground px-2 py-3">Нет подходящих задач</div>
-              )}
-              {candidates.map((t) => (
-                <button
-                  key={t.id}
-                  onClick={() => { setPickerOpen(false); onToRestart(t.id); }}
-                  className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-md text-sm hover:bg-secondary/60 transition-colors"
-                >
-                  <Icon name="ArrowRight" size={13} className="text-primary shrink-0" />
-                  <span className="truncate flex-1">{t.title}</span>
-                  {t.deployStatus === 'ready_live' && <Icon name="Rocket" size={12} className="text-[hsl(45_90%_55%)] shrink-0" />}
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="relative">
+            <button
+              onClick={() => setPickerOpen((v) => !v)}
+              className="flex items-center gap-2 h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            >
+              <Icon name="ArrowDownToLine" size={15} />
+              Перенести задачу
+              <Icon name="ChevronDown" size={13} />
+            </button>
+            {pickerOpen && (
+              <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-card shadow-lg p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1.5">Готовы к заливке / из «Готово»</div>
+                {candidates.length === 0 && (
+                  <div className="text-xs text-muted-foreground px-2 py-3">Нет подходящих задач</div>
+                )}
+                {candidates.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => { setPickerOpen(false); onToRestart(t.id); }}
+                    className="w-full text-left flex items-center gap-2 px-2 py-2 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                  >
+                    <Icon name="ArrowRight" size={13} className="text-primary shrink-0" />
+                    <span className="truncate flex-1">{t.title}</span>
+                    {t.deployStatus === 'ready_live' && <Icon name="Rocket" size={12} className="text-[hsl(45_90%_55%)] shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {restartTasks.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
@@ -122,54 +126,56 @@ export default function Restart({
                   <AssigneeStack ids={assignees} team={team} size={24} />
                   <ServerBadge id={t.server} />
                 </div>
-                <div className="flex items-center gap-2">
-                  {done ? (
-                    <>
-                      <button
-                        onClick={() => onToggleDone(t.id, false)}
-                        className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
-                      >
-                        <Icon name="Undo2" size={13} />
-                        Вернуть
-                      </button>
-                      <div className="relative ml-auto">
+                {isAdmin && (
+                  <div className="flex items-center gap-2">
+                    {done ? (
+                      <>
                         <button
-                          onClick={() => setArchiveMenu(archiveMenu === t.id ? null : t.id)}
-                          className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                          onClick={() => onToggleDone(t.id, false)}
+                          className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
                         >
-                          <Icon name="Archive" size={13} />
-                          В архив
-                          <Icon name="ChevronDown" size={12} />
+                          <Icon name="Undo2" size={13} />
+                          Вернуть
                         </button>
-                        {archiveMenu === t.id && (
-                          <div className="absolute right-0 top-9 z-10 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
-                            <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
-                            {outcomes.map((o) => (
-                              <button
-                                key={o.id}
-                                onClick={() => { setArchiveMenu(null); onArchive(t.id, o.id); }}
-                                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
-                                style={{ color: `hsl(${o.color})` }}
-                              >
-                                <Icon name={o.icon} size={14} />
-                                {o.label}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : (
-                    <button
-                      onClick={() => onToggleDone(t.id, true)}
-                      className="h-8 px-3 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border"
-                      style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}
-                    >
-                      <Icon name="Check" size={14} />
-                      Готово
-                    </button>
-                  )}
-                </div>
+                        <div className="relative ml-auto">
+                          <button
+                            onClick={() => setArchiveMenu(archiveMenu === t.id ? null : t.id)}
+                            className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5"
+                          >
+                            <Icon name="Archive" size={13} />
+                            В архив
+                            <Icon name="ChevronDown" size={12} />
+                          </button>
+                          {archiveMenu === t.id && (
+                            <div className="absolute right-0 top-9 z-10 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+                              <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
+                              {outcomes.map((o) => (
+                                <button
+                                  key={o.id}
+                                  onClick={() => { setArchiveMenu(null); onArchive(t.id, o.id); }}
+                                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                                  style={{ color: `hsl(${o.color})` }}
+                                >
+                                  <Icon name={o.icon} size={14} />
+                                  {o.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => onToggleDone(t.id, true)}
+                        className="h-8 px-3 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border"
+                        style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}
+                      >
+                        <Icon name="Check" size={14} />
+                        Готово
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

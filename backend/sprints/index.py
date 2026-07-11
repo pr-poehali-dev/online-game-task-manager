@@ -86,6 +86,10 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'sprints': sprints})}
 
+    if action in ('create', 'update', 'delete') and me['role'] != 'admin':
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+
     if action == 'create':
         title = (body.get('title') or '').strip()
         if not title:

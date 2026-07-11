@@ -421,6 +421,7 @@ export default function Index() {
           createSprint={createSprint}
           setCreateSprint={setCreateSprint}
           handleCreateSprint={handleCreateSprint}
+          isAdmin={isAdmin}
         />
       </main>
     </div>

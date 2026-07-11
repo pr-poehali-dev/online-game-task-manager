@@ -7,7 +7,7 @@ import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcom
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 
-export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints }: {
+export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin }: {
   task: Task;
   team: TeamMember[];
   kbArticles: KbArticleBrief[];
@@ -18,6 +18,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   onArchive: (id: string, outcome: TaskOutcome) => void;
   onUnarchive: (id: string) => void;
   sprints: Sprint[];
+  isAdmin: boolean;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
@@ -39,6 +40,11 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   }
 
   function handleSave() {
+    if (!isAdmin) {
+      // Участник может изменить только колонку (перенос по доске To Do / In Progress / Done)
+      onSave({ ...task, column: form.column });
+      return;
+    }
     onSave({ ...form, links });
   }
 
@@ -60,7 +66,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
         </div>
         <div className="flex items-center gap-2">
-          {task.archived ? (
+          {isAdmin && (task.archived ? (
             <button
               onClick={() => onUnarchive(task.id)}
               className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
@@ -95,13 +101,15 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                 </div>
               )}
             </div>
+          ))}
+          {isAdmin && (
+            <button
+              onClick={() => onDelete(task.id)}
+              className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors"
+            >
+              Удалить
+            </button>
           )}
-          <button
-            onClick={() => onDelete(task.id)}
-            className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors"
-          >
-            Удалить
-          </button>
           <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
             <Icon name="X" size={18} />
           </button>
@@ -114,6 +122,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           <input
             value={form.title}
             onChange={(e) => set('title', e.target.value)}
+            readOnly={!isAdmin}
             className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors"
             placeholder="Название задачи"
           />
@@ -139,36 +148,48 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
-            { value: 'todo', label: 'To Do' },
-            { value: 'progress', label: 'In Progress' },
-            { value: 'done', label: 'Done' },
-            { value: 'restart', label: 'К рестарту' },
-          ]} />
-          <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
-            { value: 'critical', label: 'Критический' },
-            { value: 'high', label: 'Высокий' },
-            { value: 'medium', label: 'Средний' },
-            { value: 'low', label: 'Низкий' },
-          ]} />
-          <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
-            servers.map((s) => ({ value: s.id, label: s.label }))
+          <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={
+            isAdmin
+              ? [
+                  { value: 'todo', label: 'To Do' },
+                  { value: 'progress', label: 'In Progress' },
+                  { value: 'done', label: 'Done' },
+                  { value: 'restart', label: 'К рестарту' },
+                ]
+              : [
+                  { value: 'todo', label: 'To Do' },
+                  { value: 'progress', label: 'In Progress' },
+                  { value: 'done', label: 'Done' },
+                ]
           } />
-          <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
-            categories.map((c) => ({ value: c.id, label: c.label }))
-          } />
-          <AssigneeMultiSelect team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
-          <Select label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
-            { value: '', label: '— Без спринта —' },
-            ...sprints.map((s) => ({ value: s.id, label: s.title })),
-          ]} />
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
-            <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
-          </div>
-          <div className="md:col-span-4">
-            <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
-          </div>
+          {isAdmin && (
+            <>
+              <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
+                { value: 'critical', label: 'Критический' },
+                { value: 'high', label: 'Высокий' },
+                { value: 'medium', label: 'Средний' },
+                { value: 'low', label: 'Низкий' },
+              ]} />
+              <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
+                servers.map((s) => ({ value: s.id, label: s.label }))
+              } />
+              <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
+                categories.map((c) => ({ value: c.id, label: c.label }))
+              } />
+              <AssigneeMultiSelect team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
+              <Select label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
+                { value: '', label: '— Без спринта —' },
+                ...sprints.map((s) => ({ value: s.id, label: s.title })),
+              ]} />
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
+                <input value={form.tag} onChange={(e) => set('tag', e.target.value)} className={inputCls} placeholder="Геймплей..." />
+              </div>
+              <div className="md:col-span-4">
+                <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
+              </div>
+            </>
+          )}
         </div>
 
         {/* Related articles quick links */}
@@ -195,77 +216,104 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         {/* Description */}
         <div>
           <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
-          <RichEditor
-            content={form.description ?? ''}
-            onChange={(html) => setForm((p) => ({ ...p, description: html }))}
-          />
+          {isAdmin ? (
+            <RichEditor
+              content={form.description ?? ''}
+              onChange={(html) => setForm((p) => ({ ...p, description: html }))}
+            />
+          ) : (
+            <div
+              className="rounded-xl border border-border bg-secondary/20 px-3 py-2 text-sm max-h-72 overflow-y-auto scrollbar-thin prose prose-sm prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
+            />
+          )}
         </div>
 
-        {/* Deploy status */}
-        <div>
-          <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
-          <div className="flex flex-wrap gap-2">
-            {deployStatuses.map((ds) => {
-              const active = (form.deployStatus ?? 'none') === ds.id;
-              return (
+        {isAdmin && (
+          <>
+            {/* Deploy status */}
+            <div>
+              <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
+              <div className="flex flex-wrap gap-2">
+                {deployStatuses.map((ds) => {
+                  const active = (form.deployStatus ?? 'none') === ds.id;
+                  return (
+                    <button
+                      key={ds.id}
+                      onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id }))}
+                      className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                      style={{
+                        background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                        borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                        color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                      }}
+                    >
+                      <Icon name={ds.icon} size={12} />
+                      {ds.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Links */}
+            <div>
+              <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
+              {links.length > 0 && (
+                <div className="flex flex-col gap-1.5 mb-2">
+                  {links.map((l, i) => (
+                    <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
+                      <Icon name="Link" size={13} className="text-primary shrink-0" />
+                      <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
+                        {l.label}
+                      </a>
+                      <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                        <Icon name="X" size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <input
+                  value={newLink.label}
+                  onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
+                  placeholder="Название (напр. Тикет #1234)"
+                  className={inputCls + ' flex-1'}
+                />
+                <input
+                  value={newLink.url}
+                  onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && addLink()}
+                  placeholder="https://..."
+                  className={inputCls + ' flex-1'}
+                />
                 <button
-                  key={ds.id}
-                  onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id }))}
-                  className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
-                  style={{
-                    background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
-                    borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
-                    color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
-                  }}
+                  onClick={addLink}
+                  className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
                 >
-                  <Icon name={ds.icon} size={12} />
-                  {ds.label}
+                  <Icon name="Plus" size={16} />
                 </button>
-              );
-            })}
-          </div>
-        </div>
+              </div>
+            </div>
+          </>
+        )}
 
-        {/* Links */}
-        <div>
-          <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
-          {links.length > 0 && (
-            <div className="flex flex-col gap-1.5 mb-2">
+        {!isAdmin && links.length > 0 && (
+          <div>
+            <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
+            <div className="flex flex-col gap-1.5">
               {links.map((l, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2">
                   <Icon name="Link" size={13} className="text-primary shrink-0" />
                   <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
                     {l.label}
                   </a>
-                  <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
-                    <Icon name="X" size={13} />
-                  </button>
                 </div>
               ))}
             </div>
-          )}
-          <div className="flex gap-2">
-            <input
-              value={newLink.label}
-              onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
-              placeholder="Название (напр. Тикет #1234)"
-              className={inputCls + ' flex-1'}
-            />
-            <input
-              value={newLink.url}
-              onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && addLink()}
-              placeholder="https://..."
-              className={inputCls + ' flex-1'}
-            />
-            <button
-              onClick={addLink}
-              className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
-            >
-              <Icon name="Plus" size={16} />
-            </button>
           </div>
-        </div>
+        )}
 
         {/* Comments */}
         <TaskComments taskId={task.id} team={team} />

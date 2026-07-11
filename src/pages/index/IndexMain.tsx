@@ -55,6 +55,7 @@ export default function IndexMain({
   createSprint,
   setCreateSprint,
   handleCreateSprint,
+  isAdmin,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -95,6 +96,7 @@ export default function IndexMain({
   createSprint: boolean;
   setCreateSprint: (v: boolean) => void;
   handleCreateSprint: (s: Sprint) => void;
+  isAdmin: boolean;
 }) {
   return (
     <>
@@ -107,6 +109,7 @@ export default function IndexMain({
             onCardClick={setSelectedTask}
             onAddClick={setCreateFor}
             onArchive={handleArchiveTask}
+            isAdmin={isAdmin}
           />
         )}
         {view === 'sprints' && (
@@ -116,6 +119,7 @@ export default function IndexMain({
             onUpdate={handleUpdateSprint}
             onDelete={handleDeleteSprint}
             onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
+            isAdmin={isAdmin}
           />
         )}
         {view === 'archive' && (
@@ -128,6 +132,7 @@ export default function IndexMain({
             onCardClick={setSelectedTask}
             onRestore={handleUnarchiveTask}
             onDelete={handleDeleteArchivedTask}
+            isAdmin={isAdmin}
           />
         )}
         {view === 'knowledge' && (
@@ -152,6 +157,7 @@ export default function IndexMain({
             onToRestart={handleToRestart}
             onToggleDone={handleToggleRestartDone}
             onArchive={handleArchiveTask}
+            isAdmin={isAdmin}
           />
         )}
         {view === 'ideas' && (
@@ -179,6 +185,7 @@ export default function IndexMain({
           onArchive={handleArchiveTask}
           onUnarchive={handleUnarchiveTask}
           sprints={sprints}
+          isAdmin={isAdmin}
         />
       )}
       {createFor && (

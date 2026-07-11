@@ -4,12 +4,13 @@ import type { Task, Sprint } from './shared';
 import SprintCard from './SprintCard';
 import { SprintEditModal } from './SprintModals';
 
-export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard }: {
+export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBoard, isAdmin }: {
   sprints: Sprint[];
   tasks: Task[];
   onUpdate: (s: Sprint) => void;
   onDelete: (id: string) => void;
   onFilterBoard: (sprintId: string) => void;
+  isAdmin: boolean;
 }) {
   const [editing, setEditing] = useState<Sprint | null>(null);
   const [showArchive, setShowArchive] = useState(false);
@@ -35,6 +36,7 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
             onFilterBoard={onFilterBoard}
             onEdit={setEditing}
             onDelete={onDelete}
+            isAdmin={isAdmin}
           />
         ))}
 
@@ -67,6 +69,7 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
                   onFilterBoard={onFilterBoard}
                   onEdit={setEditing}
                   onDelete={onDelete}
+                  isAdmin={isAdmin}
                 />
               ))}
             </div>

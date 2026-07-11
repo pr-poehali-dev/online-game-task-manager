@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, TaskOutcome } from './shared';
 import { resolveAssignee, taskAssigneeIds, categoryMeta, outcomes, outcomeMeta, AssigneeStack } from './shared';
 
-export default function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore, onDelete }: {
+export default function Archive({ tasks, total, team, outcomeFilter, onOutcomeFilter, onCardClick, onRestore, onDelete, isAdmin }: {
   tasks: Task[];
   total: number;
   team: TeamMember[];
@@ -12,6 +12,7 @@ export default function Archive({ tasks, total, team, outcomeFilter, onOutcomeFi
   onCardClick: (t: Task) => void;
   onRestore: (id: string) => void;
   onDelete: (id: string) => void;
+  isAdmin: boolean;
 }) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
   return (
@@ -80,7 +81,7 @@ export default function Archive({ tasks, total, team, outcomeFilter, onOutcomeFi
                   <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {namesLabel}</div>
                 </button>
                 <AssigneeStack ids={ids} team={team} size={26} />
-                {confirmId === t.id ? (
+                {isAdmin && (confirmId === t.id ? (
                   <div className="shrink-0 flex items-center gap-1.5">
                     <span className="hidden sm:inline text-xs text-muted-foreground">Удалить навсегда?</span>
                     <button
@@ -114,7 +115,7 @@ export default function Archive({ tasks, total, team, outcomeFilter, onOutcomeFi
                       <Icon name="Trash2" size={13} />
                     </button>
                   </>
-                )}
+                ))}
               </div>
             );
           })}

@@ -144,7 +144,7 @@ export default function IndexTopbar({
               <span className="hidden sm:inline">Войти</span>
             </button>
           )}
-          {view === 'sprints' && (
+          {view === 'sprints' && isAdmin && (
             <button
               onClick={() => setCreateSprint(true)}
               className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
@@ -153,7 +153,7 @@ export default function IndexTopbar({
               <span className="hidden sm:inline">Спринт</span>
             </button>
           )}
-          {view === 'board' && (
+          {view === 'board' && isAdmin && (
             <button
               onClick={() => setCreateFor('todo')}
               className="flex items-center gap-2 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"

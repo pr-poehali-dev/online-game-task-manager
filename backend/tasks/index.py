@@ -154,6 +154,17 @@ def _norm_kb(body):
     return result
 
 
+def _task_assignee_ids(d):
+    ids = d.get('assigneeIds') or []
+    if ids:
+        return ids
+    return [d['assigneeId']] if d.get('assigneeId') is not None else []
+
+
+def _forbidden():
+    return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+
+
 def _norm_assignees(body):
     raw = body.get('assigneeIds')
     if raw is None:
@@ -210,12 +221,18 @@ def handler(event: dict, context) -> dict:
         for r in cur.fetchall():
             d = _row_to_task(r)
             d['commentCount'] = r[20]
+            # Участник видит только задачи, где он назначен исполнителем
+            if me['role'] != 'admin' and me['id'] not in _task_assignee_ids(d):
+                continue
             tasks.append(d)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'tasks': tasks})}
 
-    # Создание задачи
+    # Создание задачи — только администратор
     if action == 'create':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         title = (body.get('title') or '').strip()
         if not title:
             cur.close(); conn.close()
@@ -258,6 +275,27 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+
+        # Участник может только переносить СВОЮ задачу между колонками To Do / In Progress / Done
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            if not own_row:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+            requested_column = body.get('column')
+            if me['id'] not in own_ids or requested_column not in ('todo', 'progress', 'done'):
+                cur.close(); conn.close()
+                return _forbidden()
+            cur.execute(
+                f"UPDATE {schema}.tasks SET column_id = %s, updated_at = NOW() WHERE id = %s RETURNING {TASK_COLUMNS}",
+                (requested_column, int(task_id))
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+
         assignee_ids = _norm_assignees(body)
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
@@ -306,6 +344,16 @@ def handler(event: dict, context) -> dict:
         if not task_id or not column:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            if not own_row:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+            if me['id'] not in own_ids or column not in ('todo', 'progress', 'done'):
+                cur.close(); conn.close()
+                return _forbidden()
         cur.execute(
             f"UPDATE {schema}.tasks SET column_id = %s, updated_at = NOW() WHERE id = %s",
             (column, int(task_id))
@@ -313,8 +361,11 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
-    # Перенос задачи в раздел «К рестарту»
+    # Перенос задачи в раздел «К рестарту» — только администратор
     if action == 'to_restart':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         task_id = body.get('id')
         if not task_id:
             cur.close(); conn.close()
@@ -330,8 +381,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Отметка задачи «К рестарту» выполненной / снятие отметки
+    # Отметка задачи «К рестарту» выполненной / снятие отметки — только администратор
     if action == 'set_restart_done':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         task_id = body.get('id')
         done = bool(body.get('done', True))
         if not task_id:
@@ -348,8 +402,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Архивация задачи с исходом
+    # Архивация задачи с исходом — только администратор
     if action == 'archive':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         task_id = body.get('id')
         outcome = body.get('outcome') or 'done'
         if not task_id:
@@ -366,8 +423,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Возврат задачи из архива
+    # Возврат задачи из архива — только администратор
     if action == 'unarchive':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         task_id = body.get('id')
         if not task_id:
             cur.close(); conn.close()
@@ -383,8 +443,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Удаление задачи
+    # Удаление задачи — только администратор
     if action == 'delete':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
         task_id = body.get('id')
         if not task_id:
             cur.close(); conn.close()
@@ -400,6 +463,13 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_task_id'})}
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
+            if me['id'] not in own_ids:
+                cur.close(); conn.close()
+                return _forbidden()
         cur.execute(
             f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions "
             f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
@@ -421,6 +491,13 @@ def handler(event: dict, context) -> dict:
         if not task_id or not text:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
+            if me['id'] not in own_ids:
+                cur.close(); conn.close()
+                return _forbidden()
         parent_id = body.get('parentId')
         parent_id = int(parent_id) if parent_id else None
         mentions = _norm_ids(body.get('mentions'))
