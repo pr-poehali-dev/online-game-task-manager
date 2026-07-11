@@ -146,26 +146,25 @@ def _row_to_task(r):
         'column': r[2],
         'assigneeId': r[3],
         'priority': r[4],
-        'tag': r[5],
-        'version': r[6],
-        'server': r[7],
-        'category': r[8],
-        'sprintId': r[9],
-        'deployStatus': r[10],
-        'description': r[11],
-        'links': r[12] if r[12] is not None else [],
-        'archived': bool(r[13]),
-        'outcome': r[14],
-        'assigneeIds': r[15] if r[15] is not None else [],
-        'kbArticleIds': r[16] if r[16] is not None else [],
-        'restartDone': bool(r[17]),
-        'createdAt': r[18].isoformat() if r[18] else None,
-        'creatorId': r[19],
+        'version': r[5],
+        'server': r[6],
+        'category': r[7],
+        'sprintId': r[8],
+        'deployStatus': r[9],
+        'description': r[10],
+        'links': r[11] if r[11] is not None else [],
+        'archived': bool(r[12]),
+        'outcome': r[13],
+        'assigneeIds': r[14] if r[14] is not None else [],
+        'kbArticleIds': r[15] if r[15] is not None else [],
+        'restartDone': bool(r[16]),
+        'createdAt': r[17].isoformat() if r[17] else None,
+        'creatorId': r[18],
     }
 
 
 TASK_COLUMNS = (
-    "id, title, column_id, assignee_id, priority, tag, version, server, category, "
+    "id, title, column_id, assignee_id, priority, version, server, category, "
     "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by"
 )
 
@@ -249,7 +248,7 @@ def handler(event: dict, context) -> dict:
         tasks = []
         for r in cur.fetchall():
             d = _row_to_task(r)
-            d['commentCount'] = r[20]
+            d['commentCount'] = r[19]
             # Без права task_view_others — видит только задачи, где он исполнитель или автор
             if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
                 continue
@@ -272,8 +271,8 @@ def handler(event: dict, context) -> dict:
         kb_ids = json.dumps(_norm_kb(body))
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, assignee_ids, priority, tag, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
@@ -281,7 +280,6 @@ def handler(event: dict, context) -> dict:
                 assignee_id,
                 json.dumps(assignee_ids),
                 body.get('priority') or 'medium',
-                body.get('tag'),
                 body.get('version'),
                 body.get('server'),
                 body.get('category') or 'other',
@@ -339,7 +337,7 @@ def handler(event: dict, context) -> dict:
         prev_ids = prev_row[0] if prev_row and prev_row[0] else []
         cur.execute(
             f"UPDATE {schema}.tasks SET "
-            f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, tag = %s, version = %s, "
+            f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
             f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
@@ -348,7 +346,6 @@ def handler(event: dict, context) -> dict:
                 assignee_id,
                 json.dumps(assignee_ids),
                 body.get('priority') or 'medium',
-                body.get('tag'),
                 body.get('version'),
                 body.get('server'),
                 body.get('category') or 'other',

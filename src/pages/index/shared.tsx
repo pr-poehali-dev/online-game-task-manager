@@ -176,7 +176,6 @@ export interface Task {
   assigneeId: number | null;
   assigneeIds?: number[];
   priority: Priority;
-  tag: string;
   version?: string;
   server: ServerId;
   description?: string;

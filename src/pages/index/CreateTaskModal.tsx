@@ -25,7 +25,6 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     assigneeIds: [] as number[],
     kbArticleIds: [] as number[],
     priority: (preset?.priority ?? 'medium') as Priority,
-    tag: preset?.tag ?? '',
     server: (preset?.server ?? 'hfnew') as ServerId,
     category: (preset?.category ?? 'other') as CategoryId,
     sprintId: activeSprint?.id ?? '',
@@ -130,10 +129,6 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             { value: '', label: '— Без спринта —' },
             ...sprints.filter((s) => s.status !== 'done').map((s) => ({ value: s.id, label: s.title })),
           ]} />
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Тег</label>
-            <input value={form.tag} onChange={(e) => set('tag', e.target.value)} placeholder="Геймплей..." className={inputCls} />
-          </div>
           <div className="md:col-span-4">
             <KbMultiSelect articles={kbArticles} value={form.kbArticleIds} onChange={setKbIds} />
           </div>
