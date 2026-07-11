@@ -130,7 +130,7 @@ def handler(event: dict, context) -> dict:
     if action == 'dev_users':
         cur.execute(
             f"SELECT id, first_name, last_name, role, tg_username, is_active "
-            f"FROM {schema}.users WHERE is_hidden = false AND telegram_id > 0 ORDER BY role DESC, id ASC"
+            f"FROM {schema}.users WHERE is_hidden = false ORDER BY role DESC, id ASC"
         )
         rows = cur.fetchall()
         users = [{
