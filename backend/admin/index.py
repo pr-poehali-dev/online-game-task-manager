@@ -1,5 +1,6 @@
 import json
 import os
+from datetime import datetime, timezone
 
 import psycopg2
 
@@ -38,8 +39,36 @@ def _current_admin(cur, schema, token):
     return row[0]
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    '''Индивидуальные права (если заданы явно) имеют приоритет выше роли. Если право не задано — берётся значение по умолчанию для роли.'''
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
+def _parse_dt(s):
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s.replace('Z', '+00:00'))
+    except Exception:
+        return None
+
+
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin. Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности. Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -66,7 +95,7 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         cur.execute(
             f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, "
-            f"u.tg_username, u.is_active, u.created_at, u.specialization, "
+            f"u.tg_username, u.is_active, u.created_at, u.specialization, u.permissions, "
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC"
@@ -77,13 +106,14 @@ def handler(event: dict, context) -> dict:
             'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
             'is_active': r[9], 'created_at': r[10].isoformat() if r[10] else None,
             'specialization': r[11],
-            'online': (r[13] or 0) > 0,
-            'active_sessions': r[13] or 0,
+            'permissions': _effective_perms(r[6], r[12]),
+            'online': (r[14] or 0) > 0,
+            'active_sessions': r[14] or 0,
         } for r in rows]
         cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users, 'permissionKeys': ALL_PERMISSIONS})}
 
-    # POST: обновление роли / активности / приглашение по username
+    # POST: обновление роли / активности / приглашение по username / права / статистика
     action = body.get('action')
 
     if action == 'invite':
@@ -132,6 +162,77 @@ def handler(event: dict, context) -> dict:
         } for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'sessions': sessions})}
+
+    if action == 'stats':
+        # Статистика по одному участнику за период: создано / закрыто / получено задач + время в приложении
+        target = body.get('user_id')
+        if not target:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
+        date_from = _parse_dt(body.get('from')) or datetime(1970, 1, 1, tzinfo=timezone.utc)
+        date_to = _parse_dt(body.get('to')) or datetime.now(timezone.utc)
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM {schema}.tasks WHERE created_by = %s AND created_at >= %s AND created_at <= %s",
+            (target, date_from, date_to)
+        )
+        created_count = cur.fetchone()[0]
+
+        cur.execute(
+            f"SELECT COUNT(*) FROM {schema}.tasks WHERE closed_by = %s AND archived_at >= %s AND archived_at <= %s",
+            (target, date_from, date_to)
+        )
+        closed_count = cur.fetchone()[0]
+
+        cur.execute(
+            f"SELECT COUNT(DISTINCT task_id) FROM {schema}.task_assignment_events "
+            f"WHERE user_id = %s AND assigned_at >= %s AND assigned_at <= %s",
+            (target, date_from, date_to)
+        )
+        received_count = cur.fetchone()[0]
+
+        # Время в приложении: суммируем длительности сессий активности, пересекающихся с периодом,
+        # с ограничением каждого интервала окном [date_from, date_to] и потолком 30 минут на heartbeat-разрыв.
+        cur.execute(
+            f"SELECT started_at, last_heartbeat_at FROM {schema}.user_activity_sessions "
+            f"WHERE user_id = %s AND last_heartbeat_at >= %s AND started_at <= %s",
+            (target, date_from, date_to)
+        )
+        total_seconds = 0
+        for started_at, last_hb in cur.fetchall():
+            s = max(started_at, date_from)
+            e = min(last_hb, date_to)
+            if e > s:
+                total_seconds += (e - s).total_seconds()
+
+        cur.close(); conn.close()
+        return {
+            'statusCode': 200,
+            'headers': _cors_headers(),
+            'body': json.dumps({
+                'createdCount': created_count,
+                'closedCount': closed_count,
+                'receivedCount': received_count,
+                'timeSpentSeconds': int(total_seconds),
+            })
+        }
+
+    if action == 'set_permissions':
+        target = body.get('user_id')
+        if not target:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
+        raw = body.get('permissions') or {}
+        clean = {}
+        for key in ALL_PERMISSIONS:
+            if key in raw and raw[key] is not None:
+                clean[key] = bool(raw[key])
+        cur.execute(
+            f"UPDATE {schema}.users SET permissions = %s, updated_at = NOW() WHERE id = %s",
+            (json.dumps(clean), target)
+        )
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
     user_id = body.get('user_id')
     if not user_id:

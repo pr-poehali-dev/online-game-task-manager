@@ -21,6 +21,24 @@ def _schema():
     return os.environ.get('MAIN_DB_SCHEMA', 'public')
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _db():
     conn = psycopg2.connect(os.environ['DATABASE_URL'])
     conn.autocommit = True
@@ -98,7 +116,7 @@ def handler(event: dict, context) -> dict:
 
         if status == 'confirmed' and session_token:
             cur.execute(
-                f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username "
+                f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.permissions "
                 f"FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
                 f"WHERE s.token = %s AND s.expires_at > NOW()",
                 (session_token,)
@@ -110,6 +128,7 @@ def handler(event: dict, context) -> dict:
             user = {
                 'id': u[0], 'telegram_id': u[1], 'username': u[2], 'first_name': u[3],
                 'last_name': u[4], 'photo_url': u[5], 'role': u[6], 'member_id': u[7], 'tg_username': u[8],
+                'permissions': _effective_perms(u[6], u[9]),
             }
             return {
                 'statusCode': 200,

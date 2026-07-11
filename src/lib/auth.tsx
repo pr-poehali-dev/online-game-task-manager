@@ -86,6 +86,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fetchMe();
   }, [fetchMe]);
 
+  // Heartbeat активности — фиксирует время, проведённое в приложении, для статистики в админке
+  useEffect(() => {
+    if (!user) return;
+    const sendHeartbeat = () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) return;
+      fetch(AUTH_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+        body: JSON.stringify({ action: 'heartbeat' }),
+      }).catch(() => {});
+    };
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
+
   const loginWithTelegram = useCallback(async (data: TelegramAuthData): Promise<AuthUser> => {
     const res = await fetch(AUTH_URL, {
       method: 'POST',

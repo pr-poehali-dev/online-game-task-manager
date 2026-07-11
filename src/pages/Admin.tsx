@@ -3,6 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import type { PermissionKey } from '@/lib/auth';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import type { DateRange } from 'react-day-picker';
 import func2url from '../../backend/func2url.json';
 
 // PERSISTENCE_MARKER_2024_PERM_CHECK — маркер проверки сохранения изменений
@@ -78,6 +81,27 @@ interface SessionInfo {
   active: boolean;
 }
 
+interface UserStats {
+  createdCount: number;
+  closedCount: number;
+  receivedCount: number;
+  timeSpentSeconds: number;
+}
+
+function fmtDuration(totalSeconds: number): string {
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  if (hours === 0 && minutes === 0) return '< 1 мин';
+  const parts: string[] = [];
+  if (hours > 0) parts.push(`${hours} ч`);
+  if (minutes > 0) parts.push(`${minutes} мин`);
+  return parts.join(' ');
+}
+
+function fmtDay(d: Date): string {
+  return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+}
+
 function authFetch(body: object) {
   const token = localStorage.getItem(TOKEN_KEY) || '';
   return fetch(ADMIN_URL, {
@@ -104,6 +128,16 @@ export default function Admin() {
   const [permsForId, setPermsForId] = useState<number | null>(null);
   const [permsDraft, setPermsDraft] = useState<Permissions>({});
   const [permsSaving, setPermsSaving] = useState(false);
+  const [statsFor, setStatsFor] = useState<TeamUser | null>(null);
+  const [statsRange, setStatsRange] = useState<DateRange | undefined>(() => {
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 6);
+    return { from, to };
+  });
+  const [statsCalendarOpen, setStatsCalendarOpen] = useState(false);
+  const [stats, setStats] = useState<UserStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY) || '';
@@ -181,6 +215,37 @@ export default function Admin() {
     setPermsSaving(false);
     setPermsForId(null);
     load();
+  }
+
+  const loadStats = useCallback(async (userId: number, range: DateRange | undefined) => {
+    if (!range?.from) return;
+    setStatsLoading(true);
+    const from = new Date(range.from);
+    from.setHours(0, 0, 0, 0);
+    const to = range.to ? new Date(range.to) : new Date(range.from);
+    to.setHours(23, 59, 59, 999);
+    const res = await authFetch({ action: 'stats', user_id: userId, from: from.toISOString(), to: to.toISOString() });
+    if (res.ok) {
+      const data = await res.json();
+      setStats(data);
+    } else {
+      setStats(null);
+    }
+    setStatsLoading(false);
+  }, []);
+
+  function openStats(u: TeamUser) {
+    setStatsFor(u);
+    setStats(null);
+    loadStats(u.id, statsRange);
+  }
+
+  function applyStatsRange(range: DateRange | undefined) {
+    setStatsRange(range);
+    if (statsFor && range?.from && range?.to) {
+      setStatsCalendarOpen(false);
+      loadStats(statsFor.id, range);
+    }
   }
 
   async function handleLogout() {
@@ -324,6 +389,14 @@ export default function Admin() {
                     <Icon name={permsForId === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} />
                   </button>
 
+                  <button
+                    onClick={() => openStats(u)}
+                    title="Статистика активности"
+                    className="h-8 px-2 rounded-lg flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                  >
+                    <Icon name="BarChart3" size={15} />
+                  </button>
+
                   <select
                     value={u.role}
                     onChange={(e) => setRole(u.id, e.target.value as 'member' | 'admin')}
@@ -459,6 +532,87 @@ export default function Admin() {
                   </div>
                 ))}
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {statsFor && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4"
+          onClick={() => setStatsFor(null)}
+        >
+          <div
+            className="w-full max-w-lg rounded-2xl border border-border bg-card p-5 max-h-[80vh] overflow-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-base font-semibold">Статистика — {statsFor.first_name}</h2>
+                <p className="text-xs text-muted-foreground">Активность за выбранный период</p>
+              </div>
+              <button onClick={() => setStatsFor(null)} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary">
+                <Icon name="X" size={18} />
+              </button>
+            </div>
+
+            <Popover open={statsCalendarOpen} onOpenChange={setStatsCalendarOpen}>
+              <PopoverTrigger asChild>
+                <button className="w-full flex items-center gap-2 h-9 px-3 rounded-lg border border-border bg-secondary/60 text-sm hover:bg-secondary transition-colors mb-4">
+                  <Icon name="Calendar" size={15} className="text-muted-foreground" />
+                  {statsRange?.from
+                    ? statsRange.to
+                      ? `${fmtDay(statsRange.from)} — ${fmtDay(statsRange.to)}`
+                      : fmtDay(statsRange.from)
+                    : 'Выберите период'}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={statsRange}
+                  onSelect={applyStatsRange}
+                  numberOfMonths={2}
+                  defaultMonth={statsRange?.from}
+                />
+              </PopoverContent>
+            </Popover>
+
+            {statsLoading ? (
+              <div className="flex justify-center py-10"><Icon name="Loader2" size={22} className="animate-spin text-primary" /></div>
+            ) : stats ? (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-xl border border-border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+                    <Icon name="PlusCircle" size={13} />
+                    Создал задач
+                  </div>
+                  <div className="text-2xl font-semibold">{stats.createdCount}</div>
+                </div>
+                <div className="rounded-xl border border-border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+                    <Icon name="CheckCircle2" size={13} />
+                    Закрыл задач
+                  </div>
+                  <div className="text-2xl font-semibold">{stats.closedCount}</div>
+                </div>
+                <div className="rounded-xl border border-border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+                    <Icon name="Inbox" size={13} />
+                    Получил задач
+                  </div>
+                  <div className="text-2xl font-semibold">{stats.receivedCount}</div>
+                </div>
+                <div className="rounded-xl border border-border bg-secondary/30 p-4">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground mb-1.5">
+                    <Icon name="Clock" size={13} />
+                    Время в приложении
+                  </div>
+                  <div className="text-2xl font-semibold">{fmtDuration(stats.timeSpentSeconds)}</div>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-6 text-center">Не удалось загрузить статистику</p>
             )}
           </div>
         </div>

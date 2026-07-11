@@ -27,18 +27,36 @@ def _db():
     return conn
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _current_user(cur, schema, token):
     if not token:
         return None
     cur.execute(
-        f"SELECT u.id, u.role FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+        f"SELECT u.id, u.role, u.permissions FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
         f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
         (token,)
     )
     row = cur.fetchone()
     if not row:
         return None
-    return {'id': row[0], 'role': row[1]}
+    return {'id': row[0], 'role': row[1], 'perms': _effective_perms(row[1], row[2])}
 
 
 LIST_COLUMNS = "id, title, category, excerpt, author_id, updated_by, created_at, updated_at"
@@ -129,16 +147,22 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': _row_full(row)})}
 
-    # Загрузка изображения
+    # Загрузка изображения — нужно право на создание или редактирование статей
     if action == 'upload_image':
+        if not (me['perms']['kb_create'] or me['perms']['kb_edit']):
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         url = _upload_image(body)
         cur.close(); conn.close()
         if not url:
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
 
-    # Создание статьи
+    # Создание статьи — по праву kb_create
     if action == 'create':
+        if not me['perms']['kb_create']:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         title = (body.get('title') or '').strip()
         if not title:
             cur.close(); conn.close()
@@ -159,8 +183,11 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': art})}
 
-    # Редактирование статьи
+    # Редактирование статьи — по праву kb_edit
     if action == 'update':
+        if not me['perms']['kb_edit']:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         art_id = body.get('id')
         if not art_id:
             cur.close(); conn.close()
@@ -183,8 +210,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': _row_full(row)})}
 
-    # Удаление статьи
+    # Удаление статьи — только администратор
     if action == 'delete':
+        if me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         art_id = body.get('id')
         if not art_id:
             cur.close(); conn.close()

@@ -23,6 +23,24 @@ def _schema():
     return os.environ.get('MAIN_DB_SCHEMA', 'public')
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
@@ -47,7 +65,7 @@ def _verify_telegram(data: dict, bot_token: str) -> bool:
 
 
 def handler(event: dict, context) -> dict:
-    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me) и выход (action=logout).'''
+    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout) и heartbeat активности (action=heartbeat).'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -76,7 +94,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_token'})}
         cur.execute(
-            f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.is_active "
+            f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.is_active, u.permissions "
             f"FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
             f"WHERE s.token = %s AND s.expires_at > NOW()",
             (token,)
@@ -90,7 +108,7 @@ def handler(event: dict, context) -> dict:
         user = {
             'id': row[0], 'telegram_id': row[1], 'username': row[2], 'first_name': row[3],
             'last_name': row[4], 'photo_url': row[5], 'role': row[6], 'member_id': row[7],
-            'tg_username': row[8],
+            'tg_username': row[8], 'permissions': _effective_perms(row[6], row[10]),
         }
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'user': user})}
 
@@ -126,6 +144,43 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'members': members})}
 
+    # Отметка активности пользователя в приложении — для подсчёта времени, проведённого в системе.
+    # Фронтенд вызывает периодически (~раз в минуту), пока вкладка открыта. Если разрыв между heartbeat
+    # больше 5 минут — считается новой сессией активности.
+    if action == 'heartbeat':
+        if not token:
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_token'})}
+        cur.execute(
+            f"SELECT u.id FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+            f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
+            (token,)
+        )
+        urow = cur.fetchone()
+        if not urow:
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'invalid_session'})}
+        uid = urow[0]
+        cur.execute(
+            f"SELECT id, last_heartbeat_at FROM {schema}.user_activity_sessions "
+            f"WHERE user_id = %s ORDER BY last_heartbeat_at DESC LIMIT 1",
+            (uid,)
+        )
+        last = cur.fetchone()
+        now = datetime.now(timezone.utc)
+        if last and (now - last[1]) <= timedelta(minutes=5):
+            cur.execute(
+                f"UPDATE {schema}.user_activity_sessions SET last_heartbeat_at = NOW() WHERE id = %s",
+                (last[0],)
+            )
+        else:
+            cur.execute(
+                f"INSERT INTO {schema}.user_activity_sessions (user_id, started_at, last_heartbeat_at) VALUES (%s, NOW(), NOW())",
+                (uid,)
+            )
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
     # === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ ===
     if action == 'dev_users':
         cur.execute(
@@ -146,7 +201,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
         cur.execute(
-            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active "
+            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, permissions "
             f"FROM {schema}.users WHERE id = %s AND is_hidden = false",
             (dev_user_id,)
         )
@@ -163,6 +218,7 @@ def handler(event: dict, context) -> dict:
         user = {
             'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3],
             'last_name': r[4], 'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
+            'permissions': _effective_perms(r[6], r[10]),
         }
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'token': session_token, 'user': user})}
@@ -234,7 +290,7 @@ def handler(event: dict, context) -> dict:
     )
 
     cur.execute(
-        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username FROM {schema}.users WHERE id = %s",
+        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions FROM {schema}.users WHERE id = %s",
         (user_id,)
     )
     r = cur.fetchone()
@@ -243,6 +299,7 @@ def handler(event: dict, context) -> dict:
     user = {
         'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3],
         'last_name': r[4], 'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
+        'permissions': _effective_perms(r[6], r[9]),
     }
     return {
         'statusCode': 200,

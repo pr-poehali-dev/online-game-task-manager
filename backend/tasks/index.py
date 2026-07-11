@@ -96,18 +96,47 @@ def _db():
     return conn
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    '''Индивидуальные права (если заданы явно) приоритетнее роли. Не заданные — берутся из роли.'''
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _current_user(cur, schema, token):
     if not token:
         return None
     cur.execute(
-        f"SELECT u.id, u.role FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+        f"SELECT u.id, u.role, u.permissions FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
         f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
         (token,)
     )
     row = cur.fetchone()
     if not row:
         return None
-    return {'id': row[0], 'role': row[1]}
+    perms = _effective_perms(row[1], row[2])
+    return {'id': row[0], 'role': row[1], 'perms': perms}
+
+
+def _record_assignments(cur, schema, task_id, user_ids, assigned_by):
+    '''Фиксирует момент назначения пользователей исполнителями задачи — для статистики «получено задач».'''
+    for uid in user_ids:
+        cur.execute(
+            f"INSERT INTO {schema}.task_assignment_events (task_id, user_id, assigned_by) VALUES (%s, %s, %s)",
+            (int(task_id), uid, assigned_by)
+        )
 
 
 def _row_to_task(r):
@@ -221,16 +250,16 @@ def handler(event: dict, context) -> dict:
         for r in cur.fetchall():
             d = _row_to_task(r)
             d['commentCount'] = r[20]
-            # Участник видит только задачи, где он назначен исполнителем
-            if me['role'] != 'admin' and me['id'] not in _task_assignee_ids(d):
+            # Без права task_view_others — видит только задачи, где он исполнитель или автор
+            if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
                 continue
             tasks.append(d)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'tasks': tasks})}
 
-    # Создание задачи — только администратор
+    # Создание задачи — по праву task_create
     if action == 'create':
-        if me['role'] != 'admin':
+        if not me['perms']['task_create']:
             cur.close(); conn.close()
             return _forbidden()
         title = (body.get('title') or '').strip()
@@ -265,6 +294,7 @@ def handler(event: dict, context) -> dict:
             )
         )
         task = _row_to_task(cur.fetchone())
+        _record_assignments(cur, schema, task['id'], assignee_ids, me['id'])
         _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
@@ -276,13 +306,16 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
 
-        # Участник может только переносить СВОЮ задачу между колонками To Do / In Progress / Done
-        if me['role'] != 'admin':
-            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
-            own_row = cur.fetchone()
-            if not own_row:
-                cur.close(); conn.close()
-                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        if not own_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        is_creator = own_row[2] == me['id']
+        can_full_edit = me['role'] == 'admin' or (me['perms']['task_edit_own'] and is_creator)
+
+        if not can_full_edit:
+            # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
             own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
             requested_column = body.get('column')
             if me['id'] not in own_ids or requested_column not in ('todo', 'progress', 'done'):
@@ -333,6 +366,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
+        _record_assignments(cur, schema, task_id, new_ids, me['id'])
         _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
@@ -361,15 +395,25 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
-    # Перенос задачи в раздел «К рестарту» — только администратор
+    # Перенос задачи в раздел «К рестарту» — по праву task_restart (только свои задачи для не-админа)
     if action == 'to_restart':
-        if me['role'] != 'admin':
-            cur.close(); conn.close()
-            return _forbidden()
         task_id = body.get('id')
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        if not me['perms']['task_restart']:
+            cur.close(); conn.close()
+            return _forbidden()
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            if not own_row:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+            if me['id'] not in own_ids and own_row[2] != me['id']:
+                cur.close(); conn.close()
+                return _forbidden()
         cur.execute(
             f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
@@ -413,9 +457,9 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
         cur.execute(
-            f"UPDATE {schema}.tasks SET archived = true, outcome = %s, archived_at = NOW(), updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET archived = true, outcome = %s, archived_at = NOW(), closed_by = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
-            (outcome, int(task_id))
+            (outcome, me['id'], int(task_id))
         )
         row = cur.fetchone()
         cur.close(); conn.close()
@@ -433,7 +477,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
         cur.execute(
-            f"UPDATE {schema}.tasks SET archived = false, outcome = NULL, archived_at = NULL, updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET archived = false, outcome = NULL, archived_at = NULL, closed_by = NULL, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (int(task_id),)
         )
@@ -463,11 +507,11 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_task_id'})}
-        if me['role'] != 'admin':
-            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        if me['role'] != 'admin' and not me['perms']['task_view_others']:
+            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
             own_row = cur.fetchone()
             own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
-            if me['id'] not in own_ids:
+            if me['id'] not in own_ids and (not own_row or own_row[2] != me['id']):
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
@@ -491,11 +535,11 @@ def handler(event: dict, context) -> dict:
         if not task_id or not text:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
-        if me['role'] != 'admin':
-            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        if me['role'] != 'admin' and not me['perms']['task_view_others']:
+            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
             own_row = cur.fetchone()
             own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
-            if me['id'] not in own_ids:
+            if me['id'] not in own_ids and (not own_row or own_row[2] != me['id']):
                 cur.close(); conn.close()
                 return _forbidden()
         parent_id = body.get('parentId')

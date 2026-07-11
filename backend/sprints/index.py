@@ -25,18 +25,36 @@ def _db():
     return conn
 
 
+ALL_PERMISSIONS = [
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'idea_create',
+    'kb_create', 'kb_edit',
+    'sprint_create', 'sprint_edit',
+]
+
+
+def _effective_perms(role, raw):
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _current_user(cur, schema, token):
     if not token:
         return None
     cur.execute(
-        f"SELECT u.id, u.role FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+        f"SELECT u.id, u.role, u.permissions FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
         f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
         (token,)
     )
     row = cur.fetchone()
     if not row:
         return None
-    return {'id': row[0], 'role': row[1]}
+    return {'id': row[0], 'role': row[1], 'perms': _effective_perms(row[1], row[2])}
 
 
 def _row_to_sprint(r):
@@ -86,7 +104,15 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'sprints': sprints})}
 
-    if action in ('create', 'update', 'delete') and me['role'] != 'admin':
+    if action == 'create' and not me['perms']['sprint_create']:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+
+    if action == 'update' and not me['perms']['sprint_edit']:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+
+    if action == 'delete' and me['role'] != 'admin':
         cur.close(); conn.close()
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
