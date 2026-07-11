@@ -28,7 +28,10 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [archiveMenu, setArchiveMenu] = useState(false);
   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
+  const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
   const canFullEdit = isAdmin || (can('task_edit_own') && isCreator);
+  // Статус деплоя может менять автор задачи или назначенный исполнитель — даже без полного доступа
+  const canEditDeploy = canFullEdit || isCreator || isAssignee;
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
@@ -46,7 +49,12 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
   function handleSave() {
     if (!canFullEdit) {
-      // Без полного доступа участник может изменить только колонку (перенос по доске To Do / In Progress / Done)
+      if (canEditDeploy) {
+        // Без полного доступа автор/исполнитель может менять статус деплоя (и связанную с ним колонку)
+        onSave({ ...task, column: form.column, deployStatus: form.deployStatus });
+        return;
+      }
+      // Без права полного редактирования — можно изменить только колонку (перенос по доске To Do / In Progress / Done)
       onSave({ ...task, column: form.column });
       return;
     }
@@ -60,7 +68,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         <div className="flex items-center gap-3">
           <PriorityBadge p={form.priority} />
           <ServerBadge id={form.server} />
-          {canFullEdit && (
+          {(canFullEdit || canEditDeploy) && (
             <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
               <Icon name={columns.find((c) => c.id === form.column)?.icon ?? 'Circle'} size={12} />
               {columns.find((c) => c.id === form.column)?.title ?? form.column}
@@ -159,7 +167,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {!canFullEdit && (
+          {!canFullEdit && !canEditDeploy && (
             <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
               { value: 'todo', label: 'To Do' },
               { value: 'progress', label: 'In Progress' },
@@ -229,84 +237,84 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
         </div>
 
+        {canEditDeploy && (
+          /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу */
+          <div>
+            <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
+            <div className="space-y-3">
+              {columns.map((col) => (
+                <div key={col.id}>
+                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                    <Icon name={col.icon} size={11} />
+                    {col.title}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
+                      const active = (form.deployStatus ?? 'none') === ds.id;
+                      return (
+                        <button
+                          key={ds.id}
+                          onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
+                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                          style={{
+                            background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                            borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                            color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                          }}
+                        >
+                          <Icon name={ds.icon} size={12} />
+                          {ds.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {canFullEdit && (
-          <>
-            {/* Deploy status — определяет колонку доски автоматически */}
-            <div>
-              <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
-              <div className="space-y-3">
-                {columns.map((col) => (
-                  <div key={col.id}>
-                    <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                      <Icon name={col.icon} size={11} />
-                      {col.title}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
-                        const active = (form.deployStatus ?? 'none') === ds.id;
-                        return (
-                          <button
-                            key={ds.id}
-                            onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
-                            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
-                            style={{
-                              background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
-                              borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
-                              color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
-                            }}
-                          >
-                            <Icon name={ds.icon} size={12} />
-                            {ds.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+          /* Links */
+          <div>
+            <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
+            {links.length > 0 && (
+              <div className="flex flex-col gap-1.5 mb-2">
+                {links.map((l, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
+                    <Icon name="Link" size={13} className="text-primary shrink-0" />
+                    <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
+                      {l.label}
+                    </a>
+                    <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
+                      <Icon name="X" size={13} />
+                    </button>
                   </div>
                 ))}
               </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={newLink.label}
+                onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
+                placeholder="Название (напр. Тикет #1234)"
+                className={inputCls + ' flex-1'}
+              />
+              <input
+                value={newLink.url}
+                onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
+                onKeyDown={(e) => e.key === 'Enter' && addLink()}
+                placeholder="https://..."
+                className={inputCls + ' flex-1'}
+              />
+              <button
+                onClick={addLink}
+                className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+              >
+                <Icon name="Plus" size={16} />
+              </button>
             </div>
-
-            {/* Links */}
-            <div>
-              <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
-              {links.length > 0 && (
-                <div className="flex flex-col gap-1.5 mb-2">
-                  {links.map((l, i) => (
-                    <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
-                      <Icon name="Link" size={13} className="text-primary shrink-0" />
-                      <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
-                        {l.label}
-                      </a>
-                      <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
-                        <Icon name="X" size={13} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex gap-2">
-                <input
-                  value={newLink.label}
-                  onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))}
-                  placeholder="Название (напр. Тикет #1234)"
-                  className={inputCls + ' flex-1'}
-                />
-                <input
-                  value={newLink.url}
-                  onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))}
-                  onKeyDown={(e) => e.key === 'Enter' && addLink()}
-                  placeholder="https://..."
-                  className={inputCls + ' flex-1'}
-                />
-                <button
-                  onClick={addLink}
-                  className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
-                >
-                  <Icon name="Plus" size={16} />
-                </button>
-              </div>
-            </div>
-          </>
+          </div>
         )}
 
         {!canFullEdit && links.length > 0 && (

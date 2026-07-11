@@ -310,13 +310,28 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         is_creator = own_row[2] == me['id']
+        own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+        is_assignee = me['id'] in own_ids
         can_full_edit = me['role'] == 'admin' or (me['perms']['task_edit_own'] and is_creator)
+        # Статус деплоя (и связанную с ним колонку) может менять автор задачи или назначенный исполнитель — даже без полного доступа
+        can_edit_deploy = me['role'] == 'admin' or is_creator or is_assignee
 
         if not can_full_edit:
-            # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
-            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
             requested_column = body.get('column')
-            if me['id'] not in own_ids or requested_column not in ('todo', 'progress', 'done'):
+            requested_deploy = body.get('deployStatus')
+            if can_edit_deploy and requested_deploy is not None:
+                if requested_column not in ('todo', 'progress', 'done'):
+                    cur.close(); conn.close()
+                    return _forbidden()
+                cur.execute(
+                    f"UPDATE {schema}.tasks SET deploy_status = %s, column_id = %s, updated_at = NOW() WHERE id = %s RETURNING {TASK_COLUMNS}",
+                    (requested_deploy, requested_column, int(task_id))
+                )
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+            # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
+            if not is_assignee or requested_column not in ('todo', 'progress', 'done'):
                 cur.close(); conn.close()
                 return _forbidden()
             cur.execute(
