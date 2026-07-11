@@ -104,6 +104,20 @@ export default function NotificationBell({ onOpenTask, onOpenIdea }: {
     }
   }
 
+  async function clearAll() {
+    setItems([]);
+    setUnread(0);
+    try {
+      await fetch(NOTIFICATIONS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'clear_all' }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   function handleClick(n: Notification) {
     if (!n.isRead) markRead(n.id);
     setOpen(false);
@@ -127,14 +141,21 @@ export default function NotificationBell({ onOpenTask, onOpenIdea }: {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-80 rounded-xl border border-border bg-card shadow-xl animate-scale-in overflow-hidden">
+        <div className="absolute right-0 top-10 z-[60] w-80 rounded-xl border border-border bg-card shadow-xl animate-scale-in overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <span className="text-sm font-semibold">Уведомления</span>
-            {unread > 0 && (
-              <button onClick={markAll} className="text-xs text-primary hover:opacity-80 transition-opacity">
-                Прочитать все
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {unread > 0 && (
+                <button onClick={markAll} className="text-xs text-primary hover:opacity-80 transition-opacity">
+                  Прочитать все
+                </button>
+              )}
+              {items.length > 0 && (
+                <button onClick={clearAll} className="text-xs text-muted-foreground hover:text-destructive transition-colors">
+                  Очистить
+                </button>
+              )}
+            </div>
           </div>
           <div className="max-h-96 overflow-auto scrollbar-thin">
             {items.length === 0 ? (

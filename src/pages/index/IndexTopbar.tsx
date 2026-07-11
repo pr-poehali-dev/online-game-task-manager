@@ -67,7 +67,7 @@ export default function IndexTopbar({
   return (
     <>
       {/* Topbar */}
-      <header className="h-14 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm"
+      <header className="relative z-30 h-14 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm"
         style={{ borderBottom: '1px solid hsl(var(--border))', boxShadow: '0 1px 0 hsl(35 85% 45% / 0.08)' }}>
         <div className="flex items-center gap-2">
           <span className="font-display tracking-widest text-base" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>

@@ -120,5 +120,14 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
+    # Полностью очистить список уведомлений пользователя
+    if action == 'clear_all':
+        cur.execute(
+            f"DELETE FROM {schema}.notifications WHERE user_id = %s",
+            (me['id'],)
+        )
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
     cur.close(); conn.close()
     return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unknown_action'})}
