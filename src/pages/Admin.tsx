@@ -181,6 +181,9 @@ export default function Admin() {
           <button onClick={() => navigate('/')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
             <Icon name="LayoutGrid" size={15} /> Доска
           </button>
+          <button onClick={() => navigate('/cabinet')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
+            <Icon name="User" size={15} /> Кабинет
+          </button>
           <button onClick={handleLogout} className="flex items-center gap-2 h-8 px-3 rounded-lg text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
             <Icon name="LogOut" size={15} /> Выйти
           </button>
