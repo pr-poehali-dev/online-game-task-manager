@@ -203,49 +203,6 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
-    # === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ ===
-    if action == 'dev_users':
-        cur.execute(
-            f"SELECT id, first_name, last_name, role, tg_username, is_active "
-            f"FROM {schema}.users WHERE is_hidden = false ORDER BY role DESC, id ASC"
-        )
-        rows = cur.fetchall()
-        users = [{
-            'id': r[0], 'first_name': r[1], 'last_name': r[2], 'role': r[3],
-            'tg_username': r[4], 'is_active': r[5],
-        } for r in rows]
-        cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users})}
-
-    if action == 'dev_login':
-        dev_user_id = body.get('user_id')
-        if not dev_user_id:
-            cur.close(); conn.close()
-            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
-        cur.execute(
-            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, permissions, theme "
-            f"FROM {schema}.users WHERE id = %s AND is_hidden = false",
-            (dev_user_id,)
-        )
-        r = cur.fetchone()
-        if not r or not r[9]:
-            cur.close(); conn.close()
-            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_allowed'})}
-        session_token = secrets.token_urlsafe(48)
-        expires = datetime.now(timezone.utc) + timedelta(days=30)
-        cur.execute(
-            f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
-            (r[0], session_token, expires)
-        )
-        user = {
-            'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3],
-            'last_name': r[4], 'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
-            'permissions': _effective_perms(r[6], r[10]), 'theme': r[11],
-        }
-        cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'token': session_token, 'user': user})}
-    # === DEV_LOGIN_END ===
-
     # Выход
     if action == 'logout':
         if token:
