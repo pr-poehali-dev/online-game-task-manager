@@ -223,6 +223,17 @@ export default function Index() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, searchParams]);
 
+  // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
+  useEffect(() => {
+    if (!user || searchParams.get('my') !== '1') return;
+    setAssigneeFilter(user.id);
+    setView('board');
+    const next = new URLSearchParams(searchParams);
+    next.delete('my');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, searchParams]);
+
   async function handleAddTask(task: Task) {
     setCreateFor(null);
     setCreatePreset(null);

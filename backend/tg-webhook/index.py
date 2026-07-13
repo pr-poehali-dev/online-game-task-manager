@@ -18,12 +18,15 @@ def _db():
     return conn
 
 
-def _send_message(chat_id, text):
+def _send_message(chat_id, text, reply_markup=None):
     token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
     if not token:
         return
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = json.dumps({'chat_id': chat_id, 'text': text}).encode()
+    payload = {'chat_id': chat_id, 'text': text}
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
+    data = json.dumps(payload).encode()
     for attempt in range(3):
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
         try:
@@ -36,6 +39,19 @@ def _send_message(chat_id, text):
             return
         except Exception as e:
             print(f"[tg-webhook] send error (attempt {attempt + 1}): {e}")
+
+
+def _main_menu_keyboard():
+    '''Кнопки быстрого доступа: вход на сайт и переход к своим задачам.'''
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    if not app_url:
+        return None
+    return {
+        'inline_keyboard': [[
+            {'text': '🔑 Вход', 'url': f'{app_url}/login'},
+            {'text': '📋 Мои задачи', 'url': f'{app_url}/?my=1'},
+        ]]
+    }
 
 
 def handler(event: dict, context) -> dict:
@@ -59,14 +75,14 @@ def handler(event: dict, context) -> dict:
 
     if not text.startswith('/start'):
         if chat_id:
-            _send_message(chat_id, 'Чтобы войти, откройте страницу входа на сайте и нажмите «Войти через бота».')
+            _send_message(chat_id, 'Чтобы войти, откройте страницу входа на сайте и нажмите «Войти через бота», либо воспользуйтесь кнопками ниже.', _main_menu_keyboard())
         return {'statusCode': 200, 'body': json.dumps({'ok': True})}
 
     parts = text.split(maxsplit=1)
     code = parts[1].strip().upper() if len(parts) > 1 else ''
 
     if not code:
-        _send_message(chat_id, 'Откройте страницу входа на сайте и нажмите «Войти через бота», чтобы получить код.')
+        _send_message(chat_id, 'Откройте страницу входа на сайте и нажмите «Войти через бота», чтобы получить код, либо воспользуйтесь кнопками ниже.', _main_menu_keyboard())
         return {'statusCode': 200, 'body': json.dumps({'ok': True})}
 
     schema = _schema()
@@ -165,5 +181,7 @@ def handler(event: dict, context) -> dict:
     )
     cur.close(); conn.close()
 
-    _send_message(chat_id, '✅ Вход подтверждён! Вернитесь на сайт — вы уже авторизованы.')
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    tasks_keyboard = {'inline_keyboard': [[{'text': '📋 Мои задачи', 'url': f'{app_url}/?my=1'}]]} if app_url else None
+    _send_message(chat_id, '✅ Вход подтверждён! Вернитесь на сайт — вы уже авторизованы.', tasks_keyboard)
     return {'statusCode': 200, 'body': json.dumps({'ok': True})}
