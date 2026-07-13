@@ -3,6 +3,7 @@ import type { KbCategoryId, KbArticleBrief } from '@/components/KnowledgeBase';
 import Board from './Board';
 import Restart from './Restart';
 import Ideas from './Ideas';
+import Faq from './Faq';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
 import type { PermissionKey } from '@/lib/auth';
@@ -190,6 +191,9 @@ export default function IndexMain({
               photo_url: m.photo_url,
             }))}
           />
+        )}
+        {view === 'faq' && (
+          <Faq isAdmin={isAdmin} />
         )}
       </div>
 
