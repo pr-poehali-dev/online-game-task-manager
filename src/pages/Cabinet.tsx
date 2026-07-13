@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import ThemeToggle from '@/components/ThemeToggle';
+import Faq from '@/components/Faq';
 
 export default function Cabinet() {
   const navigate = useNavigate();
@@ -59,7 +60,7 @@ export default function Cabinet() {
           </div>
         </div>
 
-        <div className="mt-6">
+        <div className="mt-6 mb-8">
           <button
             onClick={() => navigate('/')}
             className="flex items-center gap-2 text-sm text-primary hover:underline"
@@ -68,6 +69,8 @@ export default function Cabinet() {
             Перейти к доске задач
           </button>
         </div>
+
+        <Faq isAdmin={isAdmin} />
       </main>
     </div>
   );

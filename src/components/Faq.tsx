@@ -1,10 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
-import func2url from '../../../backend/func2url.json';
-import { authHeaders } from './shared';
+import func2url from '../../backend/func2url.json';
 
 export const FAQ_URL = (func2url as Record<string, string>).faq;
+const TOKEN_KEY = 'era_auth_token';
+
+function faqAuthHeaders(): Record<string, string> {
+  return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
+}
 
 interface FaqItem {
   id: string;
@@ -29,7 +33,7 @@ export default function Faq({ isAdmin }: { isAdmin: boolean }) {
 
   const loadList = useCallback(async () => {
     try {
-      const res = await fetch(FAQ_URL, { method: 'GET', headers: authHeaders() });
+      const res = await fetch(FAQ_URL, { method: 'GET', headers: faqAuthHeaders() });
       if (res.ok) {
         const data = await res.json();
         setItems(data.items || []);
@@ -48,7 +52,7 @@ export default function Faq({ isAdmin }: { isAdmin: boolean }) {
     try {
       const res = await fetch(FAQ_URL, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: faqAuthHeaders(),
         body: JSON.stringify({ action, ...payload }),
       });
       if (res.ok) {
@@ -66,7 +70,7 @@ export default function Faq({ isAdmin }: { isAdmin: boolean }) {
     try {
       await fetch(FAQ_URL, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: faqAuthHeaders(),
         body: JSON.stringify({ action: 'delete', id }),
       });
     } catch {
@@ -79,7 +83,7 @@ export default function Faq({ isAdmin }: { isAdmin: boolean }) {
     try {
       await fetch(FAQ_URL, {
         method: 'POST',
-        headers: authHeaders(),
+        headers: faqAuthHeaders(),
         body: JSON.stringify({ action: 'reorder', ids: newOrder.map((i) => i.id) }),
       });
     } catch {

@@ -80,7 +80,6 @@ export default function IndexTopbar({
             {view === 'knowledge' && 'База знаний'}
             {view === 'restart' && 'К рестарту'}
             {view === 'ideas' && 'Идеи'}
-            {view === 'faq' && 'FAQ'}
           </span>
         </div>
         <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
@@ -90,7 +89,6 @@ export default function IndexTopbar({
             { k: 'sprints', label: 'Спринты', icon: 'Zap' },
             { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
             { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
-            { k: 'faq', label: 'FAQ', icon: 'HelpCircle' },
             { k: 'archive', label: 'Архив', icon: 'Archive' },
           ].map((t) => (
             <button
