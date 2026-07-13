@@ -99,11 +99,15 @@ def _upload_image(body):
     key = f"kb/{uuid.uuid4().hex}.{ext}"
     s3 = boto3.client(
         's3',
-        endpoint_url='https://bucket.poehali.dev',
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
     )
-    s3.put_object(Bucket='files', Key=key, Body=raw, ContentType=content_type)
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    s3.put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+    if public_url:
+        return f"{public_url}/{key}"
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 

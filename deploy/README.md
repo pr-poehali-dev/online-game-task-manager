@@ -142,9 +142,13 @@ sudo systemctl status era-backend   # должно быть active (running)
 
 ## 8. Собираем фронтенд
 Перед сборкой пропишите адрес backend. Откройте `backend/func2url.json` и
-замените все облачные URL на путь через ваш домен:
+замените все облачные URL на путь через ваш домен (важно перечислить
+**все** функции — по одной на каждую папку внутри `backend/`):
 ```json
 {
+  "faq":           "https://ВАШ-ДОМЕН.РУ/api/faq",
+  "catalog":       "https://ВАШ-ДОМЕН.РУ/api/catalog",
+  "sprints":       "https://ВАШ-ДОМЕН.РУ/api/sprints",
   "notifications": "https://ВАШ-ДОМЕН.РУ/api/notifications",
   "ideas":         "https://ВАШ-ДОМЕН.РУ/api/ideas",
   "knowledge":     "https://ВАШ-ДОМЕН.РУ/api/knowledge",
