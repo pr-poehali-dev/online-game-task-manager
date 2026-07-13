@@ -27,8 +27,31 @@ def _tg_send(chat_id, text, button_url=None):
         print(f"[tasks] tg send error: {e}")
 
 
+DEPLOY_STATUS_LABELS = {
+    'none': 'Без статуса',
+    'unfeasible': 'Нереализуемо',
+    'tested_rework': 'На доработку (есть замечания)',
+    'local': 'Готово локально у скриптера',
+    'test': 'На тестировании (залито на тестовый)',
+    'tested_ok': 'Протестировано — всё ок',
+    'ready_live': 'Можно заливать на лайв',
+}
+
+
+def _telegram_targets(cur, schema, user_ids):
+    '''Возвращает telegram_id пользователей из списка, которые вошли через бота и активны.'''
+    if not user_ids:
+        return []
+    cur.execute(
+        f"SELECT telegram_id FROM {schema}.users "
+        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
+        (user_ids,)
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
 def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
-    '''Уведомляет назначенных исполнителей (кроме назначившего): запись в БД + сообщение в Telegram.'''
+    '''Уведомляет назначенных исполнителей (кроме назначившего) о новой задаче: запись в БД + сообщение в Telegram.'''
     targets = [uid for uid in user_ids if uid and uid != actor_id]
     if not targets:
         return
@@ -40,16 +63,10 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
             (uid, 'Вам назначена задача', title, str(task_id) if task_id else None, actor_id)
         )
     # Telegram — только тем, кто вошёл через бота
-    cur.execute(
-        f"SELECT telegram_id FROM {schema}.users "
-        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
-        (targets,)
-    )
-    rows = cur.fetchall()
     app_url = (os.environ.get('APP_URL') or '').rstrip('/')
     button_url = app_url or None
     text = f"📌 Вам назначена задача:\n\n«{title}»\n\nОткройте таск-менеджер, чтобы посмотреть детали."
-    for (tg_id,) in rows:
+    for tg_id in _telegram_targets(cur, schema, targets):
         _tg_send(tg_id, text, button_url)
 
 
@@ -62,6 +79,50 @@ def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entit
         f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id)
     )
+
+
+def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id, creator_id, assignee_ids):
+    '''Уведомляет автора и исполнителей задачи об изменении статуса деплоя (кроме того, кто его изменил).
+    Одному пользователю — только одно уведомление, даже если он и автор, и исполнитель.'''
+    targets = set()
+    if creator_id:
+        targets.add(creator_id)
+    for uid in (assignee_ids or []):
+        if uid:
+            targets.add(uid)
+    targets.discard(actor_id)
+    if not targets:
+        return
+    status_label = DEPLOY_STATUS_LABELS.get(new_status, new_status)
+    for uid in targets:
+        _add_notif(cur, schema, uid, 'task_deploy_status', f'Статус деплоя изменён: {status_label}', task_title, 'task', task_id, actor_id)
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    button_url = app_url or None
+    text = f"🚀 Статус деплоя задачи изменён:\n\n«{task_title}»\n→ {status_label}"
+    for tg_id in _telegram_targets(cur, schema, list(targets)):
+        _tg_send(tg_id, text, button_url)
+
+
+def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notified, creator_id, assignee_ids):
+    '''Уведомляет автора и исполнителей задачи о новом комментарии (кроме автора комментария
+    и тех, кто уже уведомлён как ответ/упоминание — чтобы не дублировать уведомления).'''
+    targets = set()
+    if creator_id:
+        targets.add(creator_id)
+    for uid in (assignee_ids or []):
+        if uid:
+            targets.add(uid)
+    targets.discard(actor_id)
+    targets -= commenter_notified
+    if not targets:
+        return
+    for uid in targets:
+        _add_notif(cur, schema, uid, 'task_comment', 'Новый комментарий к задаче', task_title, 'task', task_id, actor_id)
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    button_url = app_url or None
+    text = f"💬 Новый комментарий к задаче:\n\n«{task_title}»"
+    for tg_id in _telegram_targets(cur, schema, list(targets)):
+        _tg_send(tg_id, text, button_url)
 
 
 def _norm_ids(raw):
@@ -304,7 +365,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
 
-        cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status FROM {schema}.tasks WHERE id = %s", (int(task_id),))
         own_row = cur.fetchone()
         if not own_row:
             cur.close(); conn.close()
@@ -328,6 +389,8 @@ def handler(event: dict, context) -> dict:
                     (requested_deploy, requested_column, int(task_id))
                 )
                 row = cur.fetchone()
+                if requested_deploy != own_row[4]:
+                    _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids)
                 cur.close(); conn.close()
                 return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
             # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
@@ -380,6 +443,9 @@ def handler(event: dict, context) -> dict:
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
         _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id)
+        new_deploy_status = body.get('deployStatus') or 'none'
+        if new_deploy_status != own_row[4]:
+            _notify_deploy_status(cur, schema, task_id, (body.get('title') or '').strip(), new_deploy_status, me['id'], own_row[2], assignee_ids)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
@@ -563,10 +629,12 @@ def handler(event: dict, context) -> dict:
             (str(task_id), me['id'], text, parent_id, json.dumps(mentions))
         )
         new = cur.fetchone()
-        # Заголовок задачи для уведомлений
-        cur.execute(f"SELECT title FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        # Заголовок и участники задачи (автор, исполнители) для уведомлений
+        cur.execute(f"SELECT title, created_by, assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
         trow = cur.fetchone()
         task_title = trow[0] if trow else 'задача'
+        task_creator_id = trow[1] if trow else None
+        task_assignee_ids = _task_assignee_ids({'assigneeId': trow[2], 'assigneeIds': trow[3]}) if trow else []
         notified = set()
         # Ответ автору родительского комментария
         if parent_id:
@@ -580,6 +648,8 @@ def handler(event: dict, context) -> dict:
             if uid not in notified:
                 _add_notif(cur, schema, uid, 'task_mention', 'Вас упомянули в задаче', task_title, 'task', task_id, me['id'])
                 notified.add(uid)
+        # Новый комментарий — уведомляем автора и исполнителей задачи, кто ещё не получил reply/mention уведомление
+        _notify_comment(cur, schema, task_id, task_title, me['id'], notified, task_creator_id, task_assignee_ids)
         comment = {
             'id': str(new[0]), 'taskId': str(task_id), 'authorId': me['id'], 'text': text,
             'createdAt': new[1].isoformat() if new[1] else None,

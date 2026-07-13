@@ -15,13 +15,15 @@ interface Notification {
 }
 
 const typeMeta: Record<string, { icon: string; color: string }> = {
-  task_assigned: { icon: 'ClipboardCheck', color: '210 80% 62%' },
-  task_reply:    { icon: 'CornerDownRight', color: '210 80% 62%' },
-  task_mention:  { icon: 'AtSign', color: '35 90% 60%' },
-  idea_comment:  { icon: 'MessageSquare', color: '152 55% 50%' },
-  idea_reply:    { icon: 'CornerDownRight', color: '152 55% 50%' },
-  idea_mention:  { icon: 'AtSign', color: '35 90% 60%' },
-  idea_status:   { icon: 'Lightbulb', color: '45 90% 55%' },
+  task_assigned:      { icon: 'ClipboardCheck', color: '210 80% 62%' },
+  task_deploy_status: { icon: 'Rocket', color: '270 65% 65%' },
+  task_comment:       { icon: 'MessageSquare', color: '152 55% 50%' },
+  task_reply:         { icon: 'CornerDownRight', color: '210 80% 62%' },
+  task_mention:       { icon: 'AtSign', color: '35 90% 60%' },
+  idea_comment:       { icon: 'MessageSquare', color: '152 55% 50%' },
+  idea_reply:         { icon: 'CornerDownRight', color: '152 55% 50%' },
+  idea_mention:       { icon: 'AtSign', color: '35 90% 60%' },
+  idea_status:        { icon: 'Lightbulb', color: '45 90% 55%' },
 };
 
 function metaFor(type: string) {
