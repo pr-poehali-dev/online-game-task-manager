@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { toast } from 'sonner';
 import { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
@@ -28,6 +29,7 @@ import IndexMain from './index/IndexMain';
 
 export default function Index() {
   const { user, isAdmin, can } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<ViewId>('board');
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
@@ -209,6 +211,17 @@ export default function Index() {
     setOpenTopicId(ideaId);
     setView('ideas');
   }
+
+  // Открытие конкретной задачи по прямой ссылке (например из уведомления в Telegram: /?task=123)
+  useEffect(() => {
+    const taskId = searchParams.get('task');
+    if (!taskId || tasks.length === 0) return;
+    handleOpenTaskById(taskId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('task');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tasks, searchParams]);
 
   async function handleAddTask(task: Task) {
     setCreateFor(null);

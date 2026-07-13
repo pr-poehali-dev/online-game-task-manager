@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import BotLoginButton from '@/components/BotLoginButton';
-import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
 import ThemeToggle from '@/components/ThemeToggle';
 // === DEV_LOGIN_START — тестовый вход в обход Telegram-бота. УДАЛИТЬ ПЕРЕД ПРОДАКШЕНОМ ===
@@ -11,10 +10,17 @@ import DevLoginPanel from '@/components/DevLoginPanel';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
 
   function handleSuccess(user: AuthUser) {
     setError(null);
+    // Если пришли по прямой ссылке (например из уведомления в Telegram) — возвращаемся туда
+    const next = searchParams.get('next');
+    if (next) {
+      navigate(decodeURIComponent(next), { replace: true });
+      return;
+    }
     navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
   }
 

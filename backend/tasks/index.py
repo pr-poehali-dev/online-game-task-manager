@@ -50,6 +50,14 @@ def _telegram_targets(cur, schema, user_ids):
     return [r[0] for r in cur.fetchall()]
 
 
+def _task_url(task_id=None):
+    '''Прямая ссылка на задачу (если известен её id) или просто на приложение.'''
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    if not app_url:
+        return None
+    return f"{app_url}/?task={task_id}" if task_id else app_url
+
+
 def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
     '''Уведомляет назначенных исполнителей (кроме назначившего) о новой задаче: запись в БД + сообщение в Telegram.'''
     targets = [uid for uid in user_ids if uid and uid != actor_id]
@@ -63,8 +71,7 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
             (uid, 'Вам назначена задача', title, str(task_id) if task_id else None, actor_id)
         )
     # Telegram — только тем, кто вошёл через бота
-    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
-    button_url = app_url or None
+    button_url = _task_url(task_id)
     text = f"📌 Вам назначена задача:\n\n«{title}»\n\nОткройте таск-менеджер, чтобы посмотреть детали."
     for tg_id in _telegram_targets(cur, schema, targets):
         _tg_send(tg_id, text, button_url)
@@ -96,8 +103,7 @@ def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id
     status_label = DEPLOY_STATUS_LABELS.get(new_status, new_status)
     for uid in targets:
         _add_notif(cur, schema, uid, 'task_deploy_status', f'Статус деплоя изменён: {status_label}', task_title, 'task', task_id, actor_id)
-    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
-    button_url = app_url or None
+    button_url = _task_url(task_id)
     text = f"🚀 Статус деплоя задачи изменён:\n\n«{task_title}»\n→ {status_label}"
     for tg_id in _telegram_targets(cur, schema, list(targets)):
         _tg_send(tg_id, text, button_url)
@@ -118,8 +124,7 @@ def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notifi
         return
     for uid in targets:
         _add_notif(cur, schema, uid, 'task_comment', 'Новый комментарий к задаче', task_title, 'task', task_id, actor_id)
-    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
-    button_url = app_url or None
+    button_url = _task_url(task_id)
     text = f"💬 Новый комментарий к задаче:\n\n«{task_title}»"
     for tg_id in _telegram_targets(cur, schema, list(targets)):
         _tg_send(tg_id, text, button_url)
