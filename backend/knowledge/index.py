@@ -82,6 +82,11 @@ def _row_full(r):
     return d
 
 
+def _favorite_ids(cur, schema, user_id):
+    cur.execute(f"SELECT article_id FROM {schema}.kb_favorites WHERE user_id = %s", (user_id,))
+    return {row[0] for row in cur.fetchall()}
+
+
 def _upload_image(body):
     data_b64 = body.get('data')
     if not data_b64:
@@ -103,7 +108,7 @@ def _upload_image(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений. Доступно всем авторизованным участникам команды.'''
+    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -133,7 +138,13 @@ def handler(event: dict, context) -> dict:
     # Список статей (без тяжёлого content)
     if action == 'list' or (method == 'GET' and not qs.get('id')):
         cur.execute(f"SELECT {LIST_COLUMNS} FROM {schema}.kb_articles ORDER BY updated_at DESC")
-        items = [_row_list(r) for r in cur.fetchall()]
+        rows = cur.fetchall()
+        fav_ids = _favorite_ids(cur, schema, me['id'])
+        items = []
+        for r in rows:
+            d = _row_list(r)
+            d['isFavorite'] = r[0] in fav_ids
+            items.append(d)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'articles': items})}
 
@@ -142,10 +153,41 @@ def handler(event: dict, context) -> dict:
         art_id = body.get('id') or qs.get('id')
         cur.execute(f"SELECT {FULL_COLUMNS} FROM {schema}.kb_articles WHERE id = %s", (int(art_id),))
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': _row_full(row)})}
+        art = _row_full(row)
+        fav_ids = _favorite_ids(cur, schema, me['id'])
+        art['isFavorite'] = int(art_id) in fav_ids
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': art})}
+
+    # Добавить/убрать статью из избранного — доступно любому авторизованному
+    if action == 'toggle_favorite':
+        art_id = body.get('id')
+        if not art_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(
+            f"SELECT 1 FROM {schema}.kb_favorites WHERE user_id = %s AND article_id = %s",
+            (me['id'], int(art_id))
+        )
+        exists = cur.fetchone()
+        if exists:
+            cur.execute(
+                f"DELETE FROM {schema}.kb_favorites WHERE user_id = %s AND article_id = %s",
+                (me['id'], int(art_id))
+            )
+            is_fav = False
+        else:
+            cur.execute(
+                f"INSERT INTO {schema}.kb_favorites (user_id, article_id) VALUES (%s, %s) "
+                f"ON CONFLICT (user_id, article_id) DO NOTHING",
+                (me['id'], int(art_id))
+            )
+            is_fav = True
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'isFavorite': is_fav})}
 
     # Загрузка изображения — нужно право на создание или редактирование статей
     if action == 'upload_image':

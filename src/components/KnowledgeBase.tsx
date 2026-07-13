@@ -45,6 +45,7 @@ interface ArticleListItem {
   updatedById: number | null;
   createdAt: string | null;
   updatedAt: string | null;
+  isFavorite?: boolean;
 }
 
 interface Article extends ArticleListItem {
@@ -90,6 +91,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
   const [search, setSearch] = useState('');
   const [current, setCurrent] = useState<Article | null>(null);
   const [editing, setEditing] = useState<Article | 'new' | null>(null);
+  const [favoritesOnly, setFavoritesOnly] = useState(false);
 
   const authorName = (id: number | null) => (id != null ? authors.find((a) => a.id === id)?.name ?? 'Участник' : '—');
 
@@ -166,8 +168,23 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
     setList((prev) => prev.filter((a) => a.id !== id));
   }
 
+  async function toggleFavorite(id: string) {
+    setList((prev) => prev.map((a) => (a.id === id ? { ...a, isFavorite: !a.isFavorite } : a)));
+    setCurrent((prev) => (prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev));
+    try {
+      await fetch(KNOWLEDGE_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'toggle_favorite', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   const filtered = list
     .filter((a) => category === 'all' || a.category === category)
+    .filter((a) => !favoritesOnly || a.isFavorite)
     .filter((a) => {
       if (!search.trim()) return true;
       const q = search.toLowerCase();
@@ -193,6 +210,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
         onBack={() => setCurrent(null)}
         onEdit={() => setEditing(current)}
         onDelete={() => deleteArticle(current.id)}
+        onToggleFavorite={() => toggleFavorite(current.id)}
         canEdit={can('kb_edit')}
         canDelete={isAdmin}
       />
@@ -218,6 +236,16 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
             className={inputCls + ' pl-9'}
           />
         </div>
+        <button
+          onClick={() => setFavoritesOnly((v) => !v)}
+          title={favoritesOnly ? 'Показать все статьи' : 'Показать только избранное'}
+          className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1.5 shrink-0 ${
+            favoritesOnly ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+          }`}
+        >
+          <Icon name="Star" size={15} className={favoritesOnly ? 'fill-current' : ''} />
+          <span className="hidden sm:inline">Избранное</span>
+        </button>
         {can('kb_create') && (
           <button
             onClick={() => setEditing('new')}
@@ -241,22 +269,31 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {filtered.map((a) => (
-            <button
+            <div
               key={a.id}
               onClick={() => openArticle(a.id)}
-              className="text-left rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all group"
+              className="relative text-left rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all group cursor-pointer"
             >
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 pr-6">
                 <CatBadge id={a.category} />
                 <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); toggleFavorite(a.id); }}
+                title={a.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+                className={`absolute top-3.5 right-3.5 h-6 w-6 flex items-center justify-center rounded-md transition-colors ${
+                  a.isFavorite ? 'text-yellow-400' : 'text-muted-foreground/50 hover:text-yellow-400'
+                }`}
+              >
+                <Icon name="Star" size={15} className={a.isFavorite ? 'fill-current' : ''} />
+              </button>
               <h3 className="text-sm font-semibold leading-snug mb-1 line-clamp-2">{a.title}</h3>
               {a.excerpt && <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{a.excerpt}</p>}
-              <div className="text-[11px] text-muted-foreground mt-auto flex items-center gap-1.5">
-                <Icon name="Clock" size={11} />
-                {fmtDate(a.updatedAt)}
+              <div className="text-[11px] text-muted-foreground mt-auto flex items-center gap-3 flex-wrap">
+                <span className="flex items-center gap-1"><Icon name="User" size={11} />{authorName(a.authorId)}</span>
+                <span className="flex items-center gap-1"><Icon name="Clock" size={11} />{fmtDate(a.updatedAt)}</span>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
@@ -264,12 +301,13 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
   );
 }
 
-function ArticleView({ article, authorName, onBack, onEdit, onDelete, canEdit, canDelete }: {
+function ArticleView({ article, authorName, onBack, onEdit, onDelete, onToggleFavorite, canEdit, canDelete }: {
   article: Article;
   authorName: (id: number | null) => string;
   onBack: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onToggleFavorite: () => void;
   canEdit: boolean;
   canDelete: boolean;
 }) {
@@ -282,6 +320,16 @@ function ArticleView({ article, authorName, onBack, onEdit, onDelete, canEdit, c
           К списку
         </button>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={onToggleFavorite}
+            title={article.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+            className={`h-8 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 ${
+              article.isFavorite ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+            }`}
+          >
+            <Icon name="Star" size={13} className={article.isFavorite ? 'fill-current' : ''} />
+            <span className="hidden sm:inline">{article.isFavorite ? 'В избранном' : 'В избранное'}</span>
+          </button>
           {canEdit && (
             <button onClick={onEdit} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
               <Icon name="Pencil" size={13} />
@@ -307,6 +355,9 @@ function ArticleView({ article, authorName, onBack, onEdit, onDelete, canEdit, c
         <h1 className="text-2xl font-bold mt-3 mb-2 leading-tight">{article.title}</h1>
         <div className="text-xs text-muted-foreground mb-5 flex items-center gap-3 flex-wrap">
           <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(article.authorId)}</span>
+          {article.createdAt && (
+            <span className="flex items-center gap-1"><Icon name="Calendar" size={12} />Создано {fmtDate(article.createdAt)}</span>
+          )}
           <span className="flex items-center gap-1"><Icon name="Clock" size={12} />Обновлено {fmtDate(article.updatedAt)}</span>
         </div>
         <div className="kb-content prose-invert" dangerouslySetInnerHTML={{ __html: article.content || '<p class="text-muted-foreground">Статья пока пуста.</p>' }} />
