@@ -30,12 +30,31 @@ scp -r backend db_migrations deploy src index.html package.json \
 
 ```bash
 cd /var/www/era/deploy
-DATABASE_URL="postgresql://era_user:ВАШ_ПАРОЛЬ@localhost:5432/era_db" bash apply_migrations.sh
+DATABASE_URL="postgresql://era_user:ВАШ_ПАРОЛЬ@localhost:5432/era_db" \
+MAIN_DB_SCHEMA="ВАША_СХЕМА" \
+bash apply_migrations.sh
 ```
+
+⚠️ **Важно указать `MAIN_DB_SCHEMA`** — значение должно быть **точно таким же**,
+как в вашем `.env` (шаг 3). Часть новых таблиц (FAQ, категории, серверы,
+избранное в базе знаний) создаётся без явного указания схемы в самом SQL, и
+без `MAIN_DB_SCHEMA` они попадут в схему `public`, а не туда, где их ищет backend
+— тогда FAQ и другие новые разделы будут выглядеть пустыми.
 
 Скрипт применяет все миграции по порядку и пропускает уже применённые
 (если у вас `IF NOT EXISTS` в старых файлах — новые просто добавятся:
 `V0028__create_faq_items.sql`, `V0029__seed_faq_items.sql`).
+
+**Если вы уже применили миграции без `MAIN_DB_SCHEMA` и FAQ не отображается** —
+проверьте, куда попала таблица, и перенесите её в нужную схему:
+```bash
+psql "$DATABASE_URL" -c "SELECT table_schema FROM information_schema.tables WHERE table_name='faq_items';"
+# если увидели 'public', а нужна другая схема — перенесите таблицы:
+psql "$DATABASE_URL" -c 'ALTER TABLE public.faq_items SET SCHEMA "ВАША_СХЕМА";'
+psql "$DATABASE_URL" -c 'ALTER TABLE public.categories SET SCHEMA "ВАША_СХЕМА";'
+psql "$DATABASE_URL" -c 'ALTER TABLE public.servers SET SCHEMA "ВАША_СХЕМА";'
+psql "$DATABASE_URL" -c 'ALTER TABLE public.kb_favorites SET SCHEMA "ВАША_СХЕМА";'
+```
 
 ---
 
