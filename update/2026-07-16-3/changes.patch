@@ -1,0 +1,14 @@
+diff --git a/src/pages/index/Restart.tsx b/src/pages/index/Restart.tsx
+index 629fe0b..727c266 100644
+--- a/src/pages/index/Restart.tsx
++++ b/src/pages/index/Restart.tsx
+@@ -227,8 +227,7 @@ function RestartTaskCard({
+           ) : (
+             <button
+               onClick={() => onToggleDone(t.id, true)}
+-              className="h-8 px-3 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 border"
+-              style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}
++              className="h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-[hsl(152_55%_45%)]/50 hover:bg-[hsl(152_55%_45%)]/10 hover:text-[hsl(152_55%_55%)] transition-colors flex items-center gap-1.5"
+             >
+               <Icon name="Check" size={14} />
+               Готово
