@@ -151,7 +151,7 @@ def handler(event: dict, context) -> dict:
             f"SELECT u.id, u.first_name, u.last_name, u.photo_url, u.role, u.tg_username, u.username, "
             f"u.specialization, u.telegram_id, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions "
-            f"FROM {schema}.users u WHERE u.is_active = true AND u.is_hidden = false "
+            f"FROM {schema}.users u WHERE u.is_active = true AND u.is_hidden = false AND u.show_in_team = true "
             f"ORDER BY u.role DESC, u.created_at ASC"
         )
         members = []

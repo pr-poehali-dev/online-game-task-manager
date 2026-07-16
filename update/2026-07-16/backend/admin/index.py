@@ -99,7 +99,7 @@ SECTION_TABLES = {
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -128,7 +128,8 @@ def handler(event: dict, context) -> dict:
             f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, "
             f"u.tg_username, u.is_active, u.created_at, u.specialization, u.permissions, "
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
-            f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions "
+            f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
+            f"u.show_in_team "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC"
         )
         rows = cur.fetchall()
@@ -140,6 +141,7 @@ def handler(event: dict, context) -> dict:
             'permissions': _effective_perms(r[6], r[12]),
             'online': (r[14] or 0) > 0,
             'active_sessions': r[14] or 0,
+            'show_in_team': r[15] if r[15] is not None else True,
         } for r in rows]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users, 'permissionKeys': ALL_PERMISSIONS})}
@@ -369,6 +371,9 @@ def handler(event: dict, context) -> dict:
     elif action == 'set_specialization':
         specialization = (body.get('specialization') or '').strip() or None
         cur.execute(f"UPDATE {schema}.users SET specialization = %s, updated_at = NOW() WHERE id = %s", (specialization, user_id))
+    elif action == 'set_show_in_team':
+        show_in_team = bool(body.get('show_in_team'))
+        cur.execute(f"UPDATE {schema}.users SET show_in_team = %s, updated_at = NOW() WHERE id = %s", (show_in_team, user_id))
     elif action == 'set_hidden':
         is_hidden = bool(body.get('is_hidden'))
         if int(user_id) == admin_id and is_hidden:

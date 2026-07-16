@@ -103,6 +103,11 @@ export default function Admin() {
     load();
   }
 
+  async function toggleShowInTeam(u: TeamUser) {
+    setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, show_in_team: !u.show_in_team } : x)));
+    await authFetch({ action: 'set_show_in_team', user_id: u.id, show_in_team: !u.show_in_team });
+  }
+
   async function hideUser(u: TeamUser) {
     if (!confirm(`Скрыть ${u.first_name} из команды? Аккаунт будет отключён и убран из списка.`)) return;
     await authFetch({ action: 'set_hidden', user_id: u.id, is_hidden: true });
@@ -259,6 +264,7 @@ export default function Admin() {
           openStats={openStats}
           setRole={setRole}
           toggleActive={toggleActive}
+          toggleShowInTeam={toggleShowInTeam}
           hideUser={hideUser}
           impersonate={impersonate}
           impersonatingId={impersonatingId}

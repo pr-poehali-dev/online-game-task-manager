@@ -65,6 +65,7 @@ export interface TeamUser {
   online: boolean;
   active_sessions: number;
   permissions: Permissions;
+  show_in_team: boolean;
 }
 
 export interface SessionInfo {
