@@ -81,6 +81,31 @@ export interface UserStats {
   timeSpentSeconds: number;
 }
 
+export interface AdminAttachment {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  contentType: string;
+  entityId: string;
+  entityTitle: string;
+  updatedAt: string | null;
+}
+
+export interface FilesBySection {
+  knowledge: AdminAttachment[];
+  ideas: AdminAttachment[];
+  tasksActive: AdminAttachment[];
+  tasksArchived: AdminAttachment[];
+}
+
+export function fmtFileSize(bytes: number): string {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
 export function fmtDuration(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);

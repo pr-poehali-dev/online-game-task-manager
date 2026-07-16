@@ -7,8 +7,9 @@ import InviteForm from './admin/InviteForm';
 import UserList from './admin/UserList';
 import SessionsModal from './admin/SessionsModal';
 import StatsModal from './admin/StatsModal';
+import FilesModal from './admin/FilesModal';
 import { ADMIN_URL, TOKEN_KEY, authFetch } from './admin/adminShared';
-import type { TeamUser, SessionInfo, UserStats, Permissions } from './admin/adminShared';
+import type { TeamUser, SessionInfo, UserStats, Permissions, FilesBySection } from './admin/adminShared';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Admin() {
@@ -39,6 +40,9 @@ export default function Admin() {
   const [statsCalendarOpen, setStatsCalendarOpen] = useState(false);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [files, setFiles] = useState<FilesBySection | null>(null);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY) || '';
@@ -165,6 +169,33 @@ export default function Admin() {
     }
   }
 
+  async function openFiles() {
+    setFilesOpen(true);
+    setFilesLoading(true);
+    const res = await authFetch({ action: 'files_list' });
+    if (res.ok) {
+      const data = await res.json();
+      setFiles(data);
+    } else {
+      setFiles(null);
+    }
+    setFilesLoading(false);
+  }
+
+  async function deleteFile(section: 'knowledge' | 'ideas' | 'tasks', entityId: string, attachmentId: string) {
+    await authFetch({ action: 'file_delete', section, entityId, attachmentId });
+    setFiles((prev) => {
+      if (!prev) return prev;
+      const strip = (list: typeof prev.knowledge) => list.filter((a) => a.id !== attachmentId);
+      return {
+        knowledge: strip(prev.knowledge),
+        ideas: strip(prev.ideas),
+        tasksActive: strip(prev.tasksActive),
+        tasksArchived: strip(prev.tasksArchived),
+      };
+    });
+  }
+
   async function handleLogout() {
     await logout();
     navigate('/login', { replace: true });
@@ -178,6 +209,9 @@ export default function Admin() {
         <span className="text-sm text-muted-foreground flex items-center gap-1.5"><Icon name="Shield" size={14} /> Админка</span>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
+          <button onClick={openFiles} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
+            <Icon name="Paperclip" size={15} /> Файлы
+          </button>
           <button onClick={() => navigate('/')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
             <Icon name="LayoutGrid" size={15} /> Доска
           </button>
@@ -250,6 +284,15 @@ export default function Admin() {
           applyStatsRange={applyStatsRange}
           statsLoading={statsLoading}
           stats={stats}
+        />
+      )}
+
+      {filesOpen && (
+        <FilesModal
+          onClose={() => setFilesOpen(false)}
+          loading={filesLoading}
+          files={files}
+          onDelete={deleteFile}
         />
       )}
     </div>

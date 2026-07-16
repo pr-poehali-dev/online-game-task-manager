@@ -3,6 +3,7 @@ import os
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import boto3
 import psycopg2
 
 
@@ -68,8 +69,37 @@ def _parse_dt(s):
         return None
 
 
+def _s3_client():
+    return boto3.client(
+        's3',
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def _extract_key(url):
+    '''Восстанавливает ключ файла в S3/MinIO из его публичной ссылки, чтобы можно было удалить объект.'''
+    if not url:
+        return None
+    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+    if public_url and url.startswith(public_url + '/'):
+        return url[len(public_url) + 1:]
+    marker = '/bucket/'
+    if marker in url:
+        return url.split(marker, 1)[1]
+    return None
+
+
+SECTION_TABLES = {
+    'knowledge': 'kb_articles',
+    'ideas': 'idea_topics',
+    'tasks': 'tasks',
+}
+
+
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -116,6 +146,59 @@ def handler(event: dict, context) -> dict:
 
     # POST: обновление роли / активности / приглашение по username / права / статистика
     action = body.get('action')
+
+    if action == 'files_list':
+        # Собираем все прикреплённые файлы по разделам: база знаний, идеи, задачи (отдельно активные и архивные)
+        result = {'knowledge': [], 'ideas': [], 'tasksActive': [], 'tasksArchived': []}
+
+        cur.execute(f"SELECT id, title, attachments, updated_at FROM {schema}.kb_articles WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
+        for r in cur.fetchall():
+            for a in (r[2] or []):
+                result['knowledge'].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[3].isoformat() if r[3] else None})
+
+        cur.execute(f"SELECT id, title, attachments, updated_at FROM {schema}.idea_topics WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
+        for r in cur.fetchall():
+            for a in (r[2] or []):
+                result['ideas'].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[3].isoformat() if r[3] else None})
+
+        cur.execute(f"SELECT id, title, attachments, archived, updated_at FROM {schema}.tasks WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
+        for r in cur.fetchall():
+            bucket = 'tasksArchived' if r[3] else 'tasksActive'
+            for a in (r[2] or []):
+                result[bucket].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[4].isoformat() if r[4] else None})
+
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps(result)}
+
+    if action == 'file_delete':
+        section = body.get('section')
+        entity_id = body.get('entityId')
+        attachment_id = body.get('attachmentId')
+        table = SECTION_TABLES.get(section)
+        if not table or not entity_id or not attachment_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(f"SELECT attachments FROM {schema}.{table} WHERE id = %s", (int(entity_id),))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        attachments = row[0] or []
+        target = next((a for a in attachments if a.get('id') == attachment_id), None)
+        remaining = [a for a in attachments if a.get('id') != attachment_id]
+        cur.execute(
+            f"UPDATE {schema}.{table} SET attachments = %s WHERE id = %s",
+            (json.dumps(remaining), int(entity_id))
+        )
+        if target:
+            key = _extract_key(target.get('url'))
+            if key:
+                try:
+                    _s3_client().delete_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=key)
+                except Exception:
+                    pass
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
     if action == 'invite':
         username = (body.get('tg_username') or '').lstrip('@').strip()
