@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import type { AuthUser, PermissionKey } from '@/lib/auth';
 import NotificationBell from './NotificationBell';
 import ThemeToggle from '@/components/ThemeToggle';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { SidebarContent } from './IndexSidebar';
 import {
   resolveAssignee,
   categoryMeta,
@@ -17,6 +20,7 @@ import type {
   ColumnId,
   ViewId,
 } from './shared';
+import type { KbArticleBrief } from '@/components/KnowledgeBase';
 
 export default function IndexTopbar({
   view,
@@ -40,6 +44,7 @@ export default function IndexTopbar({
   setSprintFilter,
   activeTasks,
   team,
+  kbArticles,
 }: {
   view: ViewId;
   setView: (v: ViewId) => void;
@@ -62,19 +67,36 @@ export default function IndexTopbar({
   setSprintFilter: (s: string | 'all') => void;
   activeTasks: Task[];
   team: TeamMember[];
+  kbArticles: KbArticleBrief[];
 }) {
   const navigate = useNavigate();
   const restartCount = activeTasks.filter((t) => t.column === 'restart').length;
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const NAV_ITEMS = [
+    { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
+    { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
+    { k: 'sprints', label: 'Спринты', icon: 'Zap' },
+    { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
+    { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
+    { k: 'archive', label: 'Архив', icon: 'Archive' },
+  ] as const;
 
   return (
     <>
       {/* Topbar */}
-      <header className="relative z-30 h-14 border-b border-border flex items-center gap-4 px-6 bg-card/40 backdrop-blur-sm"
+      <header className="relative z-30 h-14 border-b border-border flex items-center gap-2 sm:gap-4 px-3 sm:px-6 bg-card/40 backdrop-blur-sm"
         style={{ borderBottom: '1px solid hsl(var(--border))', boxShadow: '0 1px 0 hsl(35 85% 45% / 0.08)' }}>
-        <div className="flex items-center gap-2">
-          <span className="font-display tracking-widest text-base" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
-          <span className="text-muted-foreground/40 text-sm">/</span>
-          <span className="text-sm text-muted-foreground">
+        <button
+          onClick={() => setMenuOpen(true)}
+          className="lg:hidden h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+        >
+          <Icon name="Menu" size={18} />
+        </button>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="font-display tracking-widest text-base hidden sm:inline shrink-0" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
+          <span className="text-muted-foreground/40 text-sm hidden sm:inline">/</span>
+          <span className="text-sm text-muted-foreground truncate">
             {view === 'board' && 'Доска задач'}
             {view === 'sprints' && 'Спринты'}
             {view === 'archive' && 'Архив задач'}
@@ -84,14 +106,7 @@ export default function IndexTopbar({
           </span>
         </div>
         <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
-          {[
-            { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
-            { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
-            { k: 'sprints', label: 'Спринты', icon: 'Zap' },
-            { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
-            { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
-            { k: 'archive', label: 'Архив', icon: 'Archive' },
-          ].map((t) => (
+          {NAV_ITEMS.map((t) => (
             <button
               key={t.k}
               onClick={() => setView(t.k as typeof view)}
@@ -181,7 +196,7 @@ export default function IndexTopbar({
 
       {/* Filter bar — server + sprint */}
       {view === 'board' && (
-        <div className="flex items-center gap-2 px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
+        <div className="flex items-center gap-2 px-3 sm:px-6 py-2.5 border-b border-border bg-card/10 overflow-x-auto scrollbar-thin">
           <Icon name="Server" size={12} className="text-muted-foreground shrink-0" />
           <button
             onClick={() => setServer('all')}
@@ -279,6 +294,62 @@ export default function IndexTopbar({
           )}
         </div>
       )}
+
+      {/* Мобильное меню — категории, разделы и команда */}
+      <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
+        <SheetContent side="left" className="p-0 w-80 flex flex-col">
+          <div className="px-5 pt-5 pb-4 border-b border-border">
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'linear-gradient(135deg, hsl(35 85% 40%), hsl(45 90% 55%))' }}>
+                <Icon name="Swords" size={20} className="text-black/80" />
+              </div>
+              <div>
+                <div className="font-display text-xl leading-none tracking-widest text-foreground" style={{ letterSpacing: '0.18em' }}>ЭРА</div>
+                <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Task Command</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="px-4 pt-4 pb-2">
+            <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Разделы</div>
+            <div className="space-y-0.5">
+              {NAV_ITEMS.map((t) => (
+                <button
+                  key={t.k}
+                  onClick={() => { setView(t.k as typeof view); setMenuOpen(false); }}
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${
+                    view === t.k ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                  }`}
+                >
+                  <Icon name={t.icon} size={15} />
+                  {t.label}
+                  {t.k === 'restart' && restartCount > 0 && (
+                    <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center">
+                      {restartCount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col">
+            <SidebarContent
+              view={view}
+              category={category}
+              setCategory={(c) => { setCategory(c); setMenuOpen(false); }}
+              kbArticles={kbArticles}
+              tasks={activeTasks}
+              team={team}
+              assigneeFilter={assigneeFilter}
+              setAssigneeFilter={(a) => { setAssigneeFilter(a); setMenuOpen(false); }}
+              setView={(v) => { setView(v); setMenuOpen(false); }}
+              showLogo={false}
+            />
+          </div>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

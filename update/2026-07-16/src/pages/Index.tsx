@@ -433,6 +433,7 @@ export default function Index() {
           setSprintFilter={setSprintFilter}
           activeTasks={activeTasks}
           team={team}
+          kbArticles={kbArticles}
         />
 
         <IndexMain
