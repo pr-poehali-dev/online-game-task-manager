@@ -1,80 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import Icon from '@/components/ui/icon';
-import RichEditor from '@/components/RichEditor';
-import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
+import type { Attachment } from '@/components/AttachmentsField';
 import { useAuth } from '@/lib/auth';
 import { IDEAS_URL, authHeaders } from './shared';
-import MentionInput, { extractMentions } from './MentionInput';
-
-type IdeaStatus = 'open' | 'wont_do' | 'sent';
-
-interface Author {
-  id: number;
-  name: string;
-  photo_url: string | null;
-}
-
-interface TopicListItem {
-  id: string;
-  title: string;
-  body: string;
-  status: IdeaStatus;
-  authorId: number | null;
-  createdAt: string | null;
-  updatedAt: string | null;
-  commentsCount: number;
-  attachments?: Attachment[];
-}
-
-interface IdeaComment {
-  id: string;
-  topicId: string;
-  authorId: number | null;
-  text: string;
-  createdAt: string | null;
-  parentId: string | null;
-  mentions: number[];
-}
-
-const statusMeta: Record<IdeaStatus, { label: string; color: string; icon: string }> = {
-  open:    { label: 'Открыто',                color: '210 80% 62%', icon: 'MessageCircle' },
-  wont_do: { label: 'Решено не делать',       color: '0 65% 60%',   icon: 'XCircle' },
-  sent:    { label: 'Отправлено на реализацию', color: '152 55% 50%', icon: 'Rocket' },
-};
-
-const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
-
-function fmtDate(d: string | null) {
-  if (!d) return '';
-  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-}
-
-function initialsFor(name: string) {
-  const parts = name.trim().split(' ');
-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return (name.slice(0, 2) || '?').toUpperCase();
-}
-
-// Подсветка @упоминаний в тексте комментария
-function renderText(text: string, names: string[]) {
-  if (names.length === 0) return text;
-  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
-  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
-  const parts: (string | { m: string })[] = [];
-  let last = 0;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
-    parts.push({ m: match[0] });
-    last = match.index + match[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return parts.map((p, i) =>
-    typeof p === 'string'
-      ? <span key={i}>{p}</span>
-      : <span key={i} className="text-primary font-medium">{p.m}</span>
-  );
-}
+import { extractMentions } from './MentionInput';
+import IdeasList, { CreateTopic } from './ideas/IdeasList';
+import IdeaDetail from './ideas/IdeaDetail';
+import type { Author, TopicListItem, IdeaComment, IdeaStatus } from './ideas/shared';
 
 export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
   authors: Author[];
@@ -266,295 +197,66 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
     loadList();
   }
 
-  const topLevel = comments.filter((c) => !c.parentId);
-  const mentionNames = mentionMembers.map((m) => m.name);
-
-  function renderComment(c: IdeaComment, isReply = false) {
-    const photo = authorPhoto(c.authorId);
-    const name = authorName(c.authorId);
-    const canDelete = !!user && (c.authorId === user.id || isAdmin);
-    return (
-      <div className="flex gap-2.5 group">
-        {photo ? (
-          <img src={photo} alt="" className={`rounded-md object-cover shrink-0 mt-0.5 ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`} />
-        ) : (
-          <div className={`rounded-md bg-secondary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 text-muted-foreground ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`}>
-            {initialsFor(name)}
-          </div>
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className="text-xs font-medium">{name}</span>
-            <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</span>
-            {!isReply && (
-              <button
-                onClick={() => { setReplyTo(c); }}
-                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
-              >
-                <Icon name="CornerDownRight" size={11} /> Ответить
-              </button>
-            )}
-            {canDelete && (
-              <button
-                onClick={() => deleteComment(c.id)}
-                className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-                title="Удалить комментарий"
-              >
-                <Icon name="Trash2" size={12} />
-              </button>
-            )}
-          </div>
-          <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderText(c.text, mentionNames)}</div>
-        </div>
-      </div>
-    );
-  }
-
   // Создание топика
   if (creating) {
     return (
-      <div className="max-w-2xl animate-fade-in">
-        <div className="flex items-center gap-3 mb-5">
-          <button onClick={() => setCreating(false)} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
-            <Icon name="ArrowLeft" size={14} />
-            Отмена
-          </button>
-          <h2 className="font-display tracking-wide text-lg">Новая идея</h2>
-          <button
-            onClick={createTopic}
-            disabled={!newTitle.trim()}
-            className="ml-auto h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
-          >
-            Опубликовать
-          </button>
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-          <input
-            autoFocus
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="О чём идея? Кратко..."
-            className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
-          />
-          <RichEditor
-            content={newBody}
-            onChange={setNewBody}
-            onImageUpload={uploadImage}
-            placeholder="Опишите мысль подробнее: что предлагаете, зачем, какие плюсы и риски..."
-          />
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
-            <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
-          </div>
-        </div>
-      </div>
+      <CreateTopic
+        newTitle={newTitle}
+        setNewTitle={setNewTitle}
+        newBody={newBody}
+        setNewBody={setNewBody}
+        newAttachments={newAttachments}
+        setNewAttachments={setNewAttachments}
+        uploadImage={uploadImage}
+        onCancel={() => setCreating(false)}
+        onCreate={createTopic}
+      />
     );
   }
 
   // Просмотр топика
   if (current) {
-    const sm = statusMeta[current.status];
     return (
-      <div className="max-w-2xl animate-fade-in">
-        <div className="flex items-center gap-3 mb-5">
-          <button onClick={() => setCurrent(null)} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
-            <Icon name="ArrowLeft" size={14} />
-            К списку
-          </button>
-          {canManage(current) && (
-            <div className="ml-auto flex items-center gap-2">
-              {!editingTopic && (
-                <button
-                  onClick={() => { setEditBody(current.body); setEditAttachments(current.attachments ?? []); setEditingTopic(true); }}
-                  className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
-                >
-                  <Icon name="Pencil" size={13} />
-                  Редактировать
-                </button>
-              )}
-              {current.status !== 'open' && (
-                <button onClick={() => setStatus('open')} className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
-                  <Icon name="RotateCcw" size={13} />
-                  Переоткрыть
-                </button>
-              )}
-              {current.status === 'open' && (
-                <>
-                  <button onClick={() => setStatus('sent')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}>
-                    <Icon name="Rocket" size={13} />
-                    На реализацию
-                  </button>
-                  <button onClick={() => setStatus('wont_do')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(0 65% 55% / 0.5)', color: 'hsl(0 65% 62%)', background: 'hsl(0 65% 55% / 0.1)' }}>
-                    <Icon name="XCircle" size={13} />
-                    Не делать
-                  </button>
-                </>
-              )}
-              <button onClick={deleteTopic} title="Удалить" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
-                <Icon name="Trash2" size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-border bg-card p-6 mb-5">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
-            <Icon name={sm.icon} size={12} />
-            {sm.label}
-          </span>
-          <h1 className="text-xl font-bold mt-3 mb-2 leading-tight">{current.title}</h1>
-          <div className="text-xs text-muted-foreground mb-4 flex items-center gap-3 flex-wrap">
-            <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(current.authorId)}</span>
-            <span className="flex items-center gap-1"><Icon name="Clock" size={12} />{fmtDate(current.createdAt)}</span>
-          </div>
-
-          {editingTopic ? (
-            <div className="space-y-3">
-              <RichEditor content={editBody} onChange={setEditBody} onImageUpload={uploadImage} />
-              <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
-                <AttachmentsField attachments={editAttachments} onChange={setEditAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
-              </div>
-              <div className="flex items-center gap-2">
-                <button onClick={saveTopicEdit} className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
-                  Сохранить
-                </button>
-                <button onClick={() => setEditingTopic(false)} className="h-8 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
-                  Отмена
-                </button>
-              </div>
-            </div>
-          ) : (
-            <>
-              {current.body && <div className="kb-content prose-invert text-sm" dangerouslySetInnerHTML={{ __html: current.body }} />}
-              {!!current.attachments?.length && (
-                <div className="mt-4 pt-4 border-t border-border">
-                  <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
-                    <Icon name="Paperclip" size={12} />
-                    Вложения ({current.attachments.length})
-                  </div>
-                  <AttachmentsList attachments={current.attachments} />
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
-          <Icon name="MessageSquare" size={15} />
-          Обсуждение {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
-        </div>
-
-        <div className="space-y-3 mb-4">
-          {topLevel.map((c) => {
-            const replies = comments.filter((r) => r.parentId === c.id);
-            return (
-              <div key={c.id}>
-                {renderComment(c)}
-                {replies.length > 0 && (
-                  <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
-                    {replies.map((r) => (
-                      <div key={r.id}>{renderComment(r, true)}</div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          {comments.length === 0 && <div className="text-sm text-muted-foreground">Комментариев пока нет — начните обсуждение.</div>}
-        </div>
-
-        <div>
-          {replyTo && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
-              <Icon name="CornerDownRight" size={13} className="text-primary" />
-              Ответ для <span className="font-medium text-foreground">{authorName(replyTo.authorId)}</span>
-              <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
-                <Icon name="X" size={13} />
-              </button>
-            </div>
-          )}
-          <div className="flex gap-2">
-            <MentionInput
-              value={newComment}
-              onChange={setNewComment}
-              members={mentionMembers}
-              onSubmit={addComment}
-              placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
-              className={inputCls + ' resize-none w-full'}
-            />
-            <button
-              onClick={addComment}
-              disabled={!newComment.trim()}
-              className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
-            >
-              <Icon name="Send" size={15} />
-            </button>
-          </div>
-        </div>
-      </div>
+      <IdeaDetail
+        current={current}
+        comments={comments}
+        authorName={authorName}
+        authorPhoto={authorPhoto}
+        mentionMembers={mentionMembers}
+        currentUserId={user?.id}
+        isAdmin={isAdmin}
+        canManage={canManage(current)}
+        onBack={() => setCurrent(null)}
+        onSetStatus={setStatus}
+        onDeleteTopic={deleteTopic}
+        editingTopic={editingTopic}
+        setEditingTopic={setEditingTopic}
+        editBody={editBody}
+        setEditBody={setEditBody}
+        editAttachments={editAttachments}
+        setEditAttachments={setEditAttachments}
+        uploadImage={uploadImage}
+        onSaveTopicEdit={saveTopicEdit}
+        onReply={setReplyTo}
+        onDeleteComment={deleteComment}
+        replyTo={replyTo}
+        setReplyTo={setReplyTo}
+        newComment={newComment}
+        setNewComment={setNewComment}
+        onAddComment={addComment}
+      />
     );
   }
 
   // Список топиков
   return (
-    <div className="max-w-3xl animate-fade-in">
-      <div className="flex items-center gap-3 mb-1">
-        <Icon name="Lightbulb" size={20} className="text-primary" />
-        <h2 className="font-display tracking-wide text-lg">Идеи</h2>
-        <span className="text-sm text-muted-foreground">· {list.length} тем</span>
-      </div>
-      <p className="text-sm text-muted-foreground mb-5">Предложения и размышления о том, что стоило бы сделать. Обсуждайте в комментариях, закрывайте решённые темы.</p>
-
-      {can('idea_create') && (
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={() => setCreating(true)}
-            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-          >
-            <Icon name="Plus" size={15} />
-            Новая идея
-          </button>
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex justify-center py-16">
-          <Icon name="Loader2" size={26} className="animate-spin text-primary" />
-        </div>
-      ) : list.length === 0 ? (
-        <div className="text-center py-16 text-muted-foreground">
-          <Icon name="Lightbulb" size={40} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Пока нет ни одной идеи — предложите первую</p>
-        </div>
-      ) : (
-        <div className="space-y-2.5">
-          {list.map((t) => {
-            const sm = statusMeta[t.status];
-            return (
-              <button
-                key={t.id}
-                onClick={() => openTopic(t.id)}
-                className="w-full text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/50 transition-all group flex items-center gap-3"
-              >
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
-                  <Icon name={sm.icon} size={12} />
-                  <span className="hidden sm:inline">{sm.label}</span>
-                </span>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{t.title}</div>
-                  <div className="text-xs text-muted-foreground truncate">{authorName(t.authorId)} · {fmtDate(t.updatedAt)}</div>
-                </div>
-                <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
-                  <Icon name="MessageSquare" size={12} />
-                  {t.commentsCount}
-                </span>
-                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <IdeasList
+      list={list}
+      loading={loading}
+      can={can}
+      onCreateClick={() => setCreating(true)}
+      onOpenTopic={openTopic}
+      authorName={authorName}
+    />
   );
 }
