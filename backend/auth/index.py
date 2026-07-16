@@ -65,7 +65,7 @@ def _verify_telegram(data: dict, bot_token: str) -> bool:
 
 
 def handler(event: dict, context) -> dict:
-    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat) и сохранение темы интерфейса (action=set_theme).'''
+    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа) и сохранение темы интерфейса (action=set_theme).'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -183,6 +183,11 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'invalid_session'})}
         uid = urow[0]
+        # Продлеваем сессию, пока пользователь активен в приложении — не даём ей истечь во время работы
+        cur.execute(
+            f"UPDATE {schema}.sessions SET expires_at = NOW() + INTERVAL '24 hours' WHERE token = %s",
+            (token,)
+        )
         cur.execute(
             f"SELECT id, last_heartbeat_at FROM {schema}.user_activity_sessions "
             f"WHERE user_id = %s ORDER BY last_heartbeat_at DESC LIMIT 1",
