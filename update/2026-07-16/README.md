@@ -184,6 +184,15 @@ npm install
   используется безопасное значение по умолчанию вместо падения интерфейса.
   Изменён файл: `src/pages/index/shared.tsx`.
 
+**Рефакторинг `src/pages/Index.tsx`** (без изменения поведения — логика вынесена в хуки для удобства поддержки):
+```
+src/pages/index/useBoardData.ts     — загрузка задач/спринтов/команды/статей БЗ
+src/pages/index/useSprintActions.ts — создание/обновление/удаление/восстановление спринтов
+src/pages/index/useTaskActions.ts   — все операции с задачами (создание, drag-drop, архив, удаление и т.д.)
+src/pages/index/useDeepLinks.ts     — обработка прямых ссылок /?task=, /?article=, /?idea=, /?my=1
+src/pages/Index.tsx                 — теперь тонкая обёртка, собирающая хуки воедино
+```
+
 **Документация** (необязательно, но полезно):
 ```
 ARCHITECTURE.md

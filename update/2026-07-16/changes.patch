@@ -2962,74 +2962,409 @@ index 182789c..d79e647 100644
  }
 \ No newline at end of file
 diff --git a/src/pages/Index.tsx b/src/pages/Index.tsx
-index 6862afa..bb43ab7 100755
+index 6862afa..14977b4 100755
 --- a/src/pages/Index.tsx
 +++ b/src/pages/Index.tsx
-@@ -201,7 +201,7 @@ export default function Index() {
-   function handleOpenTaskById(taskId: string) {
-     const task = tasks.find((t) => t.id === taskId);
-     if (task) {
+@@ -1,22 +1,11 @@
+-import { useState, useEffect, useCallback } from 'react';
++import { useState } from 'react';
+ import { useSearchParams } from 'react-router-dom';
+ import { useAuth } from '@/lib/auth';
+-import { toast } from 'sonner';
+-import { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
+-import type { KbArticleBrief } from '@/components/KnowledgeBase';
+ import {
+-  authHeaders,
+-  AUTH_URL,
+-  TASKS_URL,
+-  SPRINTS_URL,
+-  TOKEN_KEY,
+   taskAssigneeIds,
+-  outcomeMeta,
+ } from './index/shared';
+ import type {
+-  TeamMember,
+   Task,
+-  Sprint,
+   ServerId,
+   CategoryId,
+   TaskOutcome,
+@@ -26,6 +15,10 @@ import type {
+ import IndexSidebar from './index/IndexSidebar';
+ import IndexTopbar from './index/IndexTopbar';
+ import IndexMain from './index/IndexMain';
++import { useBoardData } from './index/useBoardData';
++import { useSprintActions } from './index/useSprintActions';
++import { useTaskActions } from './index/useTaskActions';
++import { useDeepLinks } from './index/useDeepLinks';
+ 
+ export default function Index() {
+   const { user, isAdmin, can } = useAuth();
+@@ -36,145 +29,33 @@ export default function Index() {
+   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
+   const [outcomeFilter, setOutcomeFilter] = useState<TaskOutcome | 'all'>('all');
+   const [assigneeFilter, setAssigneeFilter] = useState<number | 'all'>('all');
+-  const [tasks, setTasks] = useState<Task[]>([]);
+-  const [sprints, setSprints] = useState<Sprint[]>([]);
+   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+   const [createFor, setCreateFor] = useState<ColumnId | null>(null);
+   const [createPreset, setCreatePreset] = useState<Partial<Task> | null>(null);
+   const [createSprint, setCreateSprint] = useState(false);
+-  const [team, setTeam] = useState<TeamMember[]>([]);
+-  const [tasksLoading, setTasksLoading] = useState(true);
+-  const [kbArticles, setKbArticles] = useState<KbArticleBrief[]>([]);
+   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
+   const [openTopicId, setOpenTopicId] = useState<string | null>(null);
+ 
+-  const loadTeam = useCallback(async () => {
+-    const token = localStorage.getItem(TOKEN_KEY);
+-    if (!token) return;
+-    try {
+-      const res = await fetch(AUTH_URL, {
+-        method: 'POST',
+-        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+-        body: JSON.stringify({ action: 'team' }),
+-      });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setTeam(data.members || []);
+-      }
+-    } catch {
+-      /* ignore */
+-    }
+-  }, []);
+-
+-  const loadTasks = useCallback(async () => {
+-    try {
+-      const res = await fetch(TASKS_URL, { method: 'GET', headers: authHeaders() });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setTasks(data.tasks || []);
+-      }
+-    } catch {
+-      /* ignore */
+-    } finally {
+-      setTasksLoading(false);
+-    }
+-  }, []);
+-
+-  const loadKbArticles = useCallback(async () => {
+-    try {
+-      const res = await fetch(KNOWLEDGE_URL, { method: 'GET', headers: kbAuthHeaders() });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setKbArticles((data.articles || []).map((a: KbArticleBrief) => ({ id: a.id, title: a.title, category: a.category })));
+-      }
+-    } catch {
+-      /* ignore */
+-    }
+-  }, []);
+-
+-  const loadSprints = useCallback(async () => {
+-    try {
+-      const res = await fetch(SPRINTS_URL, { method: 'GET', headers: authHeaders() });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setSprints(data.sprints || []);
+-      }
+-    } catch {
+-      /* ignore */
+-    }
+-  }, []);
+-
+-  useEffect(() => {
+-    loadTeam();
+-    loadTasks();
+-    loadKbArticles();
+-    loadSprints();
+-    const t = setInterval(loadTeam, 30000);
+-    return () => clearInterval(t);
+-  }, [loadTeam, loadTasks, loadKbArticles, loadSprints]);
+-
+-  async function handleCreateSprint(sprint: Sprint) {
+-    try {
+-      const res = await fetch(SPRINTS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'create', ...sprint }),
+-      });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setSprints((prev) => [...prev, data.sprint]);
+-      } else {
+-        toast.error('Не удалось создать спринт');
+-      }
+-    } catch {
+-      toast.error('Не удалось создать спринт');
+-    }
+-    setCreateSprint(false);
+-  }
+-
+-  async function handleUpdateSprint(sprint: Sprint) {
+-    const prevSprints = sprints;
+-    setSprints((prev) => prev.map((s) => (s.id === sprint.id ? sprint : s)));
+-    try {
+-      const res = await fetch(SPRINTS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'update', ...sprint }),
+-      });
+-      if (!res.ok) {
+-        setSprints(prevSprints);
+-        toast.error('Не удалось сохранить спринт');
+-      }
+-    } catch {
+-      setSprints(prevSprints);
+-      toast.error('Не удалось сохранить спринт');
+-    }
+-  }
+-
+-  async function handleDeleteSprint(id: string) {
+-    const prevSprints = sprints;
+-    setSprints((prev) => prev.filter((s) => s.id !== id));
+-    try {
+-      const res = await fetch(SPRINTS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'delete', id }),
+-      });
+-      if (!res.ok) {
+-        setSprints(prevSprints);
+-        toast.error('Не удалось удалить спринт');
+-      }
+-    } catch {
+-      setSprints(prevSprints);
+-      toast.error('Не удалось удалить спринт');
+-    }
+-  }
+-
+-  function handleRestoreSprint(id: string) {
+-    const sp = sprints.find((s) => s.id === id);
+-    if (!sp) return;
+-    handleUpdateSprint({ ...sp, status: 'planned' });
+-  }
++  const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles } = useBoardData();
++
++  const {
++    handleCreateSprint,
++    handleUpdateSprint,
++    handleDeleteSprint,
++    handleRestoreSprint,
++  } = useSprintActions(sprints, setSprints, setCreateSprint);
++
++  const {
++    handleAddTask,
++    handleUpdateTask,
++    handleMoveTask,
++    handleDeleteTask,
++    handleArchiveTask,
++    handleUnarchiveTask,
++    handleToRestart,
++    handleToggleRestartDone,
++    handleDeleteArchivedTask,
++  } = useTaskActions(tasks, setTasks, setSelectedTask, setCreateFor, setCreatePreset);
+ 
+   const activeTasks = tasks.filter((t) => !t.archived);
+   const archivedTasks = tasks.filter((t) => t.archived);
+@@ -192,186 +73,17 @@ export default function Index() {
+     ? activeTasks.filter((t) => t.column !== 'done' && t.column !== 'restart' && taskAssigneeIds(t).includes(user.id)).length
+     : 0;
+ 
+-  function handleOpenArticle(id: string) {
+-    setSelectedTask(null);
+-    setOpenArticleId(id);
+-    setView('knowledge');
+-  }
+-
+-  function handleOpenTaskById(taskId: string) {
+-    const task = tasks.find((t) => t.id === taskId);
+-    if (task) {
 -      setView(task.column === 'restart' ? 'restart' : 'board');
-+      setView(task.archived ? 'archive' : task.column === 'restart' ? 'restart' : 'board');
-       setSelectedTask(task);
-     }
-   }
-@@ -223,6 +223,28 @@ export default function Index() {
-     // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [tasks, searchParams]);
+-      setSelectedTask(task);
+-    }
+-  }
+-
+-  function handleOpenIdeaById(ideaId: string) {
+-    setSelectedTask(null);
+-    setOpenTopicId(ideaId);
+-    setView('ideas');
+-  }
+-
+-  // Открытие конкретной задачи по прямой ссылке (например из уведомления в Telegram: /?task=123)
+-  useEffect(() => {
+-    const taskId = searchParams.get('task');
+-    if (!taskId || tasks.length === 0) return;
+-    handleOpenTaskById(taskId);
+-    const next = new URLSearchParams(searchParams);
+-    next.delete('task');
+-    setSearchParams(next, { replace: true });
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [tasks, searchParams]);
+-
+-  // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
+-  useEffect(() => {
+-    if (!user || searchParams.get('my') !== '1') return;
+-    setAssigneeFilter(user.id);
+-    setView('board');
+-    const next = new URLSearchParams(searchParams);
+-    next.delete('my');
+-    setSearchParams(next, { replace: true });
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [user, searchParams]);
+-
+-  async function handleAddTask(task: Task) {
+-    setCreateFor(null);
+-    setCreatePreset(null);
+-    try {
+-      const res = await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'create', ...task }),
+-      });
+-      if (res.ok) {
+-        const data = await res.json();
+-        setTasks((prev) => [...prev, data.task]);
+-      }
+-    } catch {
+-      /* ignore */
+-    }
+-  }
+-
+-  async function handleUpdateTask(updated: Task) {
+-    setSelectedTask(null);
+-    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'update', ...updated }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-  }
+-
+-  function handleDeleteTask(id: string) {
+-    const task = tasks.find((t) => t.id === id);
+-    if (!task) return;
+-    setSelectedTask(null);
+-    setTasks((prev) => prev.filter((t) => t.id !== id));
+-
+-    let cancelled = false;
+-    const timer = setTimeout(async () => {
+-      if (cancelled) return;
+-      try {
+-        await fetch(TASKS_URL, {
+-          method: 'POST',
+-          headers: authHeaders(),
+-          body: JSON.stringify({ action: 'delete', id }),
+-        });
+-      } catch {
+-        /* ignore */
+-      }
+-    }, 5000);
+-
+-    toast(`Задача удалена`, {
+-      description: task.title,
+-      duration: 5000,
+-      action: {
+-        label: 'Восстановить',
+-        onClick: () => {
+-          cancelled = true;
+-          clearTimeout(timer);
+-          setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+-        },
+-      },
+-    });
+-  }
+-
+-  async function handleArchiveTask(id: string, outcome: TaskOutcome) {
+-    const task = tasks.find((t) => t.id === id);
+-    setSelectedTask(null);
+-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true, outcome } : t)));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'archive', id, outcome }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-    toast(`Задача в архиве · ${outcomeMeta(outcome).label}`, {
+-      description: task?.title,
+-      action: { label: 'Отменить', onClick: () => handleUnarchiveTask(id) },
+-    });
+-  }
+-
+-  async function handleUnarchiveTask(id: string) {
+-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: false, outcome: null } : t)));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'unarchive', id }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-  }
+-
+-  async function handleToRestart(id: string) {
+-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'restart', restartDone: false } : t)));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'to_restart', id }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-  }
+-
+-  async function handleToggleRestartDone(id: string, done: boolean) {
+-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, restartDone: done } : t)));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'set_restart_done', id, done }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-  }
+-
+-  async function handleDeleteArchivedTask(id: string) {
+-    const task = tasks.find((t) => t.id === id);
+-    setTasks((prev) => prev.filter((t) => t.id !== id));
+-    try {
+-      await fetch(TASKS_URL, {
+-        method: 'POST',
+-        headers: authHeaders(),
+-        body: JSON.stringify({ action: 'delete', id }),
+-      });
+-    } catch {
+-      /* ignore */
+-    }
+-    toast(`Задача удалена окончательно`, { description: task?.title });
+-  }
++  const { handleOpenArticle, handleOpenTaskById, handleOpenIdeaById } = useDeepLinks({
++    tasks,
++    user,
++    searchParams,
++    setSearchParams,
++    setSelectedTask,
++    setOpenArticleId,
++    setOpenTopicId,
++    setView,
++    setAssigneeFilter,
++  });
  
-+  // Открытие конкретной статьи базы знаний по прямой ссылке (например из хранилища файлов в админке: /?article=123)
-+  useEffect(() => {
-+    const articleId = searchParams.get('article');
-+    if (!articleId) return;
-+    handleOpenArticle(articleId);
-+    const next = new URLSearchParams(searchParams);
-+    next.delete('article');
-+    setSearchParams(next, { replace: true });
-+    // eslint-disable-next-line react-hooks/exhaustive-deps
-+  }, [searchParams]);
-+
-+  // Открытие конкретной идеи по прямой ссылке (например из хранилища файлов в админке: /?idea=123)
-+  useEffect(() => {
-+    const ideaId = searchParams.get('idea');
-+    if (!ideaId) return;
-+    handleOpenIdeaById(ideaId);
-+    const next = new URLSearchParams(searchParams);
-+    next.delete('idea');
-+    setSearchParams(next, { replace: true });
-+    // eslint-disable-next-line react-hooks/exhaustive-deps
-+  }, [searchParams]);
-+
-   // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
-   useEffect(() => {
-     if (!user || searchParams.get('my') !== '1') return;
-@@ -266,6 +288,25 @@ export default function Index() {
-     }
-   }
- 
-+  async function handleMoveTask(task: Task, column: ColumnId, deployStatus: Task['deployStatus']) {
-+    const prevTasks = tasks;
-+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, column, deployStatus } : t)));
-+    try {
-+      const res = await fetch(TASKS_URL, {
-+        method: 'POST',
-+        headers: authHeaders(),
-+        body: JSON.stringify({ action: 'update', id: task.id, title: task.title, column, deployStatus }),
-+      });
-+      if (!res.ok) {
-+        setTasks(prevTasks);
-+        toast.error('Не удалось изменить статус задачи');
-+      }
-+    } catch {
-+      setTasks(prevTasks);
-+      toast.error('Не удалось изменить статус задачи');
-+    }
-+  }
-+
-   function handleDeleteTask(id: string) {
-     const task = tasks.find((t) => t.id === id);
-     if (!task) return;
-@@ -411,6 +452,7 @@ export default function Index() {
+   return (
+     <div className="min-h-screen grid-bg text-foreground flex">
+@@ -411,6 +123,7 @@ export default function Index() {
            setSprintFilter={setSprintFilter}
            activeTasks={activeTasks}
            team={team}
@@ -3037,7 +3372,7 @@ index 6862afa..bb43ab7 100755
          />
  
          <IndexMain
-@@ -459,6 +501,7 @@ export default function Index() {
+@@ -459,8 +172,9 @@ export default function Index() {
            archivedSprints={archivedSprints}
            handleRestoreSprint={handleRestoreSprint}
            handleDeleteSprintPermanently={handleDeleteSprint}
@@ -3045,6 +3380,10 @@ index 6862afa..bb43ab7 100755
          />
        </main>
      </div>
+   );
+-}
+\ No newline at end of file
++}
 diff --git a/src/pages/admin/ActivityLogModal.tsx b/src/pages/admin/ActivityLogModal.tsx
 new file mode 100644
 index 0000000..36a38be
@@ -5896,10 +6235,20 @@ index 0000000..90ea8df
 +  );
 +}
 diff --git a/src/pages/index/shared.tsx b/src/pages/index/shared.tsx
-index e8123b6..6d247c7 100644
+index e8123b6..859b135 100644
 --- a/src/pages/index/shared.tsx
 +++ b/src/pages/index/shared.tsx
-@@ -169,6 +169,14 @@ export function categoryMeta(id: CategoryId) {
+@@ -161,14 +161,22 @@ export const categories: Category[] = [
+   { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
+ ];
+ 
+-export function serverMeta(id: ServerId) {
+-  return servers.find((s) => s.id === id)!;
++export function serverMeta(id: ServerId): Server {
++  return servers.find((s) => s.id === id) ?? { id, label: id || 'Сервер', color: '215 15% 55%' };
+ }
+ 
+ export function categoryMeta(id: CategoryId) {
    return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
  }
  
@@ -5922,3 +6271,473 @@ index e8123b6..6d247c7 100644
  }
  
  
+diff --git a/src/pages/index/useBoardData.ts b/src/pages/index/useBoardData.ts
+new file mode 100644
+index 0000000..c9eca5a
+--- /dev/null
++++ b/src/pages/index/useBoardData.ts
+@@ -0,0 +1,88 @@
++import { useState, useEffect, useCallback } from 'react';
++import { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
++import type { KbArticleBrief } from '@/components/KnowledgeBase';
++import { authHeaders, AUTH_URL, TASKS_URL, SPRINTS_URL, TOKEN_KEY } from './shared';
++import type { TeamMember, Task, Sprint } from './shared';
++
++export function useBoardData() {
++  const [tasks, setTasks] = useState<Task[]>([]);
++  const [sprints, setSprints] = useState<Sprint[]>([]);
++  const [team, setTeam] = useState<TeamMember[]>([]);
++  const [tasksLoading, setTasksLoading] = useState(true);
++  const [kbArticles, setKbArticles] = useState<KbArticleBrief[]>([]);
++
++  const loadTeam = useCallback(async () => {
++    const token = localStorage.getItem(TOKEN_KEY);
++    if (!token) return;
++    try {
++      const res = await fetch(AUTH_URL, {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
++        body: JSON.stringify({ action: 'team' }),
++      });
++      if (res.ok) {
++        const data = await res.json();
++        setTeam(data.members || []);
++      }
++    } catch {
++      /* ignore */
++    }
++  }, []);
++
++  const loadTasks = useCallback(async () => {
++    try {
++      const res = await fetch(TASKS_URL, { method: 'GET', headers: authHeaders() });
++      if (res.ok) {
++        const data = await res.json();
++        setTasks(data.tasks || []);
++      }
++    } catch {
++      /* ignore */
++    } finally {
++      setTasksLoading(false);
++    }
++  }, []);
++
++  const loadKbArticles = useCallback(async () => {
++    try {
++      const res = await fetch(KNOWLEDGE_URL, { method: 'GET', headers: kbAuthHeaders() });
++      if (res.ok) {
++        const data = await res.json();
++        setKbArticles((data.articles || []).map((a: KbArticleBrief) => ({ id: a.id, title: a.title, category: a.category })));
++      }
++    } catch {
++      /* ignore */
++    }
++  }, []);
++
++  const loadSprints = useCallback(async () => {
++    try {
++      const res = await fetch(SPRINTS_URL, { method: 'GET', headers: authHeaders() });
++      if (res.ok) {
++        const data = await res.json();
++        setSprints(data.sprints || []);
++      }
++    } catch {
++      /* ignore */
++    }
++  }, []);
++
++  useEffect(() => {
++    loadTeam();
++    loadTasks();
++    loadKbArticles();
++    loadSprints();
++    const t = setInterval(loadTeam, 30000);
++    return () => clearInterval(t);
++  }, [loadTeam, loadTasks, loadKbArticles, loadSprints]);
++
++  return {
++    tasks,
++    setTasks,
++    sprints,
++    setSprints,
++    team,
++    tasksLoading,
++    kbArticles,
++  };
++}
+diff --git a/src/pages/index/useDeepLinks.ts b/src/pages/index/useDeepLinks.ts
+new file mode 100644
+index 0000000..9794952
+--- /dev/null
++++ b/src/pages/index/useDeepLinks.ts
+@@ -0,0 +1,98 @@
++import { useEffect } from 'react';
++import type { useSearchParams } from 'react-router-dom';
++import type { AuthUser } from '@/lib/auth';
++import type { Task, ViewId } from './shared';
++
++type SearchParamsTuple = ReturnType<typeof useSearchParams>;
++
++export function useDeepLinks({
++  tasks,
++  user,
++  searchParams,
++  setSearchParams,
++  setSelectedTask,
++  setOpenArticleId,
++  setOpenTopicId,
++  setView,
++  setAssigneeFilter,
++}: {
++  tasks: Task[];
++  user: AuthUser | null;
++  searchParams: SearchParamsTuple[0];
++  setSearchParams: SearchParamsTuple[1];
++  setSelectedTask: (t: Task | null) => void;
++  setOpenArticleId: (id: string | null) => void;
++  setOpenTopicId: (id: string | null) => void;
++  setView: (v: ViewId) => void;
++  setAssigneeFilter: (a: number | 'all') => void;
++}) {
++  function handleOpenArticle(id: string) {
++    setSelectedTask(null);
++    setOpenArticleId(id);
++    setView('knowledge');
++  }
++
++  function handleOpenTaskById(taskId: string) {
++    const task = tasks.find((t) => t.id === taskId);
++    if (task) {
++      setView(task.archived ? 'archive' : task.column === 'restart' ? 'restart' : 'board');
++      setSelectedTask(task);
++    }
++  }
++
++  function handleOpenIdeaById(ideaId: string) {
++    setSelectedTask(null);
++    setOpenTopicId(ideaId);
++    setView('ideas');
++  }
++
++  // Открытие конкретной задачи по прямой ссылке (например из уведомления в Telegram: /?task=123)
++  useEffect(() => {
++    const taskId = searchParams.get('task');
++    if (!taskId || tasks.length === 0) return;
++    handleOpenTaskById(taskId);
++    const next = new URLSearchParams(searchParams);
++    next.delete('task');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [tasks, searchParams]);
++
++  // Открытие конкретной статьи базы знаний по прямой ссылке (например из хранилища файлов в админке: /?article=123)
++  useEffect(() => {
++    const articleId = searchParams.get('article');
++    if (!articleId) return;
++    handleOpenArticle(articleId);
++    const next = new URLSearchParams(searchParams);
++    next.delete('article');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [searchParams]);
++
++  // Открытие конкретной идеи по прямой ссылке (например из хранилища файлов в админке: /?idea=123)
++  useEffect(() => {
++    const ideaId = searchParams.get('idea');
++    if (!ideaId) return;
++    handleOpenIdeaById(ideaId);
++    const next = new URLSearchParams(searchParams);
++    next.delete('idea');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [searchParams]);
++
++  // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
++  useEffect(() => {
++    if (!user || searchParams.get('my') !== '1') return;
++    setAssigneeFilter(user.id);
++    setView('board');
++    const next = new URLSearchParams(searchParams);
++    next.delete('my');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [user, searchParams]);
++
++  return {
++    handleOpenArticle,
++    handleOpenTaskById,
++    handleOpenIdeaById,
++  };
++}
+diff --git a/src/pages/index/useSprintActions.ts b/src/pages/index/useSprintActions.ts
+new file mode 100644
+index 0000000..1a95bd7
+--- /dev/null
++++ b/src/pages/index/useSprintActions.ts
+@@ -0,0 +1,79 @@
++import { toast } from 'sonner';
++import { authHeaders, SPRINTS_URL } from './shared';
++import type { Sprint } from './shared';
++
++export function useSprintActions(
++  sprints: Sprint[],
++  setSprints: React.Dispatch<React.SetStateAction<Sprint[]>>,
++  setCreateSprint: (v: boolean) => void,
++) {
++  async function handleCreateSprint(sprint: Sprint) {
++    try {
++      const res = await fetch(SPRINTS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'create', ...sprint }),
++      });
++      if (res.ok) {
++        const data = await res.json();
++        setSprints((prev) => [...prev, data.sprint]);
++      } else {
++        toast.error('Не удалось создать спринт');
++      }
++    } catch {
++      toast.error('Не удалось создать спринт');
++    }
++    setCreateSprint(false);
++  }
++
++  async function handleUpdateSprint(sprint: Sprint) {
++    const prevSprints = sprints;
++    setSprints((prev) => prev.map((s) => (s.id === sprint.id ? sprint : s)));
++    try {
++      const res = await fetch(SPRINTS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'update', ...sprint }),
++      });
++      if (!res.ok) {
++        setSprints(prevSprints);
++        toast.error('Не удалось сохранить спринт');
++      }
++    } catch {
++      setSprints(prevSprints);
++      toast.error('Не удалось сохранить спринт');
++    }
++  }
++
++  async function handleDeleteSprint(id: string) {
++    const prevSprints = sprints;
++    setSprints((prev) => prev.filter((s) => s.id !== id));
++    try {
++      const res = await fetch(SPRINTS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'delete', id }),
++      });
++      if (!res.ok) {
++        setSprints(prevSprints);
++        toast.error('Не удалось удалить спринт');
++      }
++    } catch {
++      setSprints(prevSprints);
++      toast.error('Не удалось удалить спринт');
++    }
++  }
++
++  function handleRestoreSprint(id: string) {
++    const sp = sprints.find((s) => s.id === id);
++    if (!sp) return;
++    handleUpdateSprint({ ...sp, status: 'planned' });
++  }
++
++  return {
++    handleCreateSprint,
++    handleUpdateSprint,
++    handleDeleteSprint,
++    handleRestoreSprint,
++  };
++}
+diff --git a/src/pages/index/useTaskActions.ts b/src/pages/index/useTaskActions.ts
+new file mode 100644
+index 0000000..d10e271
+--- /dev/null
++++ b/src/pages/index/useTaskActions.ts
+@@ -0,0 +1,181 @@
++import { toast } from 'sonner';
++import { authHeaders, TASKS_URL, outcomeMeta } from './shared';
++import type { Task, TaskOutcome, ColumnId } from './shared';
++
++export function useTaskActions(
++  tasks: Task[],
++  setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
++  setSelectedTask: (t: Task | null) => void,
++  setCreateFor: (c: ColumnId | null) => void,
++  setCreatePreset: (p: Partial<Task> | null) => void,
++) {
++  async function handleAddTask(task: Task) {
++    setCreateFor(null);
++    setCreatePreset(null);
++    try {
++      const res = await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'create', ...task }),
++      });
++      if (res.ok) {
++        const data = await res.json();
++        setTasks((prev) => [...prev, data.task]);
++      }
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function handleUpdateTask(updated: Task) {
++    setSelectedTask(null);
++    setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'update', ...updated }),
++      });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function handleMoveTask(task: Task, column: ColumnId, deployStatus: Task['deployStatus']) {
++    const prevTasks = tasks;
++    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, column, deployStatus } : t)));
++    try {
++      const res = await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'update', id: task.id, title: task.title, column, deployStatus }),
++      });
++      if (!res.ok) {
++        setTasks(prevTasks);
++        toast.error('Не удалось изменить статус задачи');
++      }
++    } catch {
++      setTasks(prevTasks);
++      toast.error('Не удалось изменить статус задачи');
++    }
++  }
++
++  function handleDeleteTask(id: string) {
++    const task = tasks.find((t) => t.id === id);
++    if (!task) return;
++    setSelectedTask(null);
++    setTasks((prev) => prev.filter((t) => t.id !== id));
++
++    let cancelled = false;
++    const timer = setTimeout(async () => {
++      if (cancelled) return;
++      try {
++        await fetch(TASKS_URL, {
++          method: 'POST',
++          headers: authHeaders(),
++          body: JSON.stringify({ action: 'delete', id }),
++        });
++      } catch {
++        /* ignore */
++      }
++    }, 5000);
++
++    toast(`Задача удалена`, {
++      description: task.title,
++      duration: 5000,
++      action: {
++        label: 'Восстановить',
++        onClick: () => {
++          cancelled = true;
++          clearTimeout(timer);
++          setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
++        },
++      },
++    });
++  }
++
++  async function handleArchiveTask(id: string, outcome: TaskOutcome) {
++    const task = tasks.find((t) => t.id === id);
++    setSelectedTask(null);
++    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true, outcome } : t)));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'archive', id, outcome }),
++      });
++    } catch {
++      /* ignore */
++    }
++    toast(`Задача в архиве · ${outcomeMeta(outcome).label}`, {
++      description: task?.title,
++      action: { label: 'Отменить', onClick: () => handleUnarchiveTask(id) },
++    });
++  }
++
++  async function handleUnarchiveTask(id: string) {
++    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: false, outcome: null } : t)));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'unarchive', id }),
++      });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function handleToRestart(id: string) {
++    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'restart', restartDone: false } : t)));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'to_restart', id }),
++      });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function handleToggleRestartDone(id: string, done: boolean) {
++    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, restartDone: done } : t)));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'set_restart_done', id, done }),
++      });
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function handleDeleteArchivedTask(id: string) {
++    const task = tasks.find((t) => t.id === id);
++    setTasks((prev) => prev.filter((t) => t.id !== id));
++    try {
++      await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'delete', id }),
++      });
++    } catch {
++      /* ignore */
++    }
++    toast(`Задача удалена окончательно`, { description: task?.title });
++  }
++
++  return {
++    handleAddTask,
++    handleUpdateTask,
++    handleMoveTask,
++    handleDeleteTask,
++    handleArchiveTask,
++    handleUnarchiveTask,
++    handleToRestart,
++    handleToggleRestartDone,
++    handleDeleteArchivedTask,
++  };
++}
