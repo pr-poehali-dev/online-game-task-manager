@@ -1,0 +1,3406 @@
+diff --git a/ARCHITECTURE.md b/ARCHITECTURE.md
+new file mode 100644
+index 0000000..4f916c5
+--- /dev/null
++++ b/ARCHITECTURE.md
+@@ -0,0 +1,131 @@
++# Архитектура проекта
++
++Онлайн-задачник для команды: доска задач (Kanban), спринты, база знаний, идеи,
++FAQ, вход через Telegram-бота, админ-панель.
++
++## Общая схема
++
++```
++┌─────────────┐      HTTP (fetch)      ┌───────────────────┐      psycopg2      ┌──────────────┐
++│  Frontend   │ ─────────────────────▶ │  Backend           │ ─────────────────▶ │  PostgreSQL  │
++│  React+Vite │ ◀───────────────────── │  Python Cloud Func │ ◀───────────────── │  (1 схема)   │
++└─────────────┘   URL из func2url.json └───────────────────┘                     └──────────────┘
++                                                │  ▲
++                                                ▼  │
++                                        ┌───────────────────┐        ┌──────────────┐
++                                        │  Telegram Bot API │        │  S3 (файлы)  │
++                                        └───────────────────┘        └──────────────┘
++```
++
++Frontend никогда не обращается к БД или секретам напрямую — только через backend по HTTP.
++
++---
++
++## 1. Frontend (`/src`)
++
++### Страницы (`src/pages`)
++| Файл | Назначение |
++|---|---|
++| `Index.tsx` | Главная доска задач (Kanban: To Do / In Progress / Done) |
++| `Login.tsx` | Вход через Telegram (Login Widget или бот) |
++| `Cabinet.tsx` | Личный кабинет пользователя, FAQ |
++| `Admin.tsx` | Админ-панель |
++| `NotFound.tsx` | 404 |
++
++Подпапки с компонентами конкретных страниц:
++- `pages/index/` — Board, Sprints, Ideas, Archive, TaskModal, CreateTaskModal, SprintCard, TaskComments, MentionInput, NotificationBell, Restart, IndexSidebar, IndexTopbar, IndexMain
++- `pages/admin/` — InviteForm, UserList, SessionsModal, StatsModal
++
++### Компоненты (`src/components`)
++- `TelegramLoginButton.tsx` — вход через Telegram Login Widget
++- `BotLoginButton.tsx` — вход через код + Telegram-бота
++- `ProtectedRoute.tsx` — защита маршрутов (авторизация / права админа)
++- `KnowledgeBase.tsx` — база знаний
++- `Faq.tsx` — раздел FAQ
++- `RichEditor.tsx` — WYSIWYG редактор (Tiptap)
++- `ThemeToggle.tsx` — светлая/тёмная тема
++- `ui/` — компоненты shadcn/ui (на базе Radix UI)
++
++### Прочее
++- `hooks/` — `use-mobile.tsx`, `use-toast.ts`
++- `lib/auth.tsx` — AuthContext: пользователь, права, heartbeat активности
++- `lib/catalog.tsx` — категории и серверы
++- `lib/theme.tsx` — управление темой
++- `lib/utils.ts` — общие хелперы
++
++### Ключевые зависимости
++React 18 + React Router 6 · TanStack Query · shadcn/ui (Radix) · Tailwind CSS ·
++react-hook-form + zod · Tiptap (редактор) · recharts (графики) · Vite
++
++---
++
++## 2. Backend (`/backend`)
++
++Каждая папка — отдельная Cloud Function (Python), вызывается по HTTP.
++Адреса — в `backend/func2url.json`. Авторизация — заголовок `X-Auth-Token`.
++
++| Функция | Назначение | Основные действия |
++|---|---|---|
++| `auth` | Сессия пользователя, статус онлайн | `me`, `team`, `login`, `logout`, `heartbeat`, `set_theme` |
++| `login-code` | Коды входа через бота | `create`, `status` |
++| `tg-webhook` | Webhook Telegram-бота, привязка аккаунта | `/start КОД` |
++| `tasks` | Задачи: CRUD, комментарии, статусы деплоя | `list`, `get`, `create`, `update`, `delete`, `comment`, `toggle_archive`, `restart`, `update_deploy_status` |
++| `sprints` | Спринты | `list`, `create`, `update`, `delete` |
++| `ideas` | Обсуждение идей | `list`, `get`, `create`, `comment`, `update_status` |
++| `knowledge` | База знаний + картинки в S3 | `list`, `get`, `create`, `update`, `delete`, `upload_image`, `toggle_favorite` |
++| `catalog` | Категории и серверы (справочники) | `list`, `create/update/delete_category`, `create/update/delete_server` |
++| `faq` | Вопросы-ответы FAQ | `list`, `create`, `update`, `delete`, `reorder` |
++| `notifications` | Уведомления в приложении | `list`, `mark_read`, `mark_all`, `clear_all` |
++| `admin` | Управление пользователями и правами | `invite`, `sessions`, `stats`, `set_permission`, `toggle_admin`, `toggle_active`, `impersonate` |
++
++---
++
++## 3. База данных (PostgreSQL)
++
++Все таблицы находятся в одной рабочей схеме проекта.
++
++| Таблица | Миграция | Назначение |
++|---|---|---|
++| `users` | V0001 | Пользователи (Telegram ID, роль, права) |
++| `sessions` | V0001 | Токены сессий |
++| `task_comments` | V0001 | Комментарии к задачам |
++| `task_deploy_statuses` | V0001 | История статусов деплоя |
++| `login_codes` | V0006 | Коды входа через бота |
++| `tasks` | V0011 | Задачи доски |
++| `kb_articles` | V0014 | Статьи базы знаний |
++| `idea_topics` | V0017 | Темы-идеи |
++| `idea_comments` | V0017 | Комментарии к идеям |
++| `notifications` | V0018 | Уведомления пользователей |
++| `sprints` | V0021 | Спринты |
++| `task_assignment_events` | V0023 | Лог назначений (для статистики) |
++| `user_activity_sessions` | V0023 | Сессии активности (время в приложении) |
++| `categories` | V0026 | Категории задач/статей |
++| `servers` | V0026 | Справочник игровых серверов |
++| `kb_favorites` | V0027 | Избранные статьи пользователя |
++| `faq_items` | V0028 | Вопросы-ответы FAQ |
++
++Схема меняется только через миграции в `db_migrations/V{номер}__{описание}.sql`.
++
++---
++
++## 4. Интеграции
++
++**Telegram-бот**
++- Вход: пользователь получает 6-значный код на `/login`, отправляет боту `/start КОД`, `tg-webhook` подтверждает и создаёт сессию
++- Идентификация — по реальному Telegram ID (защита от подмены username), приглашение — по белому списку username
++- Уведомления о задачах и упоминаниях дублируются сообщением в Telegram
++
++**S3-хранилище**
++- Используется в `knowledge` для загрузки изображений к статьям
++- Путь: `kb/{uuid}.{ext}`, отдаётся через CDN
++
++---
++
++## 5. Роли и права доступа
++
++- **admin** — полный доступ ко всем разделам, управление командой и правами
++- **member** — базовый доступ, права настраиваются индивидуально (JSONB `permissions` в `users`):
++  `task_create`, `task_edit_own`, `task_view_others`, `task_restart`, `idea_create`, `kb_create`, `kb_edit`, `sprint_create`, `sprint_edit`
++
++Проверка на бэкенде: активная сессия (`sessions.expires_at`) → пользователь активен (`users.is_active`) → роль/права.
++На фронтенде маршруты закрыты компонентом `ProtectedRoute`.
+diff --git a/backend/admin/index.py b/backend/admin/index.py
+index f424de0..bada305 100644
+--- a/backend/admin/index.py
++++ b/backend/admin/index.py
+@@ -3,6 +3,7 @@ import os
+ import secrets
+ from datetime import datetime, timedelta, timezone
+ 
++import boto3
+ import psycopg2
+ 
+ 
+@@ -68,8 +69,37 @@ def _parse_dt(s):
+         return None
+ 
+ 
++def _s3_client():
++    return boto3.client(
++        's3',
++        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
++        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
++        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
++    )
++
++
++def _extract_key(url):
++    '''Восстанавливает ключ файла в S3/MinIO из его публичной ссылки, чтобы можно было удалить объект.'''
++    if not url:
++        return None
++    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
++    if public_url and url.startswith(public_url + '/'):
++        return url[len(public_url) + 1:]
++    marker = '/bucket/'
++    if marker in url:
++        return url.split(marker, 1)[1]
++    return None
++
++
++SECTION_TABLES = {
++    'knowledge': 'kb_articles',
++    'ideas': 'idea_topics',
++    'tasks': 'tasks',
++}
++
++
+ def handler(event: dict, context) -> dict:
+-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Доступно только администраторам.'''
++    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
+     method = event.get('httpMethod', 'GET')
+     if method == 'OPTIONS':
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+@@ -117,6 +147,59 @@ def handler(event: dict, context) -> dict:
+     # POST: обновление роли / активности / приглашение по username / права / статистика
+     action = body.get('action')
+ 
++    if action == 'files_list':
++        # Собираем все прикреплённые файлы по разделам: база знаний, идеи, задачи (отдельно активные и архивные)
++        result = {'knowledge': [], 'ideas': [], 'tasksActive': [], 'tasksArchived': []}
++
++        cur.execute(f"SELECT id, title, attachments, updated_at FROM {schema}.kb_articles WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
++        for r in cur.fetchall():
++            for a in (r[2] or []):
++                result['knowledge'].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[3].isoformat() if r[3] else None})
++
++        cur.execute(f"SELECT id, title, attachments, updated_at FROM {schema}.idea_topics WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
++        for r in cur.fetchall():
++            for a in (r[2] or []):
++                result['ideas'].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[3].isoformat() if r[3] else None})
++
++        cur.execute(f"SELECT id, title, attachments, archived, updated_at FROM {schema}.tasks WHERE attachments IS NOT NULL AND jsonb_array_length(attachments) > 0")
++        for r in cur.fetchall():
++            bucket = 'tasksArchived' if r[3] else 'tasksActive'
++            for a in (r[2] or []):
++                result[bucket].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[4].isoformat() if r[4] else None})
++
++        cur.close(); conn.close()
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps(result)}
++
++    if action == 'file_delete':
++        section = body.get('section')
++        entity_id = body.get('entityId')
++        attachment_id = body.get('attachmentId')
++        table = SECTION_TABLES.get(section)
++        if not table or not entity_id or not attachment_id:
++            cur.close(); conn.close()
++            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
++        cur.execute(f"SELECT attachments FROM {schema}.{table} WHERE id = %s", (int(entity_id),))
++        row = cur.fetchone()
++        if not row:
++            cur.close(); conn.close()
++            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
++        attachments = row[0] or []
++        target = next((a for a in attachments if a.get('id') == attachment_id), None)
++        remaining = [a for a in attachments if a.get('id') != attachment_id]
++        cur.execute(
++            f"UPDATE {schema}.{table} SET attachments = %s WHERE id = %s",
++            (json.dumps(remaining), int(entity_id))
++        )
++        if target:
++            key = _extract_key(target.get('url'))
++            if key:
++                try:
++                    _s3_client().delete_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=key)
++                except Exception:
++                    pass
++        cur.close(); conn.close()
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
++
+     if action == 'invite':
+         username = (body.get('tg_username') or '').lstrip('@').strip()
+         role = body.get('role', 'member')
+@@ -233,7 +316,7 @@ def handler(event: dict, context) -> dict:
+             cur.close(); conn.close()
+             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'user_inactive'})}
+         session_token = secrets.token_urlsafe(48)
+-        expires = datetime.now(timezone.utc) + timedelta(days=30)
++        expires = datetime.now(timezone.utc) + timedelta(hours=24)
+         cur.execute(
+             f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+             (r[0], session_token, expires)
+diff --git a/backend/admin/requirements.txt b/backend/admin/requirements.txt
+index 37ec460..359ea03 100644
+--- a/backend/admin/requirements.txt
++++ b/backend/admin/requirements.txt
+@@ -1 +1,2 @@
+ psycopg2-binary
++boto3
+\ No newline at end of file
+diff --git a/backend/auth/index.py b/backend/auth/index.py
+index 01fc65b..95e19ff 100644
+--- a/backend/auth/index.py
++++ b/backend/auth/index.py
+@@ -65,7 +65,7 @@ def _verify_telegram(data: dict, bot_token: str) -> bool:
+ 
+ 
+ def handler(event: dict, context) -> dict:
+-    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat) и сохранение темы интерфейса (action=set_theme).'''
++    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа) и сохранение темы интерфейса (action=set_theme).'''
+     method = event.get('httpMethod', 'GET')
+     if method == 'OPTIONS':
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+@@ -183,6 +183,11 @@ def handler(event: dict, context) -> dict:
+             cur.close(); conn.close()
+             return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'invalid_session'})}
+         uid = urow[0]
++        # Продлеваем сессию, пока пользователь активен в приложении — не даём ей истечь во время работы
++        cur.execute(
++            f"UPDATE {schema}.sessions SET expires_at = NOW() + INTERVAL '24 hours' WHERE token = %s",
++            (token,)
++        )
+         cur.execute(
+             f"SELECT id, last_heartbeat_at FROM {schema}.user_activity_sessions "
+             f"WHERE user_id = %s ORDER BY last_heartbeat_at DESC LIMIT 1",
+@@ -262,7 +267,7 @@ def handler(event: dict, context) -> dict:
+         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'inactive'})}
+ 
+     session_token = secrets.token_urlsafe(48)
+-    expires = datetime.now(timezone.utc) + timedelta(days=30)
++    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+     cur.execute(
+         f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+         (user_id, session_token, expires)
+diff --git a/backend/ideas/index.py b/backend/ideas/index.py
+index d4f6f06..f6da377 100644
+--- a/backend/ideas/index.py
++++ b/backend/ideas/index.py
+@@ -1,6 +1,9 @@
++import base64
+ import json
+ import os
++import uuid
+ 
++import boto3
+ import psycopg2
+ 
+ 
+@@ -65,9 +68,73 @@ def _topic_row(r):
+         'authorId': r[4],
+         'createdAt': r[5].isoformat() if r[5] else None,
+         'updatedAt': r[6].isoformat() if r[6] else None,
++        'attachments': r[7] if len(r) > 7 and r[7] is not None else [],
+     }
+ 
+ 
++MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
++
++
++def _s3_client():
++    return boto3.client(
++        's3',
++        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
++        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
++        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
++    )
++
++
++def _public_url(key):
++    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
++    if public_url:
++        return f"{public_url}/{key}"
++    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
++
++
++def _decode_data(data_b64):
++    if ',' in data_b64 and data_b64.strip().startswith('data:'):
++        data_b64 = data_b64.split(',', 1)[1]
++    return base64.b64decode(data_b64)
++
++
++def _upload_image(body):
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None
++    raw = _decode_data(data_b64)
++    ext = (body.get('ext') or 'png').lstrip('.').lower()
++    content_type = body.get('contentType') or f'image/{ext}'
++    key = f"ideas/{uuid.uuid4().hex}.{ext}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    return _public_url(key)
++
++
++def _upload_file(body):
++    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None, 'no_data'
++    raw = _decode_data(data_b64)
++    if len(raw) > MAX_FILE_SIZE:
++        return None, 'file_too_large'
++    name = (body.get('name') or 'file').strip() or 'file'
++    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
++    ext = (body.get('ext') or name_ext).lstrip('.').lower()
++    content_type = body.get('contentType') or 'application/octet-stream'
++    key = f"ideas/files/{uuid.uuid4().hex}.{ext}" if ext else f"ideas/files/{uuid.uuid4().hex}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    attachment = {
++        'id': uuid.uuid4().hex,
++        'name': name,
++        'url': _public_url(key),
++        'size': len(raw),
++        'contentType': content_type,
++    }
++    return attachment, None
++
++
+ def _comment_row(r):
+     return {
+         'id': str(r[0]),
+@@ -92,7 +159,7 @@ def _norm_ids(raw):
+     return result
+ 
+ 
+-TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at"
++TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at, attachments"
+ COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions"
+ 
+ 
+@@ -108,7 +175,7 @@ def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id,
+ 
+ 
+ def handler(event: dict, context) -> dict:
+-    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Закрывать топик может автор или админ. Доступно авторизованным участникам.'''
++    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам.'''
+     method = event.get('httpMethod', 'GET')
+     if method == 'OPTIONS':
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+@@ -135,6 +202,29 @@ def handler(event: dict, context) -> dict:
+     qs = event.get('queryStringParameters') or {}
+     action = body.get('action') or qs.get('action') or ('list' if method == 'GET' else '')
+ 
++    # Загрузка изображения для описания идеи (вставка в RichEditor) — нужно право на создание идей
++    if action == 'upload_image':
++        if not me['perms']['idea_create']:
++            cur.close(); conn.close()
++            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
++        url = _upload_image(body)
++        cur.close(); conn.close()
++        if not url:
++            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
++
++    # Загрузка произвольного файла-вложения к идее
++    if action == 'upload_file':
++        if not me['perms']['idea_create']:
++            cur.close(); conn.close()
++            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
++        attachment, err = _upload_file(body)
++        cur.close(); conn.close()
++        if err:
++            status = 413 if err == 'file_too_large' else 400
++            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
++
+     # Список топиков (+ количество комментариев)
+     if action == 'list' or (method == 'GET' and not qs.get('id')):
+         cur.execute(
+@@ -173,9 +263,38 @@ def handler(event: dict, context) -> dict:
+         if not title:
+             cur.close(); conn.close()
+             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
++        attachments = json.dumps(body.get('attachments') or [])
++        cur.execute(
++            f"INSERT INTO {schema}.idea_topics (title, body, author_id, attachments) VALUES (%s, %s, %s, %s) RETURNING {TOPIC_COLS}",
++            (title, body.get('body') or '', me['id'], attachments)
++        )
++        topic = _topic_row(cur.fetchone())
++        cur.close(); conn.close()
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
++
++    # Редактировать топик (текст идеи и вложения) — автор или админ
++    if action == 'update':
++        tid = body.get('id')
++        if not tid:
++            cur.close(); conn.close()
++            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
++        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
++        row = cur.fetchone()
++        if not row:
++            cur.close(); conn.close()
++            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
++        if row[0] != me['id'] and me['role'] != 'admin':
++            cur.close(); conn.close()
++            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
++        title = (body.get('title') or '').strip()
++        if not title:
++            cur.close(); conn.close()
++            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
++        attachments = json.dumps(body.get('attachments') or [])
+         cur.execute(
+-            f"INSERT INTO {schema}.idea_topics (title, body, author_id) VALUES (%s, %s, %s) RETURNING {TOPIC_COLS}",
+-            (title, body.get('body') or '', me['id'])
++            f"UPDATE {schema}.idea_topics SET title = %s, body = %s, attachments = %s, updated_at = NOW() "
++            f"WHERE id = %s RETURNING {TOPIC_COLS}",
++            (title, body.get('body') or '', attachments, int(tid))
+         )
+         topic = _topic_row(cur.fetchone())
+         cur.close(); conn.close()
+diff --git a/backend/ideas/requirements.txt b/backend/ideas/requirements.txt
+index 37ec460..359ea03 100644
+--- a/backend/ideas/requirements.txt
++++ b/backend/ideas/requirements.txt
+@@ -1 +1,2 @@
+ psycopg2-binary
++boto3
+\ No newline at end of file
+diff --git a/backend/knowledge/index.py b/backend/knowledge/index.py
+index 8414bdf..5c004ce 100644
+--- a/backend/knowledge/index.py
++++ b/backend/knowledge/index.py
+@@ -60,7 +60,7 @@ def _current_user(cur, schema, token):
+ 
+ 
+ LIST_COLUMNS = "id, title, category, excerpt, author_id, updated_by, created_at, updated_at"
+-FULL_COLUMNS = LIST_COLUMNS + ", content"
++FULL_COLUMNS = LIST_COLUMNS + ", content, attachments"
+ 
+ 
+ def _row_list(r):
+@@ -79,6 +79,7 @@ def _row_list(r):
+ def _row_full(r):
+     d = _row_list(r)
+     d['content'] = r[8] or ''
++    d['attachments'] = r[9] if r[9] is not None else []
+     return d
+ 
+ 
+@@ -87,32 +88,71 @@ def _favorite_ids(cur, schema, user_id):
+     return {row[0] for row in cur.fetchall()}
+ 
+ 
+-def _upload_image(body):
+-    data_b64 = body.get('data')
+-    if not data_b64:
+-        return None
+-    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+-        data_b64 = data_b64.split(',', 1)[1]
+-    raw = base64.b64decode(data_b64)
+-    ext = (body.get('ext') or 'png').lstrip('.').lower()
+-    content_type = body.get('contentType') or f'image/{ext}'
+-    key = f"kb/{uuid.uuid4().hex}.{ext}"
+-    s3 = boto3.client(
++MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
++
++
++def _s3_client():
++    return boto3.client(
+         's3',
+         endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+     )
+-    bucket = os.environ.get('S3_BUCKET', 'files')
+-    s3.put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++
++
++def _public_url(key):
+     public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+     if public_url:
+         return f"{public_url}/{key}"
+     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+ 
+ 
++def _decode_data(data_b64):
++    if ',' in data_b64 and data_b64.strip().startswith('data:'):
++        data_b64 = data_b64.split(',', 1)[1]
++    return base64.b64decode(data_b64)
++
++
++def _upload_image(body):
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None
++    raw = _decode_data(data_b64)
++    ext = (body.get('ext') or 'png').lstrip('.').lower()
++    content_type = body.get('contentType') or f'image/{ext}'
++    key = f"kb/{uuid.uuid4().hex}.{ext}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    return _public_url(key)
++
++
++def _upload_file(body):
++    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None, 'no_data'
++    raw = _decode_data(data_b64)
++    if len(raw) > MAX_FILE_SIZE:
++        return None, 'file_too_large'
++    name = (body.get('name') or 'file').strip() or 'file'
++    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
++    ext = (body.get('ext') or name_ext).lstrip('.').lower()
++    content_type = body.get('contentType') or 'application/octet-stream'
++    key = f"kb/files/{uuid.uuid4().hex}.{ext}" if ext else f"kb/files/{uuid.uuid4().hex}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    attachment = {
++        'id': uuid.uuid4().hex,
++        'name': name,
++        'url': _public_url(key),
++        'size': len(raw),
++        'contentType': content_type,
++    }
++    return attachment, None
++
++
+ def handler(event: dict, context) -> dict:
+-    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
++    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
+     method = event.get('httpMethod', 'GET')
+     if method == 'OPTIONS':
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+@@ -204,6 +244,18 @@ def handler(event: dict, context) -> dict:
+             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
+ 
++    # Загрузка произвольного файла-вложения (документ, архив и т.д.) — нужно право на создание или редактирование статей
++    if action == 'upload_file':
++        if not (me['perms']['kb_create'] or me['perms']['kb_edit']):
++            cur.close(); conn.close()
++            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
++        attachment, err = _upload_file(body)
++        cur.close(); conn.close()
++        if err:
++            status = 413 if err == 'file_too_large' else 400
++            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
++
+     # Создание статьи — по праву kb_create
+     if action == 'create':
+         if not me['perms']['kb_create']:
+@@ -213,14 +265,16 @@ def handler(event: dict, context) -> dict:
+         if not title:
+             cur.close(); conn.close()
+             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
++        attachments = json.dumps(body.get('attachments') or [])
+         cur.execute(
+-            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, author_id, updated_by) "
+-            f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
++            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, attachments, author_id, updated_by) "
++            f"VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
+             (
+                 title,
+                 body.get('category') or 'other',
+                 body.get('excerpt'),
+                 body.get('content') or '',
++                attachments,
+                 me['id'],
+                 me['id'],
+             )
+@@ -238,14 +292,16 @@ def handler(event: dict, context) -> dict:
+         if not art_id:
+             cur.close(); conn.close()
+             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
++        attachments = json.dumps(body.get('attachments') or [])
+         cur.execute(
+             f"UPDATE {schema}.kb_articles SET title = %s, category = %s, excerpt = %s, content = %s, "
+-            f"updated_by = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
++            f"attachments = %s, updated_by = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
+             (
+                 (body.get('title') or '').strip(),
+                 body.get('category') or 'other',
+                 body.get('excerpt'),
+                 body.get('content') or '',
++                attachments,
+                 me['id'],
+                 int(art_id),
+             )
+diff --git a/backend/tasks/index.py b/backend/tasks/index.py
+index 99a9b50..df0faa3 100644
+--- a/backend/tasks/index.py
++++ b/backend/tasks/index.py
+@@ -1,8 +1,11 @@
++import base64
+ import json
+ import os
+ import urllib.request
+ import urllib.error
++import uuid
+ 
++import boto3
+ import psycopg2
+ 
+ 
+@@ -226,14 +229,77 @@ def _row_to_task(r):
+         'restartDone': bool(r[16]),
+         'createdAt': r[17].isoformat() if r[17] else None,
+         'creatorId': r[18],
++        'attachments': r[19] if r[19] is not None else [],
+     }
+ 
+ 
+ TASK_COLUMNS = (
+     "id, title, column_id, assignee_id, priority, version, server, category, "
+-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by"
++    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments"
+ )
+ 
++MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
++
++
++def _s3_client():
++    return boto3.client(
++        's3',
++        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
++        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
++        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
++    )
++
++
++def _public_url(key):
++    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
++    if public_url:
++        return f"{public_url}/{key}"
++    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
++
++
++def _decode_data(data_b64):
++    if ',' in data_b64 and data_b64.strip().startswith('data:'):
++        data_b64 = data_b64.split(',', 1)[1]
++    return base64.b64decode(data_b64)
++
++
++def _upload_image(body):
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None
++    raw = _decode_data(data_b64)
++    ext = (body.get('ext') or 'png').lstrip('.').lower()
++    content_type = body.get('contentType') or f'image/{ext}'
++    key = f"tasks/{uuid.uuid4().hex}.{ext}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    return _public_url(key)
++
++
++def _upload_file(body):
++    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
++    data_b64 = body.get('data')
++    if not data_b64:
++        return None, 'no_data'
++    raw = _decode_data(data_b64)
++    if len(raw) > MAX_FILE_SIZE:
++        return None, 'file_too_large'
++    name = (body.get('name') or 'file').strip() or 'file'
++    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
++    ext = (body.get('ext') or name_ext).lstrip('.').lower()
++    content_type = body.get('contentType') or 'application/octet-stream'
++    key = f"tasks/files/{uuid.uuid4().hex}.{ext}" if ext else f"tasks/files/{uuid.uuid4().hex}"
++    bucket = os.environ.get('S3_BUCKET', 'files')
++    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
++    attachment = {
++        'id': uuid.uuid4().hex,
++        'name': name,
++        'url': _public_url(key),
++        'size': len(raw),
++        'contentType': content_type,
++    }
++    return attachment, None
++
+ 
+ def _norm_kb(body):
+     raw = body.get('kbArticleIds') or []
+@@ -278,7 +344,7 @@ def _norm_assignees(body):
+ 
+ 
+ def handler(event: dict, context) -> dict:
+-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач. Доступно авторизованным участникам команды.'''
++    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам команды.'''
+     method = event.get('httpMethod', 'GET')
+     if method == 'OPTIONS':
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
+@@ -304,6 +370,29 @@ def handler(event: dict, context) -> dict:
+ 
+     action = body.get('action') or (event.get('queryStringParameters') or {}).get('action') or ('list' if method == 'GET' else '')
+ 
++    # Загрузка изображения для описания задачи (вставка в RichEditor) — нужно право на создание или редактирование задач
++    if action == 'upload_image':
++        if not (me['perms']['task_create'] or me['perms']['task_edit_own']):
++            cur.close(); conn.close()
++            return _forbidden()
++        url = _upload_image(body)
++        cur.close(); conn.close()
++        if not url:
++            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
++
++    # Загрузка произвольного файла-вложения к задаче
++    if action == 'upload_file':
++        if not (me['perms']['task_create'] or me['perms']['task_edit_own']):
++            cur.close(); conn.close()
++            return _forbidden()
++        attachment, err = _upload_file(body)
++        cur.close(); conn.close()
++        if err:
++            status = 413 if err == 'file_too_large' else 400
++            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
++        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
++
+     # Список задач
+     if action == 'list' or method == 'GET':
+         cur.execute(
+@@ -314,7 +403,7 @@ def handler(event: dict, context) -> dict:
+         tasks = []
+         for r in cur.fetchall():
+             d = _row_to_task(r)
+-            d['commentCount'] = r[19]
++            d['commentCount'] = r[20]
+             # Без права task_view_others — видит только задачи, где он исполнитель или автор
+             if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
+                 continue
+@@ -335,10 +424,11 @@ def handler(event: dict, context) -> dict:
+         assignee_id = assignee_ids[0] if assignee_ids else None
+         links = json.dumps(body.get('links') or [])
+         kb_ids = json.dumps(_norm_kb(body))
++        attachments = json.dumps(body.get('attachments') or [])
+         cur.execute(
+             f"INSERT INTO {schema}.tasks "
+-            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by) "
+-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
++            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments) "
++            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+             f"RETURNING {TASK_COLUMNS}",
+             (
+                 title,
+@@ -355,6 +445,7 @@ def handler(event: dict, context) -> dict:
+                 links,
+                 kb_ids,
+                 me['id'],
++                attachments,
+             )
+         )
+         task = _row_to_task(cur.fetchone())
+@@ -414,6 +505,7 @@ def handler(event: dict, context) -> dict:
+         assignee_id = assignee_ids[0] if assignee_ids else None
+         links = json.dumps(body.get('links') or [])
+         kb_ids = json.dumps(_norm_kb(body))
++        attachments = json.dumps(body.get('attachments') or [])
+         # Предыдущие исполнители — чтобы уведомить только вновь добавленных
+         cur.execute(f"SELECT assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+         prev_row = cur.fetchone()
+@@ -421,7 +513,7 @@ def handler(event: dict, context) -> dict:
+         cur.execute(
+             f"UPDATE {schema}.tasks SET "
+             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
+-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, updated_at = NOW() "
++            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, updated_at = NOW() "
+             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+             (
+                 (body.get('title') or '').strip(),
+@@ -438,6 +530,7 @@ def handler(event: dict, context) -> dict:
+                 links,
+                 kb_ids,
+                 bool(body.get('restartDone', False)),
++                attachments,
+                 int(task_id),
+             )
+         )
+diff --git a/backend/tasks/requirements.txt b/backend/tasks/requirements.txt
+index 37ec460..359ea03 100644
+--- a/backend/tasks/requirements.txt
++++ b/backend/tasks/requirements.txt
+@@ -1 +1,2 @@
+ psycopg2-binary
++boto3
+\ No newline at end of file
+diff --git a/backend/tg-webhook/index.py b/backend/tg-webhook/index.py
+index f3887dd..8b751e1 100644
+--- a/backend/tg-webhook/index.py
++++ b/backend/tg-webhook/index.py
+@@ -170,7 +170,7 @@ def handler(event: dict, context) -> dict:
+ 
+     # создаём сессию и подтверждаем код
+     session_token = secrets.token_urlsafe(48)
+-    expires = datetime.now(timezone.utc) + timedelta(days=30)
++    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+     cur.execute(
+         f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
+         (user_id, session_token, expires)
+diff --git a/db_migrations/V0030__add_kb_attachments.sql b/db_migrations/V0030__add_kb_attachments.sql
+new file mode 100644
+index 0000000..cf8df76
+--- /dev/null
++++ b/db_migrations/V0030__add_kb_attachments.sql
+@@ -0,0 +1 @@
++ALTER TABLE kb_articles ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
+\ No newline at end of file
+diff --git a/db_migrations/V0031__add_attachments_to_tasks_and_ideas.sql b/db_migrations/V0031__add_attachments_to_tasks_and_ideas.sql
+new file mode 100644
+index 0000000..301b148
+--- /dev/null
++++ b/db_migrations/V0031__add_attachments_to_tasks_and_ideas.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE tasks ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
++ALTER TABLE idea_topics ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
+\ No newline at end of file
+diff --git a/src/components/AttachmentsField.tsx b/src/components/AttachmentsField.tsx
+new file mode 100644
+index 0000000..ac934dd
+--- /dev/null
++++ b/src/components/AttachmentsField.tsx
+@@ -0,0 +1,127 @@
++import { useState } from 'react';
++import Icon from '@/components/ui/icon';
++
++export interface Attachment {
++  id: string;
++  name: string;
++  url: string;
++  size: number;
++  contentType: string;
++}
++
++function fmtSize(bytes: number) {
++  if (!bytes && bytes !== 0) return '';
++  if (bytes < 1024) return `${bytes} Б`;
++  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
++  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
++}
++
++export function fileIconFor(name: string) {
++  const ext = name.split('.').pop()?.toLowerCase() ?? '';
++  if (['pdf', 'doc', 'docx'].includes(ext)) return 'FileText';
++  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'FileSpreadsheet';
++  if (['zip', 'rar', '7z'].includes(ext)) return 'FileArchive';
++  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'FileImage';
++  return 'File';
++}
++
++export function AttachmentsList({ attachments }: { attachments: Attachment[] }) {
++  if (!attachments.length) return null;
++  return (
++    <div className="flex flex-col gap-1.5">
++      {attachments.map((a) => (
++        <a
++          key={a.id}
++          href={a.url}
++          target="_blank"
++          rel="noopener noreferrer"
++          className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-primary/50 hover:bg-secondary/40 transition-colors"
++        >
++          <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
++          <span className="flex-1 truncate">{a.name}</span>
++          <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
++          <Icon name="Download" size={13} className="text-muted-foreground shrink-0" />
++        </a>
++      ))}
++    </div>
++  );
++}
++
++export default function AttachmentsField({
++  attachments,
++  onChange,
++  uploadUrl,
++  authHeaders,
++}: {
++  attachments: Attachment[];
++  onChange: (next: Attachment[]) => void;
++  uploadUrl: string;
++  authHeaders: () => Record<string, string>;
++}) {
++  const [uploading, setUploading] = useState(false);
++  const [error, setError] = useState('');
++
++  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0];
++    e.target.value = '';
++    if (!file) return;
++    setError('');
++    setUploading(true);
++    try {
++      const dataUrl: string = await new Promise((resolve) => {
++        const reader = new FileReader();
++        reader.onload = () => resolve(reader.result as string);
++        reader.readAsDataURL(file);
++      });
++      const res = await fetch(uploadUrl, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'upload_file', data: dataUrl, name: file.name, contentType: file.type }),
++      });
++      const d = await res.json();
++      if (!res.ok) {
++        setError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
++        return;
++      }
++      if (d.attachment) onChange([...attachments, d.attachment]);
++    } catch {
++      setError('Не удалось загрузить файл');
++    } finally {
++      setUploading(false);
++    }
++  }
++
++  function remove(id: string) {
++    onChange(attachments.filter((a) => a.id !== id));
++  }
++
++  return (
++    <div>
++      {!!attachments.length && (
++        <div className="flex flex-col gap-1.5 mb-2">
++          {attachments.map((a) => (
++            <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
++              <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
++              <span className="flex-1 truncate">{a.name}</span>
++              <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
++              <button
++                type="button"
++                onClick={() => remove(a.id)}
++                title="Убрать вложение"
++                className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
++              >
++                <Icon name="X" size={13} />
++              </button>
++            </div>
++          ))}
++        </div>
++      )}
++      <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors cursor-pointer">
++        <Icon name={uploading ? 'Loader2' : 'Paperclip'} size={14} className={uploading ? 'animate-spin' : ''} />
++        {uploading ? 'Загрузка...' : 'Прикрепить файл'}
++        <input type="file" className="hidden" onChange={handleFile} disabled={uploading} />
++      </label>
++      {error && <p className="text-xs text-destructive mt-1.5">{error}</p>}
++    </div>
++  );
++}
+\ No newline at end of file
+diff --git a/src/components/KnowledgeBase.tsx b/src/components/KnowledgeBase.tsx
+index d619ac2..8bb7da1 100644
+--- a/src/components/KnowledgeBase.tsx
++++ b/src/components/KnowledgeBase.tsx
+@@ -1,82 +1,13 @@
+ import { useState, useEffect, useCallback } from 'react';
+-import Icon from '@/components/ui/icon';
+-import RichEditor from '@/components/RichEditor';
+ import type { PermissionKey } from '@/lib/auth';
+-import func2url from '../../backend/func2url.json';
++import { KNOWLEDGE_URL, authHeaders } from './knowledge-base/shared';
++import ArticleList from './knowledge-base/ArticleList';
++import ArticleView from './knowledge-base/ArticleView';
++import ArticleEditor from './knowledge-base/ArticleEditor';
++import type { ArticleListItem, Article, KbCategoryId, KbAttachment, Author } from './knowledge-base/shared';
+ 
+-export const KNOWLEDGE_URL = (func2url as Record<string, string>).knowledge;
+-const TOKEN_KEY = 'era_auth_token';
+-
+-export function kbAuthHeaders(): Record<string, string> {
+-  return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
+-}
+-
+-const authHeaders = kbAuthHeaders;
+-
+-export interface KbArticleBrief {
+-  id: string;
+-  title: string;
+-  category: string;
+-}
+-
+-export type KbCategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
+-
+-export const kbCategories: { id: KbCategoryId; label: string; icon: string; color: string }[] = [
+-  { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
+-  { id: 'launcher', label: 'Лаунчер', icon: 'MonitorDown', color: '270 65% 65%' },
+-  { id: 'client', label: 'Клиент', icon: 'Gamepad2', color: '35 85% 58%' },
+-  { id: 'social', label: 'Соцсети и форум', icon: 'MessagesSquare', color: '330 70% 62%' },
+-  { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
+-  { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
+-  { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
+-  { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
+-];
+-
+-function kbCatMeta(id: string) {
+-  return kbCategories.find((c) => c.id === id) ?? kbCategories[kbCategories.length - 1];
+-}
+-
+-interface ArticleListItem {
+-  id: string;
+-  title: string;
+-  category: KbCategoryId;
+-  excerpt: string | null;
+-  authorId: number | null;
+-  updatedById: number | null;
+-  createdAt: string | null;
+-  updatedAt: string | null;
+-  isFavorite?: boolean;
+-}
+-
+-interface Article extends ArticleListItem {
+-  content: string;
+-}
+-
+-interface Author {
+-  id: number;
+-  name: string;
+-  photo_url: string | null;
+-}
+-
+-const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
+-
+-function CatBadge({ id }: { id: string }) {
+-  const c = kbCatMeta(id);
+-  return (
+-    <span
+-      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md"
+-      style={{ background: `hsl(${c.color} / 0.12)`, color: `hsl(${c.color})` }}
+-    >
+-      <Icon name={c.icon} size={10} />
+-      {c.label}
+-    </span>
+-  );
+-}
+-
+-function fmtDate(d: string | null) {
+-  if (!d) return '';
+-  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+-}
++export { KNOWLEDGE_URL, kbAuthHeaders, kbCategories } from './knowledge-base/shared';
++export type { KbArticleBrief, KbCategoryId, KbAttachment } from './knowledge-base/shared';
+ 
+ export default function KnowledgeBase({ category, authors, initialArticleId, onConsumeInitial, can, isAdmin }: {
+   category: KbCategoryId | 'all';
+@@ -135,7 +66,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [initialArticleId]);
+ 
+-  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string }) {
++  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) {
+     const action = payload.id ? 'update' : 'create';
+     try {
+       const res = await fetch(KNOWLEDGE_URL, {
+@@ -218,236 +149,19 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
+   }
+ 
+   return (
+-    <div className="max-w-4xl animate-fade-in">
+-      <div className="flex items-center gap-3 mb-1">
+-        <Icon name="BookOpen" size={20} className="text-primary" />
+-        <h2 className="font-display tracking-wide text-lg">База знаний</h2>
+-        <span className="text-sm text-muted-foreground">· {list.length} статей</span>
+-      </div>
+-      <p className="text-sm text-muted-foreground mb-5">Статьи и готовые решения под рабочие задачи. Выбирайте категорию слева или ищите по названию.</p>
+-
+-      <div className="flex items-center gap-2 mb-5">
+-        <div className="relative flex-1">
+-          <Icon name="Search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+-          <input
+-            value={search}
+-            onChange={(e) => setSearch(e.target.value)}
+-            placeholder="Поиск по статьям..."
+-            className={inputCls + ' pl-9'}
+-          />
+-        </div>
+-        <button
+-          onClick={() => setFavoritesOnly((v) => !v)}
+-          title={favoritesOnly ? 'Показать все статьи' : 'Показать только избранное'}
+-          className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1.5 shrink-0 ${
+-            favoritesOnly ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+-          }`}
+-        >
+-          <Icon name="Star" size={15} className={favoritesOnly ? 'fill-current' : ''} />
+-          <span className="hidden sm:inline">Избранное</span>
+-        </button>
+-        {can('kb_create') && (
+-          <button
+-            onClick={() => setEditing('new')}
+-            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
+-          >
+-            <Icon name="Plus" size={15} />
+-            <span className="hidden sm:inline">Статья</span>
+-          </button>
+-        )}
+-      </div>
+-
+-      {loading ? (
+-        <div className="flex justify-center py-16">
+-          <Icon name="Loader2" size={26} className="animate-spin text-primary" />
+-        </div>
+-      ) : filtered.length === 0 ? (
+-        <div className="text-center py-16 text-muted-foreground">
+-          <Icon name="BookOpen" size={40} className="mx-auto mb-3 opacity-40" />
+-          <p className="text-sm">{search.trim() ? 'Ничего не найдено' : 'Здесь пока нет статей — создайте первую'}</p>
+-        </div>
+-      ) : (
+-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+-          {filtered.map((a) => (
+-            <div
+-              key={a.id}
+-              onClick={() => openArticle(a.id)}
+-              className="relative text-left rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all group cursor-pointer"
+-            >
+-              <div className="flex items-center justify-between mb-2 pr-6">
+-                <CatBadge id={a.category} />
+-                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+-              </div>
+-              <button
+-                onClick={(e) => { e.stopPropagation(); toggleFavorite(a.id); }}
+-                title={a.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+-                className={`absolute top-3.5 right-3.5 h-6 w-6 flex items-center justify-center rounded-md transition-colors ${
+-                  a.isFavorite ? 'text-yellow-400' : 'text-muted-foreground/50 hover:text-yellow-400'
+-                }`}
+-              >
+-                <Icon name="Star" size={15} className={a.isFavorite ? 'fill-current' : ''} />
+-              </button>
+-              <h3 className="text-sm font-semibold leading-snug mb-1 line-clamp-2">{a.title}</h3>
+-              {a.excerpt && <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{a.excerpt}</p>}
+-              <div className="text-[11px] text-muted-foreground mt-auto flex items-center gap-3 flex-wrap">
+-                <span className="flex items-center gap-1"><Icon name="User" size={11} />{authorName(a.authorId)}</span>
+-                <span className="flex items-center gap-1"><Icon name="Clock" size={11} />{fmtDate(a.updatedAt)}</span>
+-              </div>
+-            </div>
+-          ))}
+-        </div>
+-      )}
+-    </div>
+-  );
+-}
+-
+-function ArticleView({ article, authorName, onBack, onEdit, onDelete, onToggleFavorite, canEdit, canDelete }: {
+-  article: Article;
+-  authorName: (id: number | null) => string;
+-  onBack: () => void;
+-  onEdit: () => void;
+-  onDelete: () => void;
+-  onToggleFavorite: () => void;
+-  canEdit: boolean;
+-  canDelete: boolean;
+-}) {
+-  const [confirmDel, setConfirmDel] = useState(false);
+-  return (
+-    <div className="max-w-3xl animate-fade-in">
+-      <div className="flex items-center gap-3 mb-5">
+-        <button onClick={onBack} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-          <Icon name="ArrowLeft" size={14} />
+-          К списку
+-        </button>
+-        <div className="ml-auto flex items-center gap-2">
+-          <button
+-            onClick={onToggleFavorite}
+-            title={article.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
+-            className={`h-8 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 ${
+-              article.isFavorite ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+-            }`}
+-          >
+-            <Icon name="Star" size={13} className={article.isFavorite ? 'fill-current' : ''} />
+-            <span className="hidden sm:inline">{article.isFavorite ? 'В избранном' : 'В избранное'}</span>
+-          </button>
+-          {canEdit && (
+-            <button onClick={onEdit} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-              <Icon name="Pencil" size={13} />
+-              Редактировать
+-            </button>
+-          )}
+-          {canDelete && (confirmDel ? (
+-            <div className="flex items-center gap-1.5">
+-              <span className="text-xs text-muted-foreground hidden sm:inline">Удалить?</span>
+-              <button onClick={onDelete} className="h-8 px-2.5 rounded-lg bg-destructive/90 text-white text-xs hover:bg-destructive transition-colors">Да</button>
+-              <button onClick={() => setConfirmDel(false)} className="h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">Нет</button>
+-            </div>
+-          ) : (
+-            <button onClick={() => setConfirmDel(true)} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
+-              <Icon name="Trash2" size={14} />
+-            </button>
+-          ))}
+-        </div>
+-      </div>
+-
+-      <div className="rounded-2xl border border-border bg-card p-6">
+-        <CatBadge id={article.category} />
+-        <h1 className="text-2xl font-bold mt-3 mb-2 leading-tight">{article.title}</h1>
+-        <div className="text-xs text-muted-foreground mb-5 flex items-center gap-3 flex-wrap">
+-          <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(article.authorId)}</span>
+-          {article.createdAt && (
+-            <span className="flex items-center gap-1"><Icon name="Calendar" size={12} />Создано {fmtDate(article.createdAt)}</span>
+-          )}
+-          <span className="flex items-center gap-1"><Icon name="Clock" size={12} />Обновлено {fmtDate(article.updatedAt)}</span>
+-        </div>
+-        <div className="kb-content prose-invert" dangerouslySetInnerHTML={{ __html: article.content || '<p class="text-muted-foreground">Статья пока пуста.</p>' }} />
+-      </div>
+-    </div>
+-  );
+-}
+-
+-function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
+-  article: Article | null;
+-  defaultCategory: KbCategoryId;
+-  onCancel: () => void;
+-  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string }) => void;
+-}) {
+-  const [title, setTitle] = useState(article?.title ?? '');
+-  const [category, setCategory] = useState<KbCategoryId>(article?.category ?? defaultCategory);
+-  const [excerpt, setExcerpt] = useState(article?.excerpt ?? '');
+-  const [content, setContent] = useState(article?.content ?? '');
+-  const [saving, setSaving] = useState(false);
+-
+-  async function uploadImage(file: File): Promise<string> {
+-    const dataUrl: string = await new Promise((resolve) => {
+-      const reader = new FileReader();
+-      reader.onload = () => resolve(reader.result as string);
+-      reader.readAsDataURL(file);
+-    });
+-    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+-    const res = await fetch(KNOWLEDGE_URL, {
+-      method: 'POST',
+-      headers: authHeaders(),
+-      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
+-    });
+-    if (!res.ok) return '';
+-    const d = await res.json();
+-    return d.url || '';
+-  }
+-
+-  function submit() {
+-    if (!title.trim() || saving) return;
+-    setSaving(true);
+-    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content });
+-  }
+-
+-  return (
+-    <div className="max-w-3xl animate-fade-in">
+-      <div className="flex items-center gap-3 mb-5">
+-        <button onClick={onCancel} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-          <Icon name="ArrowLeft" size={14} />
+-          Отмена
+-        </button>
+-        <h2 className="font-display tracking-wide text-lg">{article ? 'Редактирование статьи' : 'Новая статья'}</h2>
+-        <button
+-          onClick={submit}
+-          disabled={!title.trim() || saving}
+-          className="ml-auto h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity flex items-center gap-2"
+-        >
+-          {saving && <Icon name="Loader2" size={14} className="animate-spin" />}
+-          Сохранить
+-        </button>
+-      </div>
+-
+-      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+-        <input
+-          autoFocus
+-          value={title}
+-          onChange={(e) => setTitle(e.target.value)}
+-          placeholder="Заголовок статьи..."
+-          className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
+-        />
+-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+-          <div>
+-            <label className="block text-xs text-muted-foreground mb-1.5">Категория</label>
+-            <select
+-              value={category}
+-              onChange={(e) => setCategory(e.target.value as KbCategoryId)}
+-              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+-            >
+-              {kbCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+-            </select>
+-          </div>
+-          <div>
+-            <label className="block text-xs text-muted-foreground mb-1.5">Краткое описание</label>
+-            <input value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="1-2 предложения для списка" className={inputCls} />
+-          </div>
+-        </div>
+-        <div>
+-          <label className="block text-xs text-muted-foreground mb-1.5">Содержание</label>
+-          <RichEditor content={content} onChange={setContent} onImageUpload={uploadImage} placeholder="Опишите решение: шаги, изображения, ссылки..." />
+-        </div>
+-      </div>
+-    </div>
++    <ArticleList
++      list={list}
++      filtered={filtered}
++      loading={loading}
++      search={search}
++      setSearch={setSearch}
++      favoritesOnly={favoritesOnly}
++      setFavoritesOnly={setFavoritesOnly}
++      can={can}
++      onCreate={() => setEditing('new')}
++      onOpen={openArticle}
++      onToggleFavorite={toggleFavorite}
++      authorName={authorName}
++    />
+   );
+ }
+\ No newline at end of file
+diff --git a/src/components/knowledge-base/ArticleEditor.tsx b/src/components/knowledge-base/ArticleEditor.tsx
+new file mode 100644
+index 0000000..0b500cc
+--- /dev/null
++++ b/src/components/knowledge-base/ArticleEditor.tsx
+@@ -0,0 +1,157 @@
++import { useState } from 'react';
++import Icon from '@/components/ui/icon';
++import RichEditor from '@/components/RichEditor';
++import { KNOWLEDGE_URL, authHeaders, kbCategories, inputCls, fmtSize, fileIconFor } from './shared';
++import type { Article, KbCategoryId, KbAttachment } from './shared';
++
++export default function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
++  article: Article | null;
++  defaultCategory: KbCategoryId;
++  onCancel: () => void;
++  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) => void;
++}) {
++  const [title, setTitle] = useState(article?.title ?? '');
++  const [category, setCategory] = useState<KbCategoryId>(article?.category ?? defaultCategory);
++  const [excerpt, setExcerpt] = useState(article?.excerpt ?? '');
++  const [content, setContent] = useState(article?.content ?? '');
++  const [attachments, setAttachments] = useState<KbAttachment[]>(article?.attachments ?? []);
++  const [uploadingFile, setUploadingFile] = useState(false);
++  const [uploadError, setUploadError] = useState('');
++  const [saving, setSaving] = useState(false);
++
++  async function readAsDataUrl(file: File): Promise<string> {
++    return new Promise((resolve) => {
++      const reader = new FileReader();
++      reader.onload = () => resolve(reader.result as string);
++      reader.readAsDataURL(file);
++    });
++  }
++
++  async function uploadImage(file: File): Promise<string> {
++    const dataUrl = await readAsDataUrl(file);
++    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
++    const res = await fetch(KNOWLEDGE_URL, {
++      method: 'POST',
++      headers: authHeaders(),
++      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
++    });
++    if (!res.ok) return '';
++    const d = await res.json();
++    return d.url || '';
++  }
++
++  async function handleAttachFile(e: React.ChangeEvent<HTMLInputElement>) {
++    const file = e.target.files?.[0];
++    e.target.value = '';
++    if (!file) return;
++    setUploadError('');
++    setUploadingFile(true);
++    try {
++      const dataUrl = await readAsDataUrl(file);
++      const res = await fetch(KNOWLEDGE_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'upload_file', data: dataUrl, name: file.name, contentType: file.type }),
++      });
++      const d = await res.json();
++      if (!res.ok) {
++        setUploadError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
++        return;
++      }
++      if (d.attachment) setAttachments((prev) => [...prev, d.attachment]);
++    } catch {
++      setUploadError('Не удалось загрузить файл');
++    } finally {
++      setUploadingFile(false);
++    }
++  }
++
++  function removeAttachment(id: string) {
++    setAttachments((prev) => prev.filter((a) => a.id !== id));
++  }
++
++  function submit() {
++    if (!title.trim() || saving) return;
++    setSaving(true);
++    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content, attachments });
++  }
++
++  return (
++    <div className="max-w-3xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-5">
++        <button onClick={onCancel} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++          <Icon name="ArrowLeft" size={14} />
++          Отмена
++        </button>
++        <h2 className="font-display tracking-wide text-lg">{article ? 'Редактирование статьи' : 'Новая статья'}</h2>
++        <button
++          onClick={submit}
++          disabled={!title.trim() || saving}
++          className="ml-auto h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity flex items-center gap-2"
++        >
++          {saving && <Icon name="Loader2" size={14} className="animate-spin" />}
++          Сохранить
++        </button>
++      </div>
++
++      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
++        <input
++          autoFocus
++          value={title}
++          onChange={(e) => setTitle(e.target.value)}
++          placeholder="Заголовок статьи..."
++          className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
++        />
++        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
++          <div>
++            <label className="block text-xs text-muted-foreground mb-1.5">Категория</label>
++            <select
++              value={category}
++              onChange={(e) => setCategory(e.target.value as KbCategoryId)}
++              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
++            >
++              {kbCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
++            </select>
++          </div>
++          <div>
++            <label className="block text-xs text-muted-foreground mb-1.5">Краткое описание</label>
++            <input value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="1-2 предложения для списка" className={inputCls} />
++          </div>
++        </div>
++        <div>
++          <label className="block text-xs text-muted-foreground mb-1.5">Содержание</label>
++          <RichEditor content={content} onChange={setContent} onImageUpload={uploadImage} placeholder="Опишите решение: шаги, изображения, ссылки..." />
++        </div>
++
++        <div>
++          <label className="block text-xs text-muted-foreground mb-1.5">Вложения (документы, архивы и другие файлы)</label>
++          {!!attachments.length && (
++            <div className="flex flex-col gap-1.5 mb-2">
++              {attachments.map((a) => (
++                <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
++                  <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
++                  <span className="flex-1 truncate">{a.name}</span>
++                  <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
++                  <button
++                    type="button"
++                    onClick={() => removeAttachment(a.id)}
++                    title="Убрать вложение"
++                    className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
++                  >
++                    <Icon name="X" size={13} />
++                  </button>
++                </div>
++              ))}
++            </div>
++          )}
++          <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors cursor-pointer">
++            <Icon name={uploadingFile ? 'Loader2' : 'Paperclip'} size={14} className={uploadingFile ? 'animate-spin' : ''} />
++            {uploadingFile ? 'Загрузка...' : 'Прикрепить файл'}
++            <input type="file" className="hidden" onChange={handleAttachFile} disabled={uploadingFile} />
++          </label>
++          {uploadError && <p className="text-xs text-destructive mt-1.5">{uploadError}</p>}
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/knowledge-base/ArticleList.tsx b/src/components/knowledge-base/ArticleList.tsx
+new file mode 100644
+index 0000000..bab5855
+--- /dev/null
++++ b/src/components/knowledge-base/ArticleList.tsx
+@@ -0,0 +1,115 @@
++import Icon from '@/components/ui/icon';
++import CatBadge from './CatBadge';
++import { inputCls, fmtDate } from './shared';
++import type { ArticleListItem } from './shared';
++
++export default function ArticleList({
++  list,
++  filtered,
++  loading,
++  search,
++  setSearch,
++  favoritesOnly,
++  setFavoritesOnly,
++  can,
++  onCreate,
++  onOpen,
++  onToggleFavorite,
++  authorName,
++}: {
++  list: ArticleListItem[];
++  filtered: ArticleListItem[];
++  loading: boolean;
++  search: string;
++  setSearch: (v: string) => void;
++  favoritesOnly: boolean;
++  setFavoritesOnly: (v: boolean | ((prev: boolean) => boolean)) => void;
++  can: (key: 'kb_create') => boolean;
++  onCreate: () => void;
++  onOpen: (id: string) => void;
++  onToggleFavorite: (id: string) => void;
++  authorName: (id: number | null) => string;
++}) {
++  return (
++    <div className="max-w-4xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-1">
++        <Icon name="BookOpen" size={20} className="text-primary" />
++        <h2 className="font-display tracking-wide text-lg">База знаний</h2>
++        <span className="text-sm text-muted-foreground">· {list.length} статей</span>
++      </div>
++      <p className="text-sm text-muted-foreground mb-5">Статьи и готовые решения под рабочие задачи. Выбирайте категорию слева или ищите по названию.</p>
++
++      <div className="flex items-center gap-2 mb-5">
++        <div className="relative flex-1">
++          <Icon name="Search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
++          <input
++            value={search}
++            onChange={(e) => setSearch(e.target.value)}
++            placeholder="Поиск по статьям..."
++            className={inputCls + ' pl-9'}
++          />
++        </div>
++        <button
++          onClick={() => setFavoritesOnly((v) => !v)}
++          title={favoritesOnly ? 'Показать все статьи' : 'Показать только избранное'}
++          className={`h-9 px-3 rounded-lg border text-sm font-medium transition-colors flex items-center gap-1.5 shrink-0 ${
++            favoritesOnly ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
++          }`}
++        >
++          <Icon name="Star" size={15} className={favoritesOnly ? 'fill-current' : ''} />
++          <span className="hidden sm:inline">Избранное</span>
++        </button>
++        {can('kb_create') && (
++          <button
++            onClick={onCreate}
++            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity shrink-0"
++          >
++            <Icon name="Plus" size={15} />
++            <span className="hidden sm:inline">Статья</span>
++          </button>
++        )}
++      </div>
++
++      {loading ? (
++        <div className="flex justify-center py-16">
++          <Icon name="Loader2" size={26} className="animate-spin text-primary" />
++        </div>
++      ) : filtered.length === 0 ? (
++        <div className="text-center py-16 text-muted-foreground">
++          <Icon name="BookOpen" size={40} className="mx-auto mb-3 opacity-40" />
++          <p className="text-sm">{search.trim() ? 'Ничего не найдено' : 'Здесь пока нет статей — создайте первую'}</p>
++        </div>
++      ) : (
++        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
++          {filtered.map((a) => (
++            <div
++              key={a.id}
++              onClick={() => onOpen(a.id)}
++              className="relative text-left rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all group cursor-pointer"
++            >
++              <div className="flex items-center justify-between mb-2 pr-6">
++                <CatBadge id={a.category} />
++                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
++              </div>
++              <button
++                onClick={(e) => { e.stopPropagation(); onToggleFavorite(a.id); }}
++                title={a.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
++                className={`absolute top-3.5 right-3.5 h-6 w-6 flex items-center justify-center rounded-md transition-colors ${
++                  a.isFavorite ? 'text-yellow-400' : 'text-muted-foreground/50 hover:text-yellow-400'
++                }`}
++              >
++                <Icon name="Star" size={15} className={a.isFavorite ? 'fill-current' : ''} />
++              </button>
++              <h3 className="text-sm font-semibold leading-snug mb-1 line-clamp-2">{a.title}</h3>
++              {a.excerpt && <p className="text-xs text-muted-foreground line-clamp-2 mb-2">{a.excerpt}</p>}
++              <div className="text-[11px] text-muted-foreground mt-auto flex items-center gap-3 flex-wrap">
++                <span className="flex items-center gap-1"><Icon name="User" size={11} />{authorName(a.authorId)}</span>
++                <span className="flex items-center gap-1"><Icon name="Clock" size={11} />{fmtDate(a.updatedAt)}</span>
++              </div>
++            </div>
++          ))}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/components/knowledge-base/ArticleView.tsx b/src/components/knowledge-base/ArticleView.tsx
+new file mode 100644
+index 0000000..0431502
+--- /dev/null
++++ b/src/components/knowledge-base/ArticleView.tsx
+@@ -0,0 +1,95 @@
++import { useState } from 'react';
++import Icon from '@/components/ui/icon';
++import CatBadge from './CatBadge';
++import { fmtSize, fileIconFor, fmtDate } from './shared';
++import type { Article } from './shared';
++
++export default function ArticleView({ article, authorName, onBack, onEdit, onDelete, onToggleFavorite, canEdit, canDelete }: {
++  article: Article;
++  authorName: (id: number | null) => string;
++  onBack: () => void;
++  onEdit: () => void;
++  onDelete: () => void;
++  onToggleFavorite: () => void;
++  canEdit: boolean;
++  canDelete: boolean;
++}) {
++  const [confirmDel, setConfirmDel] = useState(false);
++  return (
++    <div className="max-w-3xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-5">
++        <button onClick={onBack} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++          <Icon name="ArrowLeft" size={14} />
++          К списку
++        </button>
++        <div className="ml-auto flex items-center gap-2">
++          <button
++            onClick={onToggleFavorite}
++            title={article.isFavorite ? 'Убрать из избранного' : 'Добавить в избранное'}
++            className={`h-8 px-3 rounded-lg border text-sm transition-colors flex items-center gap-1.5 ${
++              article.isFavorite ? 'border-yellow-400/50 bg-yellow-400/10 text-yellow-400' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
++            }`}
++          >
++            <Icon name="Star" size={13} className={article.isFavorite ? 'fill-current' : ''} />
++            <span className="hidden sm:inline">{article.isFavorite ? 'В избранном' : 'В избранное'}</span>
++          </button>
++          {canEdit && (
++            <button onClick={onEdit} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++              <Icon name="Pencil" size={13} />
++              Редактировать
++            </button>
++          )}
++          {canDelete && (confirmDel ? (
++            <div className="flex items-center gap-1.5">
++              <span className="text-xs text-muted-foreground hidden sm:inline">Удалить?</span>
++              <button onClick={onDelete} className="h-8 px-2.5 rounded-lg bg-destructive/90 text-white text-xs hover:bg-destructive transition-colors">Да</button>
++              <button onClick={() => setConfirmDel(false)} className="h-8 px-2.5 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">Нет</button>
++            </div>
++          ) : (
++            <button onClick={() => setConfirmDel(true)} className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
++              <Icon name="Trash2" size={14} />
++            </button>
++          ))}
++        </div>
++      </div>
++
++      <div className="rounded-2xl border border-border bg-card p-6">
++        <CatBadge id={article.category} />
++        <h1 className="text-2xl font-bold mt-3 mb-2 leading-tight">{article.title}</h1>
++        <div className="text-xs text-muted-foreground mb-5 flex items-center gap-3 flex-wrap">
++          <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(article.authorId)}</span>
++          {article.createdAt && (
++            <span className="flex items-center gap-1"><Icon name="Calendar" size={12} />Создано {fmtDate(article.createdAt)}</span>
++          )}
++          <span className="flex items-center gap-1"><Icon name="Clock" size={12} />Обновлено {fmtDate(article.updatedAt)}</span>
++        </div>
++        <div className="kb-content prose-invert" dangerouslySetInnerHTML={{ __html: article.content || '<p class="text-muted-foreground">Статья пока пуста.</p>' }} />
++
++        {!!article.attachments?.length && (
++          <div className="mt-5 pt-4 border-t border-border">
++            <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
++              <Icon name="Paperclip" size={12} />
++              Вложения ({article.attachments.length})
++            </div>
++            <div className="flex flex-col gap-1.5">
++              {article.attachments.map((a) => (
++                <a
++                  key={a.id}
++                  href={a.url}
++                  target="_blank"
++                  rel="noopener noreferrer"
++                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-primary/50 hover:bg-secondary/40 transition-colors"
++                >
++                  <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
++                  <span className="flex-1 truncate">{a.name}</span>
++                  <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
++                  <Icon name="Download" size={13} className="text-muted-foreground shrink-0" />
++                </a>
++              ))}
++            </div>
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+diff --git a/src/components/knowledge-base/CatBadge.tsx b/src/components/knowledge-base/CatBadge.tsx
+new file mode 100644
+index 0000000..8418c55
+--- /dev/null
++++ b/src/components/knowledge-base/CatBadge.tsx
+@@ -0,0 +1,15 @@
++import Icon from '@/components/ui/icon';
++import { kbCatMeta } from './shared';
++
++export default function CatBadge({ id }: { id: string }) {
++  const c = kbCatMeta(id);
++  return (
++    <span
++      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md"
++      style={{ background: `hsl(${c.color} / 0.12)`, color: `hsl(${c.color})` }}
++    >
++      <Icon name={c.icon} size={10} />
++      {c.label}
++    </span>
++  );
++}
+diff --git a/src/components/knowledge-base/shared.ts b/src/components/knowledge-base/shared.ts
+new file mode 100644
+index 0000000..a02ee6d
+--- /dev/null
++++ b/src/components/knowledge-base/shared.ts
+@@ -0,0 +1,88 @@
++import func2url from '../../../backend/func2url.json';
++
++export const KNOWLEDGE_URL = (func2url as Record<string, string>).knowledge;
++const TOKEN_KEY = 'era_auth_token';
++
++export function kbAuthHeaders(): Record<string, string> {
++  return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
++}
++
++export const authHeaders = kbAuthHeaders;
++
++export interface KbArticleBrief {
++  id: string;
++  title: string;
++  category: string;
++}
++
++export type KbCategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
++
++export const kbCategories: { id: KbCategoryId; label: string; icon: string; color: string }[] = [
++  { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
++  { id: 'launcher', label: 'Лаунчер', icon: 'MonitorDown', color: '270 65% 65%' },
++  { id: 'client', label: 'Клиент', icon: 'Gamepad2', color: '35 85% 58%' },
++  { id: 'social', label: 'Соцсети и форум', icon: 'MessagesSquare', color: '330 70% 62%' },
++  { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
++  { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
++  { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
++  { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
++];
++
++export function kbCatMeta(id: string) {
++  return kbCategories.find((c) => c.id === id) ?? kbCategories[kbCategories.length - 1];
++}
++
++export interface ArticleListItem {
++  id: string;
++  title: string;
++  category: KbCategoryId;
++  excerpt: string | null;
++  authorId: number | null;
++  updatedById: number | null;
++  createdAt: string | null;
++  updatedAt: string | null;
++  isFavorite?: boolean;
++}
++
++export interface KbAttachment {
++  id: string;
++  name: string;
++  url: string;
++  size: number;
++  contentType: string;
++}
++
++export interface Article extends ArticleListItem {
++  content: string;
++  attachments?: KbAttachment[];
++}
++
++export function fmtSize(bytes: number) {
++  if (!bytes && bytes !== 0) return '';
++  if (bytes < 1024) return `${bytes} Б`;
++  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
++  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
++}
++
++export function fileIconFor(name: string) {
++  const ext = name.split('.').pop()?.toLowerCase() ?? '';
++  if (['pdf'].includes(ext)) return 'FileText';
++  if (['doc', 'docx'].includes(ext)) return 'FileText';
++  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'FileSpreadsheet';
++  if (['zip', 'rar', '7z'].includes(ext)) return 'FileArchive';
++  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'FileImage';
++  return 'File';
++}
++
++export interface Author {
++  id: number;
++  name: string;
++  photo_url: string | null;
++}
++
++export const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
++
++export function fmtDate(d: string | null) {
++  if (!d) return '';
++  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
++}
+diff --git a/src/pages/Admin.tsx b/src/pages/Admin.tsx
+index 182789c..d2f59b6 100644
+--- a/src/pages/Admin.tsx
++++ b/src/pages/Admin.tsx
+@@ -7,8 +7,9 @@ import InviteForm from './admin/InviteForm';
+ import UserList from './admin/UserList';
+ import SessionsModal from './admin/SessionsModal';
+ import StatsModal from './admin/StatsModal';
++import FilesModal from './admin/FilesModal';
+ import { ADMIN_URL, TOKEN_KEY, authFetch } from './admin/adminShared';
+-import type { TeamUser, SessionInfo, UserStats, Permissions } from './admin/adminShared';
++import type { TeamUser, SessionInfo, UserStats, Permissions, FilesBySection } from './admin/adminShared';
+ import ThemeToggle from '@/components/ThemeToggle';
+ 
+ export default function Admin() {
+@@ -39,6 +40,9 @@ export default function Admin() {
+   const [statsCalendarOpen, setStatsCalendarOpen] = useState(false);
+   const [stats, setStats] = useState<UserStats | null>(null);
+   const [statsLoading, setStatsLoading] = useState(false);
++  const [filesOpen, setFilesOpen] = useState(false);
++  const [filesLoading, setFilesLoading] = useState(false);
++  const [files, setFiles] = useState<FilesBySection | null>(null);
+ 
+   const load = useCallback(async () => {
+     const token = localStorage.getItem(TOKEN_KEY) || '';
+@@ -165,6 +169,33 @@ export default function Admin() {
+     }
+   }
+ 
++  async function openFiles() {
++    setFilesOpen(true);
++    setFilesLoading(true);
++    const res = await authFetch({ action: 'files_list' });
++    if (res.ok) {
++      const data = await res.json();
++      setFiles(data);
++    } else {
++      setFiles(null);
++    }
++    setFilesLoading(false);
++  }
++
++  async function deleteFile(section: 'knowledge' | 'ideas' | 'tasks', entityId: string, attachmentId: string) {
++    await authFetch({ action: 'file_delete', section, entityId, attachmentId });
++    setFiles((prev) => {
++      if (!prev) return prev;
++      const strip = (list: typeof prev.knowledge) => list.filter((a) => a.id !== attachmentId);
++      return {
++        knowledge: strip(prev.knowledge),
++        ideas: strip(prev.ideas),
++        tasksActive: strip(prev.tasksActive),
++        tasksArchived: strip(prev.tasksArchived),
++      };
++    });
++  }
++
+   async function handleLogout() {
+     await logout();
+     navigate('/login', { replace: true });
+@@ -178,6 +209,9 @@ export default function Admin() {
+         <span className="text-sm text-muted-foreground flex items-center gap-1.5"><Icon name="Shield" size={14} /> Админка</span>
+         <div className="ml-auto flex items-center gap-2">
+           <ThemeToggle />
++          <button onClick={openFiles} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
++            <Icon name="Paperclip" size={15} /> Файлы
++          </button>
+           <button onClick={() => navigate('/')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
+             <Icon name="LayoutGrid" size={15} /> Доска
+           </button>
+@@ -252,6 +286,15 @@ export default function Admin() {
+           stats={stats}
+         />
+       )}
++
++      {filesOpen && (
++        <FilesModal
++          onClose={() => setFilesOpen(false)}
++          loading={filesLoading}
++          files={files}
++          onDelete={deleteFile}
++        />
++      )}
+     </div>
+   );
+ }
+\ No newline at end of file
+diff --git a/src/pages/Index.tsx b/src/pages/Index.tsx
+index 6862afa..0e5df97 100755
+--- a/src/pages/Index.tsx
++++ b/src/pages/Index.tsx
+@@ -201,7 +201,7 @@ export default function Index() {
+   function handleOpenTaskById(taskId: string) {
+     const task = tasks.find((t) => t.id === taskId);
+     if (task) {
+-      setView(task.column === 'restart' ? 'restart' : 'board');
++      setView(task.archived ? 'archive' : task.column === 'restart' ? 'restart' : 'board');
+       setSelectedTask(task);
+     }
+   }
+@@ -223,6 +223,28 @@ export default function Index() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [tasks, searchParams]);
+ 
++  // Открытие конкретной статьи базы знаний по прямой ссылке (например из хранилища файлов в админке: /?article=123)
++  useEffect(() => {
++    const articleId = searchParams.get('article');
++    if (!articleId) return;
++    handleOpenArticle(articleId);
++    const next = new URLSearchParams(searchParams);
++    next.delete('article');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [searchParams]);
++
++  // Открытие конкретной идеи по прямой ссылке (например из хранилища файлов в админке: /?idea=123)
++  useEffect(() => {
++    const ideaId = searchParams.get('idea');
++    if (!ideaId) return;
++    handleOpenIdeaById(ideaId);
++    const next = new URLSearchParams(searchParams);
++    next.delete('idea');
++    setSearchParams(next, { replace: true });
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, [searchParams]);
++
+   // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
+   useEffect(() => {
+     if (!user || searchParams.get('my') !== '1') return;
+diff --git a/src/pages/admin/FilesModal.tsx b/src/pages/admin/FilesModal.tsx
+new file mode 100644
+index 0000000..a41b019
+--- /dev/null
++++ b/src/pages/admin/FilesModal.tsx
+@@ -0,0 +1,143 @@
++import { useState } from 'react';
++import Icon from '@/components/ui/icon';
++import { fileIconFor } from '@/components/AttachmentsField';
++import { fmtFileSize } from './adminShared';
++import type { AdminAttachment, FilesBySection } from './adminShared';
++
++type SectionKey = 'knowledge' | 'ideas' | 'tasksActive' | 'tasksArchived';
++
++const SECTIONS: { key: SectionKey; label: string; icon: string; section: 'knowledge' | 'ideas' | 'tasks'; urlParam: string }[] = [
++  { key: 'knowledge', label: 'База знаний', icon: 'BookOpen', section: 'knowledge', urlParam: 'article' },
++  { key: 'ideas', label: 'Идеи', icon: 'Lightbulb', section: 'ideas', urlParam: 'idea' },
++  { key: 'tasksActive', label: 'Задачи', icon: 'ClipboardList', section: 'tasks', urlParam: 'task' },
++  { key: 'tasksArchived', label: 'Задачи · в архиве', icon: 'Archive', section: 'tasks', urlParam: 'task' },
++];
++
++function fmtDate(d: string | null) {
++  if (!d) return '';
++  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
++}
++
++export default function FilesModal({
++  onClose,
++  loading,
++  files,
++  onDelete,
++}: {
++  onClose: () => void;
++  loading: boolean;
++  files: FilesBySection | null;
++  onDelete: (section: 'knowledge' | 'ideas' | 'tasks', entityId: string, attachmentId: string) => Promise<void>;
++}) {
++  const [confirmId, setConfirmId] = useState<string | null>(null);
++  const [deletingId, setDeletingId] = useState<string | null>(null);
++
++  const totalCount = files
++    ? files.knowledge.length + files.ideas.length + files.tasksActive.length + files.tasksArchived.length
++    : 0;
++  const totalSize = files
++    ? [...files.knowledge, ...files.ideas, ...files.tasksActive, ...files.tasksArchived].reduce((s, a) => s + (a.size || 0), 0)
++    : 0;
++
++  async function handleDelete(section: 'knowledge' | 'ideas' | 'tasks', a: AdminAttachment) {
++    setDeletingId(a.id);
++    try {
++      await onDelete(section, a.entityId, a.id);
++    } finally {
++      setDeletingId(null);
++      setConfirmId(null);
++    }
++  }
++
++  return (
++    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
++      <div
++        className="w-full max-w-2xl rounded-2xl border border-border bg-card p-5 max-h-[85vh] overflow-auto"
++        onClick={(e) => e.stopPropagation()}
++      >
++        <div className="flex items-center justify-between mb-4">
++          <div>
++            <h2 className="text-base font-semibold">Залитые файлы</h2>
++            <p className="text-xs text-muted-foreground">
++              {loading ? 'Загрузка...' : `${totalCount} файлов · ${fmtFileSize(totalSize)}`}
++            </p>
++          </div>
++          <button onClick={onClose} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-secondary">
++            <Icon name="X" size={18} />
++          </button>
++        </div>
++
++        {loading ? (
++          <div className="flex justify-center py-10">
++            <Icon name="Loader2" size={22} className="animate-spin text-primary" />
++          </div>
++        ) : !files || totalCount === 0 ? (
++          <p className="text-sm text-muted-foreground py-8 text-center">Файлов пока нет</p>
++        ) : (
++          <div className="space-y-5">
++            {SECTIONS.map((s) => {
++              const items = files[s.key];
++              if (!items.length) return null;
++              return (
++                <div key={s.key}>
++                  <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-2">
++                    <Icon name={s.icon} size={13} />
++                    {s.label}
++                    <span className="font-mono">({items.length})</span>
++                  </div>
++                  <div className="space-y-1.5">
++                    {items.map((a) => (
++                      <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
++                        <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
++                        <div className="min-w-0 flex-1">
++                          <a href={a.url} target="_blank" rel="noopener noreferrer" className="truncate block hover:underline hover:text-primary">
++                            {a.name}
++                          </a>
++                          <div className="text-[11px] text-muted-foreground truncate">
++                            <a
++                              href={`/?${s.urlParam}=${a.entityId}`}
++                              target="_blank"
++                              rel="noopener noreferrer"
++                              className="hover:underline hover:text-primary"
++                              title="Открыть источник"
++                            >
++                              {a.entityTitle}
++                            </a>
++                            {' · '}{fmtDate(a.updatedAt)}
++                          </div>
++                        </div>
++                        <span className="text-xs text-muted-foreground shrink-0">{fmtFileSize(a.size)}</span>
++                        {confirmId === a.id ? (
++                          <div className="flex items-center gap-1 shrink-0">
++                            <button
++                              onClick={() => handleDelete(s.section, a)}
++                              disabled={deletingId === a.id}
++                              className="h-7 px-2 rounded-md bg-destructive/90 text-white text-xs hover:bg-destructive transition-colors disabled:opacity-50"
++                            >
++                              {deletingId === a.id ? <Icon name="Loader2" size={12} className="animate-spin" /> : 'Да'}
++                            </button>
++                            <button onClick={() => setConfirmId(null)} className="h-7 px-2 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground transition-colors">
++                              Нет
++                            </button>
++                          </div>
++                        ) : (
++                          <button
++                            onClick={() => setConfirmId(a.id)}
++                            title="Удалить файл"
++                            className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
++                          >
++                            <Icon name="Trash2" size={13} />
++                          </button>
++                        )}
++                      </div>
++                    ))}
++                  </div>
++                </div>
++              );
++            })}
++          </div>
++        )}
++      </div>
++    </div>
++  );
++}
+\ No newline at end of file
+diff --git a/src/pages/admin/adminShared.ts b/src/pages/admin/adminShared.ts
+index 41de66d..4485a65 100644
+--- a/src/pages/admin/adminShared.ts
++++ b/src/pages/admin/adminShared.ts
+@@ -81,6 +81,31 @@ export interface UserStats {
+   timeSpentSeconds: number;
+ }
+ 
++export interface AdminAttachment {
++  id: string;
++  name: string;
++  url: string;
++  size: number;
++  contentType: string;
++  entityId: string;
++  entityTitle: string;
++  updatedAt: string | null;
++}
++
++export interface FilesBySection {
++  knowledge: AdminAttachment[];
++  ideas: AdminAttachment[];
++  tasksActive: AdminAttachment[];
++  tasksArchived: AdminAttachment[];
++}
++
++export function fmtFileSize(bytes: number): string {
++  if (!bytes && bytes !== 0) return '';
++  if (bytes < 1024) return `${bytes} Б`;
++  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
++  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
++}
++
+ export function fmtDuration(totalSeconds: number): string {
+   const hours = Math.floor(totalSeconds / 3600);
+   const minutes = Math.floor((totalSeconds % 3600) / 60);
+@@ -102,4 +127,4 @@ export function authFetch(body: object) {
+     headers: { 'Content-Type': 'application/json', 'X-Auth-Token': token },
+     body: JSON.stringify(body),
+   });
+-}
++}
+\ No newline at end of file
+diff --git a/src/pages/index/CreateTaskModal.tsx b/src/pages/index/CreateTaskModal.tsx
+index 76a7164..48212e0 100644
+--- a/src/pages/index/CreateTaskModal.tsx
++++ b/src/pages/index/CreateTaskModal.tsx
+@@ -1,9 +1,10 @@
+ import { useState } from 'react';
+ import Icon from '@/components/ui/icon';
+ import RichEditor from '@/components/RichEditor';
++import AttachmentsField from '@/components/AttachmentsField';
+ import type { KbArticleBrief } from '@/components/KnowledgeBase';
+-import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus } from './shared';
+-import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls } from './shared';
++import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
++import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders } from './shared';
+ import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
+ 
+ export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
+@@ -32,10 +33,28 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
+   });
+   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
+   const [newLink, setNewLink] = useState({ url: '', label: '' });
++  const [attachments, setAttachments] = useState<Attachment[]>([]);
+   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
+   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
+   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+ 
++  async function uploadImage(file: File): Promise<string> {
++    const dataUrl: string = await new Promise((resolve) => {
++      const reader = new FileReader();
++      reader.onload = () => resolve(reader.result as string);
++      reader.readAsDataURL(file);
++    });
++    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
++    const res = await fetch(TASKS_URL, {
++      method: 'POST',
++      headers: authHeaders(),
++      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
++    });
++    if (!res.ok) return '';
++    const d = await res.json();
++    return d.url || '';
++  }
++
+   function addLink() {
+     if (!newLink.url.trim()) return;
+     setLinks((p) => [...p, { url: newLink.url, label: newLink.label || newLink.url }]);
+@@ -48,6 +67,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
+       ...form,
+       id: 't' + Date.now(),
+       links,
++      attachments,
+     } as Task);
+   }
+ 
+@@ -136,7 +156,12 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
+ 
+         <div>
+           <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
+-          <RichEditor content={form.description} onChange={(html) => set('description', html)} />
++          <RichEditor content={form.description} onChange={(html) => set('description', html)} onImageUpload={uploadImage} />
++        </div>
++
++        <div>
++          <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
++          <AttachmentsField attachments={attachments} onChange={setAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} />
+         </div>
+ 
+         <div>
+diff --git a/src/pages/index/Ideas.tsx b/src/pages/index/Ideas.tsx
+index 4b07394..ac4dbc1 100644
+--- a/src/pages/index/Ideas.tsx
++++ b/src/pages/index/Ideas.tsx
+@@ -1,77 +1,11 @@
+ import { useState, useEffect, useCallback } from 'react';
+-import Icon from '@/components/ui/icon';
++import type { Attachment } from '@/components/AttachmentsField';
+ import { useAuth } from '@/lib/auth';
+ import { IDEAS_URL, authHeaders } from './shared';
+-import MentionInput, { extractMentions } from './MentionInput';
+-
+-type IdeaStatus = 'open' | 'wont_do' | 'sent';
+-
+-interface Author {
+-  id: number;
+-  name: string;
+-  photo_url: string | null;
+-}
+-
+-interface TopicListItem {
+-  id: string;
+-  title: string;
+-  body: string;
+-  status: IdeaStatus;
+-  authorId: number | null;
+-  createdAt: string | null;
+-  updatedAt: string | null;
+-  commentsCount: number;
+-}
+-
+-interface IdeaComment {
+-  id: string;
+-  topicId: string;
+-  authorId: number | null;
+-  text: string;
+-  createdAt: string | null;
+-  parentId: string | null;
+-  mentions: number[];
+-}
+-
+-const statusMeta: Record<IdeaStatus, { label: string; color: string; icon: string }> = {
+-  open:    { label: 'Открыто',                color: '210 80% 62%', icon: 'MessageCircle' },
+-  wont_do: { label: 'Решено не делать',       color: '0 65% 60%',   icon: 'XCircle' },
+-  sent:    { label: 'Отправлено на реализацию', color: '152 55% 50%', icon: 'Rocket' },
+-};
+-
+-const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
+-
+-function fmtDate(d: string | null) {
+-  if (!d) return '';
+-  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+-}
+-
+-function initialsFor(name: string) {
+-  const parts = name.trim().split(' ');
+-  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+-  return (name.slice(0, 2) || '?').toUpperCase();
+-}
+-
+-// Подсветка @упоминаний в тексте комментария
+-function renderText(text: string, names: string[]) {
+-  if (names.length === 0) return text;
+-  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
+-  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
+-  const parts: (string | { m: string })[] = [];
+-  let last = 0;
+-  let match: RegExpExecArray | null;
+-  while ((match = re.exec(text)) !== null) {
+-    if (match.index > last) parts.push(text.slice(last, match.index));
+-    parts.push({ m: match[0] });
+-    last = match.index + match[0].length;
+-  }
+-  if (last < text.length) parts.push(text.slice(last));
+-  return parts.map((p, i) =>
+-    typeof p === 'string'
+-      ? <span key={i}>{p}</span>
+-      : <span key={i} className="text-primary font-medium">{p.m}</span>
+-  );
+-}
++import { extractMentions } from './MentionInput';
++import IdeasList, { CreateTopic } from './ideas/IdeasList';
++import IdeaDetail from './ideas/IdeaDetail';
++import type { Author, TopicListItem, IdeaComment, IdeaStatus } from './ideas/shared';
+ 
+ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+   authors: Author[];
+@@ -86,8 +20,12 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+   const [creating, setCreating] = useState(false);
+   const [newTitle, setNewTitle] = useState('');
+   const [newBody, setNewBody] = useState('');
++  const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
+   const [newComment, setNewComment] = useState('');
+   const [replyTo, setReplyTo] = useState<IdeaComment | null>(null);
++  const [editingTopic, setEditingTopic] = useState(false);
++  const [editBody, setEditBody] = useState('');
++  const [editAttachments, setEditAttachments] = useState<Attachment[]>([]);
+ 
+   const mentionMembers = authors.map((a) => ({ id: a.id, name: a.name }));
+   const authorName = (id: number | null) => (id != null ? authors.find((a) => a.id === id)?.name ?? 'Участник' : 'Участник');
+@@ -137,18 +75,55 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [initialTopicId]);
+ 
++  async function uploadImage(file: File): Promise<string> {
++    const dataUrl: string = await new Promise((resolve) => {
++      const reader = new FileReader();
++      reader.onload = () => resolve(reader.result as string);
++      reader.readAsDataURL(file);
++    });
++    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
++    const res = await fetch(IDEAS_URL, {
++      method: 'POST',
++      headers: authHeaders(),
++      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
++    });
++    if (!res.ok) return '';
++    const d = await res.json();
++    return d.url || '';
++  }
++
+   async function createTopic() {
+     if (!newTitle.trim()) return;
+     try {
+       const res = await fetch(IDEAS_URL, {
+         method: 'POST',
+         headers: authHeaders(),
+-        body: JSON.stringify({ action: 'create', title: newTitle.trim(), body: newBody }),
++        body: JSON.stringify({ action: 'create', title: newTitle.trim(), body: newBody, attachments: newAttachments }),
+       });
+       if (res.ok) {
+         setCreating(false);
+         setNewTitle('');
+         setNewBody('');
++        setNewAttachments([]);
++        loadList();
++      }
++    } catch {
++      /* ignore */
++    }
++  }
++
++  async function saveTopicEdit() {
++    if (!current) return;
++    try {
++      const res = await fetch(IDEAS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'update', id: current.id, title: current.title, body: editBody, attachments: editAttachments }),
++      });
++      if (res.ok) {
++        const data = await res.json();
++        setCurrent(data.topic);
++        setEditingTopic(false);
+         loadList();
+       }
+     } catch {
+@@ -222,253 +197,66 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+     loadList();
+   }
+ 
+-  const topLevel = comments.filter((c) => !c.parentId);
+-  const mentionNames = mentionMembers.map((m) => m.name);
+-
+-  function renderComment(c: IdeaComment, isReply = false) {
+-    const photo = authorPhoto(c.authorId);
+-    const name = authorName(c.authorId);
+-    const canDelete = !!user && (c.authorId === user.id || isAdmin);
+-    return (
+-      <div className="flex gap-2.5 group">
+-        {photo ? (
+-          <img src={photo} alt="" className={`rounded-md object-cover shrink-0 mt-0.5 ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`} />
+-        ) : (
+-          <div className={`rounded-md bg-secondary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 text-muted-foreground ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`}>
+-            {initialsFor(name)}
+-          </div>
+-        )}
+-        <div className="flex-1 min-w-0">
+-          <div className="flex items-center gap-2 mb-0.5">
+-            <span className="text-xs font-medium">{name}</span>
+-            <span className="text-xs text-muted-foreground">{fmtDate(c.createdAt)}</span>
+-            {!isReply && (
+-              <button
+-                onClick={() => { setReplyTo(c); }}
+-                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+-              >
+-                <Icon name="CornerDownRight" size={11} /> Ответить
+-              </button>
+-            )}
+-            {canDelete && (
+-              <button
+-                onClick={() => deleteComment(c.id)}
+-                className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
+-                title="Удалить комментарий"
+-              >
+-                <Icon name="Trash2" size={12} />
+-              </button>
+-            )}
+-          </div>
+-          <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderText(c.text, mentionNames)}</div>
+-        </div>
+-      </div>
+-    );
+-  }
+-
+   // Создание топика
+   if (creating) {
+     return (
+-      <div className="max-w-2xl animate-fade-in">
+-        <div className="flex items-center gap-3 mb-5">
+-          <button onClick={() => setCreating(false)} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-            <Icon name="ArrowLeft" size={14} />
+-            Отмена
+-          </button>
+-          <h2 className="font-display tracking-wide text-lg">Новая идея</h2>
+-          <button
+-            onClick={createTopic}
+-            disabled={!newTitle.trim()}
+-            className="ml-auto h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+-          >
+-            Опубликовать
+-          </button>
+-        </div>
+-        <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
+-          <input
+-            autoFocus
+-            value={newTitle}
+-            onChange={(e) => setNewTitle(e.target.value)}
+-            placeholder="О чём идея? Кратко..."
+-            className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
+-          />
+-          <textarea
+-            value={newBody}
+-            onChange={(e) => setNewBody(e.target.value)}
+-            placeholder="Опишите мысль подробнее: что предлагаете, зачем, какие плюсы и риски..."
+-            rows={6}
+-            className={inputCls + ' resize-none'}
+-          />
+-        </div>
+-      </div>
++      <CreateTopic
++        newTitle={newTitle}
++        setNewTitle={setNewTitle}
++        newBody={newBody}
++        setNewBody={setNewBody}
++        newAttachments={newAttachments}
++        setNewAttachments={setNewAttachments}
++        uploadImage={uploadImage}
++        onCancel={() => setCreating(false)}
++        onCreate={createTopic}
++      />
+     );
+   }
+ 
+   // Просмотр топика
+   if (current) {
+-    const sm = statusMeta[current.status];
+     return (
+-      <div className="max-w-2xl animate-fade-in">
+-        <div className="flex items-center gap-3 mb-5">
+-          <button onClick={() => setCurrent(null)} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-            <Icon name="ArrowLeft" size={14} />
+-            К списку
+-          </button>
+-          {canManage(current) && (
+-            <div className="ml-auto flex items-center gap-2">
+-              {current.status !== 'open' && (
+-                <button onClick={() => setStatus('open')} className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
+-                  <Icon name="RotateCcw" size={13} />
+-                  Переоткрыть
+-                </button>
+-              )}
+-              {current.status === 'open' && (
+-                <>
+-                  <button onClick={() => setStatus('sent')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}>
+-                    <Icon name="Rocket" size={13} />
+-                    На реализацию
+-                  </button>
+-                  <button onClick={() => setStatus('wont_do')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(0 65% 55% / 0.5)', color: 'hsl(0 65% 62%)', background: 'hsl(0 65% 55% / 0.1)' }}>
+-                    <Icon name="XCircle" size={13} />
+-                    Не делать
+-                  </button>
+-                </>
+-              )}
+-              <button onClick={deleteTopic} title="Удалить" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
+-                <Icon name="Trash2" size={14} />
+-              </button>
+-            </div>
+-          )}
+-        </div>
+-
+-        <div className="rounded-2xl border border-border bg-card p-6 mb-5">
+-          <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
+-            <Icon name={sm.icon} size={12} />
+-            {sm.label}
+-          </span>
+-          <h1 className="text-xl font-bold mt-3 mb-2 leading-tight">{current.title}</h1>
+-          <div className="text-xs text-muted-foreground mb-4 flex items-center gap-3 flex-wrap">
+-            <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(current.authorId)}</span>
+-            <span className="flex items-center gap-1"><Icon name="Clock" size={12} />{fmtDate(current.createdAt)}</span>
+-          </div>
+-          {current.body && <p className="text-sm leading-relaxed whitespace-pre-wrap">{current.body}</p>}
+-        </div>
+-
+-        <div className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
+-          <Icon name="MessageSquare" size={15} />
+-          Обсуждение {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
+-        </div>
+-
+-        <div className="space-y-3 mb-4">
+-          {topLevel.map((c) => {
+-            const replies = comments.filter((r) => r.parentId === c.id);
+-            return (
+-              <div key={c.id}>
+-                {renderComment(c)}
+-                {replies.length > 0 && (
+-                  <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
+-                    {replies.map((r) => (
+-                      <div key={r.id}>{renderComment(r, true)}</div>
+-                    ))}
+-                  </div>
+-                )}
+-              </div>
+-            );
+-          })}
+-          {comments.length === 0 && <div className="text-sm text-muted-foreground">Комментариев пока нет — начните обсуждение.</div>}
+-        </div>
+-
+-        <div>
+-          {replyTo && (
+-            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
+-              <Icon name="CornerDownRight" size={13} className="text-primary" />
+-              Ответ для <span className="font-medium text-foreground">{authorName(replyTo.authorId)}</span>
+-              <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
+-                <Icon name="X" size={13} />
+-              </button>
+-            </div>
+-          )}
+-          <div className="flex gap-2">
+-            <MentionInput
+-              value={newComment}
+-              onChange={setNewComment}
+-              members={mentionMembers}
+-              onSubmit={addComment}
+-              placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
+-              className={inputCls + ' resize-none w-full'}
+-            />
+-            <button
+-              onClick={addComment}
+-              disabled={!newComment.trim()}
+-              className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
+-            >
+-              <Icon name="Send" size={15} />
+-            </button>
+-          </div>
+-        </div>
+-      </div>
++      <IdeaDetail
++        current={current}
++        comments={comments}
++        authorName={authorName}
++        authorPhoto={authorPhoto}
++        mentionMembers={mentionMembers}
++        currentUserId={user?.id}
++        isAdmin={isAdmin}
++        canManage={canManage(current)}
++        onBack={() => setCurrent(null)}
++        onSetStatus={setStatus}
++        onDeleteTopic={deleteTopic}
++        editingTopic={editingTopic}
++        setEditingTopic={setEditingTopic}
++        editBody={editBody}
++        setEditBody={setEditBody}
++        editAttachments={editAttachments}
++        setEditAttachments={setEditAttachments}
++        uploadImage={uploadImage}
++        onSaveTopicEdit={saveTopicEdit}
++        onReply={setReplyTo}
++        onDeleteComment={deleteComment}
++        replyTo={replyTo}
++        setReplyTo={setReplyTo}
++        newComment={newComment}
++        setNewComment={setNewComment}
++        onAddComment={addComment}
++      />
+     );
+   }
+ 
+   // Список топиков
+   return (
+-    <div className="max-w-3xl animate-fade-in">
+-      <div className="flex items-center gap-3 mb-1">
+-        <Icon name="Lightbulb" size={20} className="text-primary" />
+-        <h2 className="font-display tracking-wide text-lg">Идеи</h2>
+-        <span className="text-sm text-muted-foreground">· {list.length} тем</span>
+-      </div>
+-      <p className="text-sm text-muted-foreground mb-5">Предложения и размышления о том, что стоило бы сделать. Обсуждайте в комментариях, закрывайте решённые темы.</p>
+-
+-      {can('idea_create') && (
+-        <div className="flex justify-end mb-4">
+-          <button
+-            onClick={() => setCreating(true)}
+-            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+-          >
+-            <Icon name="Plus" size={15} />
+-            Новая идея
+-          </button>
+-        </div>
+-      )}
+-
+-      {loading ? (
+-        <div className="flex justify-center py-16">
+-          <Icon name="Loader2" size={26} className="animate-spin text-primary" />
+-        </div>
+-      ) : list.length === 0 ? (
+-        <div className="text-center py-16 text-muted-foreground">
+-          <Icon name="Lightbulb" size={40} className="mx-auto mb-3 opacity-40" />
+-          <p className="text-sm">Пока нет ни одной идеи — предложите первую</p>
+-        </div>
+-      ) : (
+-        <div className="space-y-2.5">
+-          {list.map((t) => {
+-            const sm = statusMeta[t.status];
+-            return (
+-              <button
+-                key={t.id}
+-                onClick={() => openTopic(t.id)}
+-                className="w-full text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/50 transition-all group flex items-center gap-3"
+-              >
+-                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
+-                  <Icon name={sm.icon} size={12} />
+-                  <span className="hidden sm:inline">{sm.label}</span>
+-                </span>
+-                <div className="flex-1 min-w-0">
+-                  <div className="text-sm font-medium truncate">{t.title}</div>
+-                  <div className="text-xs text-muted-foreground truncate">{authorName(t.authorId)} · {fmtDate(t.updatedAt)}</div>
+-                </div>
+-                <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
+-                  <Icon name="MessageSquare" size={12} />
+-                  {t.commentsCount}
+-                </span>
+-                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+-              </button>
+-            );
+-          })}
+-        </div>
+-      )}
+-    </div>
++    <IdeasList
++      list={list}
++      loading={loading}
++      can={can}
++      onCreateClick={() => setCreating(true)}
++      onOpenTopic={openTopic}
++      authorName={authorName}
++    />
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/src/pages/index/TaskModal.tsx b/src/pages/index/TaskModal.tsx
+index 3b8382e..5c1f340 100644
+--- a/src/pages/index/TaskModal.tsx
++++ b/src/pages/index/TaskModal.tsx
+@@ -1,9 +1,10 @@
+ import { useState } from 'react';
+ import Icon from '@/components/ui/icon';
+ import RichEditor from '@/components/RichEditor';
++import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
+ import type { KbArticleBrief } from '@/components/KnowledgeBase';
+-import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
+-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
++import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
++import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, TASKS_URL, authHeaders } from './shared';
+ import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
+ import TaskComments from './TaskComments';
+ import type { PermissionKey } from '@/lib/auth';
+@@ -26,6 +27,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
+   const [form, setForm] = useState<Task>({ ...task });
+   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
+   const [newLink, setNewLink] = useState({ url: '', label: '' });
++  const [attachments, setAttachments] = useState<Attachment[]>(task.attachments ?? []);
+   const [archiveMenu, setArchiveMenu] = useState(false);
+   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
+   const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
+@@ -47,6 +49,23 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
+     setLinks((prev) => prev.filter((_, idx) => idx !== i));
+   }
+ 
++  async function uploadImage(file: File): Promise<string> {
++    const dataUrl: string = await new Promise((resolve) => {
++      const reader = new FileReader();
++      reader.onload = () => resolve(reader.result as string);
++      reader.readAsDataURL(file);
++    });
++    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
++    const res = await fetch(TASKS_URL, {
++      method: 'POST',
++      headers: authHeaders(),
++      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
++    });
++    if (!res.ok) return '';
++    const d = await res.json();
++    return d.url || '';
++  }
++
+   function handleSave() {
+     if (!canFullEdit) {
+       if (canEditDeploy) {
+@@ -58,7 +77,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
+       onSave({ ...task, column: form.column });
+       return;
+     }
+-    onSave({ ...form, links });
++    onSave({ ...form, links, attachments });
+   }
+ 
+   return (
+@@ -254,6 +273,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
+             <RichEditor
+               content={form.description ?? ''}
+               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
++              onImageUpload={uploadImage}
+             />
+           ) : (
+             <div
+@@ -263,6 +283,18 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
+           )}
+         </div>
+ 
++        {(canFullEdit || attachments.length > 0) && (
++          /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе */
++          <div>
++            <label className="block text-xs text-muted-foreground mb-2">Вложения</label>
++            {canFullEdit ? (
++              <AttachmentsField attachments={attachments} onChange={setAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} />
++            ) : (
++              <AttachmentsList attachments={attachments} />
++            )}
++          </div>
++        )}
++
+         {canEditDeploy && (
+           /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу */
+           <div>
+diff --git a/src/pages/index/ideas/IdeaComments.tsx b/src/pages/index/ideas/IdeaComments.tsx
+new file mode 100644
+index 0000000..d58ed06
+--- /dev/null
++++ b/src/pages/index/ideas/IdeaComments.tsx
+@@ -0,0 +1,175 @@
++import Icon from '@/components/ui/icon';
++import MentionInput from '../MentionInput';
++import { inputCls, initialsFor, renderText, fmtDate } from './shared';
++import type { IdeaComment } from './shared';
++
++export function CommentItem({
++  comment,
++  isReply = false,
++  authorName,
++  authorPhoto,
++  mentionNames,
++  canDelete,
++  onReply,
++  onDelete,
++}: {
++  comment: IdeaComment;
++  isReply?: boolean;
++  authorName: (id: number | null) => string;
++  authorPhoto: (id: number | null) => string | null;
++  mentionNames: string[];
++  canDelete: boolean;
++  onReply: (c: IdeaComment) => void;
++  onDelete: (id: string) => void;
++}) {
++  const photo = authorPhoto(comment.authorId);
++  const name = authorName(comment.authorId);
++  return (
++    <div className="flex gap-2.5 group">
++      {photo ? (
++        <img src={photo} alt="" className={`rounded-md object-cover shrink-0 mt-0.5 ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`} />
++      ) : (
++        <div className={`rounded-md bg-secondary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5 text-muted-foreground ${isReply ? 'h-7 w-7' : 'h-8 w-8'}`}>
++          {initialsFor(name)}
++        </div>
++      )}
++      <div className="flex-1 min-w-0">
++        <div className="flex items-center gap-2 mb-0.5">
++          <span className="text-xs font-medium">{name}</span>
++          <span className="text-xs text-muted-foreground">{fmtDate(comment.createdAt)}</span>
++          {!isReply && (
++            <button
++              onClick={() => onReply(comment)}
++              className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
++            >
++              <Icon name="CornerDownRight" size={11} /> Ответить
++            </button>
++          )}
++          {canDelete && (
++            <button
++              onClick={() => onDelete(comment.id)}
++              className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
++              title="Удалить комментарий"
++            >
++              <Icon name="Trash2" size={12} />
++            </button>
++          )}
++        </div>
++        <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderText(comment.text, mentionNames)}</div>
++      </div>
++    </div>
++  );
++}
++
++export default function IdeaComments({
++  comments,
++  authorName,
++  authorPhoto,
++  mentionMembers,
++  currentUserId,
++  isAdmin,
++  onReply,
++  onDelete,
++  replyTo,
++  setReplyTo,
++  newComment,
++  setNewComment,
++  onSubmit,
++}: {
++  comments: IdeaComment[];
++  authorName: (id: number | null) => string;
++  authorPhoto: (id: number | null) => string | null;
++  mentionMembers: { id: number; name: string }[];
++  currentUserId: number | undefined | null;
++  isAdmin: boolean;
++  onReply: (c: IdeaComment) => void;
++  onDelete: (id: string) => void;
++  replyTo: IdeaComment | null;
++  setReplyTo: (c: IdeaComment | null) => void;
++  newComment: string;
++  setNewComment: (v: string) => void;
++  onSubmit: () => void;
++}) {
++  const topLevel = comments.filter((c) => !c.parentId);
++  const mentionNames = mentionMembers.map((m) => m.name);
++
++  return (
++    <>
++      <div className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">
++        <Icon name="MessageSquare" size={15} />
++        Обсуждение {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
++      </div>
++
++      <div className="space-y-3 mb-4">
++        {topLevel.map((c) => {
++          const replies = comments.filter((r) => r.parentId === c.id);
++          const canDelete = !!currentUserId && (c.authorId === currentUserId || isAdmin);
++          return (
++            <div key={c.id}>
++              <CommentItem
++                comment={c}
++                authorName={authorName}
++                authorPhoto={authorPhoto}
++                mentionNames={mentionNames}
++                canDelete={canDelete}
++                onReply={onReply}
++                onDelete={onDelete}
++              />
++              {replies.length > 0 && (
++                <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
++                  {replies.map((r) => {
++                    const replyCanDelete = !!currentUserId && (r.authorId === currentUserId || isAdmin);
++                    return (
++                      <div key={r.id}>
++                        <CommentItem
++                          comment={r}
++                          isReply
++                          authorName={authorName}
++                          authorPhoto={authorPhoto}
++                          mentionNames={mentionNames}
++                          canDelete={replyCanDelete}
++                          onReply={onReply}
++                          onDelete={onDelete}
++                        />
++                      </div>
++                    );
++                  })}
++                </div>
++              )}
++            </div>
++          );
++        })}
++        {comments.length === 0 && <div className="text-sm text-muted-foreground">Комментариев пока нет — начните обсуждение.</div>}
++      </div>
++
++      <div>
++        {replyTo && (
++          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
++            <Icon name="CornerDownRight" size={13} className="text-primary" />
++            Ответ для <span className="font-medium text-foreground">{authorName(replyTo.authorId)}</span>
++            <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
++              <Icon name="X" size={13} />
++            </button>
++          </div>
++        )}
++        <div className="flex gap-2">
++          <MentionInput
++            value={newComment}
++            onChange={setNewComment}
++            members={mentionMembers}
++            onSubmit={onSubmit}
++            placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
++            className={inputCls + ' resize-none w-full'}
++          />
++          <button
++            onClick={onSubmit}
++            disabled={!newComment.trim()}
++            className="h-9 self-end px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
++          >
++            <Icon name="Send" size={15} />
++          </button>
++        </div>
++      </div>
++    </>
++  );
++}
+diff --git a/src/pages/index/ideas/IdeaDetail.tsx b/src/pages/index/ideas/IdeaDetail.tsx
+new file mode 100644
+index 0000000..3bb3df2
+--- /dev/null
++++ b/src/pages/index/ideas/IdeaDetail.tsx
+@@ -0,0 +1,168 @@
++import Icon from '@/components/ui/icon';
++import RichEditor from '@/components/RichEditor';
++import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
++import { IDEAS_URL, authHeaders } from '../shared';
++import { statusMeta, fmtDate } from './shared';
++import type { TopicListItem, IdeaComment } from './shared';
++import IdeaComments from './IdeaComments';
++
++export default function IdeaDetail({
++  current,
++  comments,
++  authorName,
++  authorPhoto,
++  mentionMembers,
++  currentUserId,
++  isAdmin,
++  canManage,
++  onBack,
++  onSetStatus,
++  onDeleteTopic,
++  editingTopic,
++  setEditingTopic,
++  editBody,
++  setEditBody,
++  editAttachments,
++  setEditAttachments,
++  uploadImage,
++  onSaveTopicEdit,
++  onReply,
++  onDeleteComment,
++  replyTo,
++  setReplyTo,
++  newComment,
++  setNewComment,
++  onAddComment,
++}: {
++  current: TopicListItem;
++  comments: IdeaComment[];
++  authorName: (id: number | null) => string;
++  authorPhoto: (id: number | null) => string | null;
++  mentionMembers: { id: number; name: string }[];
++  currentUserId: number | undefined | null;
++  isAdmin: boolean;
++  canManage: boolean;
++  onBack: () => void;
++  onSetStatus: (status: 'open' | 'wont_do' | 'sent') => void;
++  onDeleteTopic: () => void;
++  editingTopic: boolean;
++  setEditingTopic: (v: boolean) => void;
++  editBody: string;
++  setEditBody: (v: string) => void;
++  editAttachments: Attachment[];
++  setEditAttachments: (a: Attachment[]) => void;
++  uploadImage: (file: File) => Promise<string>;
++  onSaveTopicEdit: () => void;
++  onReply: (c: IdeaComment) => void;
++  onDeleteComment: (id: string) => void;
++  replyTo: IdeaComment | null;
++  setReplyTo: (c: IdeaComment | null) => void;
++  newComment: string;
++  setNewComment: (v: string) => void;
++  onAddComment: () => void;
++}) {
++  const sm = statusMeta[current.status];
++  return (
++    <div className="max-w-2xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-5">
++        <button onClick={onBack} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++          <Icon name="ArrowLeft" size={14} />
++          К списку
++        </button>
++        {canManage && (
++          <div className="ml-auto flex items-center gap-2">
++            {!editingTopic && (
++              <button
++                onClick={() => { setEditBody(current.body); setEditAttachments(current.attachments ?? []); setEditingTopic(true); }}
++                className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
++              >
++                <Icon name="Pencil" size={13} />
++                Редактировать
++              </button>
++            )}
++            {current.status !== 'open' && (
++              <button onClick={() => onSetStatus('open')} className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++                <Icon name="RotateCcw" size={13} />
++                Переоткрыть
++              </button>
++            )}
++            {current.status === 'open' && (
++              <>
++                <button onClick={() => onSetStatus('sent')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(152 55% 45% / 0.5)', color: 'hsl(152 55% 55%)', background: 'hsl(152 55% 45% / 0.1)' }}>
++                  <Icon name="Rocket" size={13} />
++                  На реализацию
++                </button>
++                <button onClick={() => onSetStatus('wont_do')} className="h-8 px-3 rounded-lg border text-xs transition-colors flex items-center gap-1.5" style={{ borderColor: 'hsl(0 65% 55% / 0.5)', color: 'hsl(0 65% 62%)', background: 'hsl(0 65% 55% / 0.1)' }}>
++                  <Icon name="XCircle" size={13} />
++                  Не делать
++                </button>
++              </>
++            )}
++            <button onClick={onDeleteTopic} title="Удалить" className="h-8 w-8 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex items-center justify-center">
++              <Icon name="Trash2" size={14} />
++            </button>
++          </div>
++        )}
++      </div>
++
++      <div className="rounded-2xl border border-border bg-card p-6 mb-5">
++        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
++          <Icon name={sm.icon} size={12} />
++          {sm.label}
++        </span>
++        <h1 className="text-xl font-bold mt-3 mb-2 leading-tight">{current.title}</h1>
++        <div className="text-xs text-muted-foreground mb-4 flex items-center gap-3 flex-wrap">
++          <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(current.authorId)}</span>
++          <span className="flex items-center gap-1"><Icon name="Clock" size={12} />{fmtDate(current.createdAt)}</span>
++        </div>
++
++        {editingTopic ? (
++          <div className="space-y-3">
++            <RichEditor content={editBody} onChange={setEditBody} onImageUpload={uploadImage} />
++            <div>
++              <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
++              <AttachmentsField attachments={editAttachments} onChange={setEditAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
++            </div>
++            <div className="flex items-center gap-2">
++              <button onClick={onSaveTopicEdit} className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
++                Сохранить
++              </button>
++              <button onClick={() => setEditingTopic(false)} className="h-8 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
++                Отмена
++              </button>
++            </div>
++          </div>
++        ) : (
++          <>
++            {current.body && <div className="kb-content prose-invert text-sm" dangerouslySetInnerHTML={{ __html: current.body }} />}
++            {!!current.attachments?.length && (
++              <div className="mt-4 pt-4 border-t border-border">
++                <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
++                  <Icon name="Paperclip" size={12} />
++                  Вложения ({current.attachments.length})
++                </div>
++                <AttachmentsList attachments={current.attachments} />
++              </div>
++            )}
++          </>
++        )}
++      </div>
++
++      <IdeaComments
++        comments={comments}
++        authorName={authorName}
++        authorPhoto={authorPhoto}
++        mentionMembers={mentionMembers}
++        currentUserId={currentUserId}
++        isAdmin={isAdmin}
++        onReply={onReply}
++        onDelete={onDeleteComment}
++        replyTo={replyTo}
++        setReplyTo={setReplyTo}
++        newComment={newComment}
++        setNewComment={setNewComment}
++        onSubmit={onAddComment}
++      />
++    </div>
++  );
++}
+diff --git a/src/pages/index/ideas/IdeasList.tsx b/src/pages/index/ideas/IdeasList.tsx
+new file mode 100644
+index 0000000..d11eb7b
+--- /dev/null
++++ b/src/pages/index/ideas/IdeasList.tsx
+@@ -0,0 +1,143 @@
++import Icon from '@/components/ui/icon';
++import RichEditor from '@/components/RichEditor';
++import AttachmentsField, { type Attachment } from '@/components/AttachmentsField';
++import { IDEAS_URL, authHeaders } from '../shared';
++import { statusMeta, fmtDate } from './shared';
++import type { TopicListItem } from './shared';
++
++export function CreateTopic({
++  newTitle,
++  setNewTitle,
++  newBody,
++  setNewBody,
++  newAttachments,
++  setNewAttachments,
++  uploadImage,
++  onCancel,
++  onCreate,
++}: {
++  newTitle: string;
++  setNewTitle: (v: string) => void;
++  newBody: string;
++  setNewBody: (v: string) => void;
++  newAttachments: Attachment[];
++  setNewAttachments: (a: Attachment[]) => void;
++  uploadImage: (file: File) => Promise<string>;
++  onCancel: () => void;
++  onCreate: () => void;
++}) {
++  return (
++    <div className="max-w-2xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-5">
++        <button onClick={onCancel} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
++          <Icon name="ArrowLeft" size={14} />
++          Отмена
++        </button>
++        <h2 className="font-display tracking-wide text-lg">Новая идея</h2>
++        <button
++          onClick={onCreate}
++          disabled={!newTitle.trim()}
++          className="ml-auto h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
++        >
++          Опубликовать
++        </button>
++      </div>
++      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
++        <input
++          autoFocus
++          value={newTitle}
++          onChange={(e) => setNewTitle(e.target.value)}
++          placeholder="О чём идея? Кратко..."
++          className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
++        />
++        <RichEditor
++          content={newBody}
++          onChange={setNewBody}
++          onImageUpload={uploadImage}
++          placeholder="Опишите мысль подробнее: что предлагаете, зачем, какие плюсы и риски..."
++        />
++        <div>
++          <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
++          <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
++        </div>
++      </div>
++    </div>
++  );
++}
++
++export default function IdeasList({
++  list,
++  loading,
++  can,
++  onCreateClick,
++  onOpenTopic,
++  authorName,
++}: {
++  list: TopicListItem[];
++  loading: boolean;
++  can: (key: 'idea_create') => boolean;
++  onCreateClick: () => void;
++  onOpenTopic: (id: string) => void;
++  authorName: (id: number | null) => string;
++}) {
++  return (
++    <div className="max-w-3xl animate-fade-in">
++      <div className="flex items-center gap-3 mb-1">
++        <Icon name="Lightbulb" size={20} className="text-primary" />
++        <h2 className="font-display tracking-wide text-lg">Идеи</h2>
++        <span className="text-sm text-muted-foreground">· {list.length} тем</span>
++      </div>
++      <p className="text-sm text-muted-foreground mb-5">Предложения и размышления о том, что стоило бы сделать. Обсуждайте в комментариях, закрывайте решённые темы.</p>
++
++      {can('idea_create') && (
++        <div className="flex justify-end mb-4">
++          <button
++            onClick={onCreateClick}
++            className="flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
++          >
++            <Icon name="Plus" size={15} />
++            Новая идея
++          </button>
++        </div>
++      )}
++
++      {loading ? (
++        <div className="flex justify-center py-16">
++          <Icon name="Loader2" size={26} className="animate-spin text-primary" />
++        </div>
++      ) : list.length === 0 ? (
++        <div className="text-center py-16 text-muted-foreground">
++          <Icon name="Lightbulb" size={40} className="mx-auto mb-3 opacity-40" />
++          <p className="text-sm">Пока нет ни одной идеи — предложите первую</p>
++        </div>
++      ) : (
++        <div className="space-y-2.5">
++          {list.map((t) => {
++            const sm = statusMeta[t.status];
++            return (
++              <button
++                key={t.id}
++                onClick={() => onOpenTopic(t.id)}
++                className="w-full text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/50 transition-all group flex items-center gap-3"
++              >
++                <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
++                  <Icon name={sm.icon} size={12} />
++                  <span className="hidden sm:inline">{sm.label}</span>
++                </span>
++                <div className="flex-1 min-w-0">
++                  <div className="text-sm font-medium truncate">{t.title}</div>
++                  <div className="text-xs text-muted-foreground truncate">{authorName(t.authorId)} · {fmtDate(t.updatedAt)}</div>
++                </div>
++                <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">
++                  <Icon name="MessageSquare" size={12} />
++                  {t.commentsCount}
++                </span>
++                <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
++              </button>
++            );
++          })}
++        </div>
++      )}
++    </div>
++  );
++}
+diff --git a/src/pages/index/ideas/shared.tsx b/src/pages/index/ideas/shared.tsx
+new file mode 100644
+index 0000000..90ea8df
+--- /dev/null
++++ b/src/pages/index/ideas/shared.tsx
+@@ -0,0 +1,71 @@
++import type { Attachment } from '@/components/AttachmentsField';
++
++export type IdeaStatus = 'open' | 'wont_do' | 'sent';
++
++export interface Author {
++  id: number;
++  name: string;
++  photo_url: string | null;
++}
++
++export interface TopicListItem {
++  id: string;
++  title: string;
++  body: string;
++  status: IdeaStatus;
++  authorId: number | null;
++  createdAt: string | null;
++  updatedAt: string | null;
++  commentsCount: number;
++  attachments?: Attachment[];
++}
++
++export interface IdeaComment {
++  id: string;
++  topicId: string;
++  authorId: number | null;
++  text: string;
++  createdAt: string | null;
++  parentId: string | null;
++  mentions: number[];
++}
++
++export const statusMeta: Record<IdeaStatus, { label: string; color: string; icon: string }> = {
++  open:    { label: 'Открыто',                color: '210 80% 62%', icon: 'MessageCircle' },
++  wont_do: { label: 'Решено не делать',       color: '0 65% 60%',   icon: 'XCircle' },
++  sent:    { label: 'Отправлено на реализацию', color: '152 55% 50%', icon: 'Rocket' },
++};
++
++export const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
++
++export function fmtDate(d: string | null) {
++  if (!d) return '';
++  return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
++}
++
++export function initialsFor(name: string) {
++  const parts = name.trim().split(' ');
++  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
++  return (name.slice(0, 2) || '?').toUpperCase();
++}
++
++// Подсветка @упоминаний в тексте комментария
++export function renderText(text: string, names: string[]) {
++  if (names.length === 0) return text;
++  const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
++  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
++  const parts: (string | { m: string })[] = [];
++  let last = 0;
++  let match: RegExpExecArray | null;
++  while ((match = re.exec(text)) !== null) {
++    if (match.index > last) parts.push(text.slice(last, match.index));
++    parts.push({ m: match[0] });
++    last = match.index + match[0].length;
++  }
++  if (last < text.length) parts.push(text.slice(last));
++  return parts.map((p, i) =>
++    typeof p === 'string'
++      ? <span key={i}>{p}</span>
++      : <span key={i} className="text-primary font-medium">{p.m}</span>
++  );
++}
+diff --git a/src/pages/index/shared.tsx b/src/pages/index/shared.tsx
+index e8123b6..6d247c7 100644
+--- a/src/pages/index/shared.tsx
++++ b/src/pages/index/shared.tsx
+@@ -169,6 +169,14 @@ export function categoryMeta(id: CategoryId) {
+   return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
+ }
+ 
++export interface Attachment {
++  id: string;
++  name: string;
++  url: string;
++  size: number;
++  contentType: string;
++}
++
+ export interface Task {
+   id: string;
+   title: string;
+@@ -191,6 +199,7 @@ export interface Task {
+   restartDone?: boolean;
+   createdAt?: string | null;
+   creatorId?: number | null;
++  attachments?: Attachment[];
+ }
+ 
+ 
