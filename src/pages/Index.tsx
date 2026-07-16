@@ -288,6 +288,25 @@ export default function Index() {
     }
   }
 
+  async function handleMoveTask(task: Task, column: ColumnId, deployStatus: Task['deployStatus']) {
+    const prevTasks = tasks;
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, column, deployStatus } : t)));
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'update', id: task.id, title: task.title, column, deployStatus }),
+      });
+      if (!res.ok) {
+        setTasks(prevTasks);
+        toast.error('Не удалось изменить статус задачи');
+      }
+    } catch {
+      setTasks(prevTasks);
+      toast.error('Не удалось изменить статус задачи');
+    }
+  }
+
   function handleDeleteTask(id: string) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
@@ -482,6 +501,7 @@ export default function Index() {
           archivedSprints={archivedSprints}
           handleRestoreSprint={handleRestoreSprint}
           handleDeleteSprintPermanently={handleDeleteSprint}
+          handleMoveTask={handleMoveTask}
         />
       </main>
     </div>

@@ -14,6 +14,7 @@ import type {
   ColumnId,
   CategoryId,
   ViewId,
+  DeployStatus,
 } from './shared';
 
 export default function IndexMain({
@@ -62,6 +63,7 @@ export default function IndexMain({
   archivedSprints,
   handleRestoreSprint,
   handleDeleteSprintPermanently,
+  handleMoveTask,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -108,6 +110,7 @@ export default function IndexMain({
   archivedSprints: Sprint[];
   handleRestoreSprint: (id: string) => void;
   handleDeleteSprintPermanently: (id: string) => void;
+  handleMoveTask: (task: Task, column: ColumnId, deployStatus: DeployStatus) => void;
 }) {
   return (
     <>
@@ -120,8 +123,10 @@ export default function IndexMain({
             onCardClick={setSelectedTask}
             onAddClick={setCreateFor}
             onArchive={handleArchiveTask}
+            onMoveTask={handleMoveTask}
             isAdmin={isAdmin}
             can={can}
+            currentUserId={currentUserId}
           />
         )}
         {view === 'sprints' && (
