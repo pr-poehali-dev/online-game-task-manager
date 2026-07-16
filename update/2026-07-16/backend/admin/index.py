@@ -99,7 +99,7 @@ SECTION_TABLES = {
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -237,7 +237,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
         cur.execute(
             f"SELECT id, created_at, expires_at, (expires_at > NOW()) AS active "
-            f"FROM {schema}.sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
+            f"FROM {schema}.sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 200",
             (target,)
         )
         sessions = [{
@@ -248,6 +248,34 @@ def handler(event: dict, context) -> dict:
         } for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'sessions': sessions})}
+
+    if action == 'revoke_session':
+        session_id = body.get('session_id')
+        if not session_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_session_id'})}
+        cur.execute(f"UPDATE {schema}.sessions SET expires_at = NOW() WHERE id = %s", (int(session_id),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    if action == 'revoke_sessions':
+        target = body.get('user_id')
+        if not target:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
+        # Закрывает все активные сессии участника, кроме самой последней (текущее устройство) —
+        # чтобы не разлогинить только что вошедшего человека при массовой чистке.
+        cur.execute(
+            f"UPDATE {schema}.sessions SET expires_at = NOW() "
+            f"WHERE user_id = %s AND expires_at > NOW() AND id != ("
+            f"  SELECT id FROM {schema}.sessions WHERE user_id = %s AND expires_at > NOW() "
+            f"  ORDER BY created_at DESC LIMIT 1"
+            f")",
+            (target, target)
+        )
+        closed = cur.rowcount
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'closed': closed})}
 
     if action == 'stats':
         # Статистика по одному участнику за период: создано / закрыто / получено задач + время в приложении

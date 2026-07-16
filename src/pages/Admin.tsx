@@ -25,6 +25,8 @@ export default function Admin() {
   const [sessionsFor, setSessionsFor] = useState<TeamUser | null>(null);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [revokingId, setRevokingId] = useState<number | null>(null);
+  const [revokingAll, setRevokingAll] = useState(false);
   const [editSpecId, setEditSpecId] = useState<number | null>(null);
   const [editSpecValue, setEditSpecValue] = useState('');
   const [permsForId, setPermsForId] = useState<number | null>(null);
@@ -91,6 +93,27 @@ export default function Admin() {
       setSessions(data.sessions);
     }
     setSessionsLoading(false);
+  }
+
+  async function revokeSession(sessionId: number) {
+    setRevokingId(sessionId);
+    try {
+      await authFetch({ action: 'revoke_session', session_id: sessionId });
+      setSessions((prev) => prev.map((s) => (s.id === sessionId ? { ...s, active: false } : s)));
+    } finally {
+      setRevokingId(null);
+    }
+  }
+
+  async function revokeAllSessions() {
+    if (!sessionsFor) return;
+    setRevokingAll(true);
+    try {
+      await authFetch({ action: 'revoke_sessions', user_id: sessionsFor.id });
+      await openSessions(sessionsFor);
+    } finally {
+      setRevokingAll(false);
+    }
   }
 
   async function setRole(id: number, role: 'member' | 'admin') {
@@ -277,6 +300,10 @@ export default function Admin() {
           onClose={() => setSessionsFor(null)}
           sessionsLoading={sessionsLoading}
           sessions={sessions}
+          onRevokeSession={revokeSession}
+          onRevokeAll={revokeAllSessions}
+          revokingId={revokingId}
+          revokingAll={revokingAll}
         />
       )}
 
