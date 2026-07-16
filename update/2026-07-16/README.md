@@ -178,6 +178,12 @@ src/pages/Index.tsx              — функция handleMoveTask (optimistic u
 npm install
 ```
 
+- **Исправление ошибки**: `serverMeta()` падал с `TypeError: Cannot read properties of undefined
+  (reading 'color')`, если у задачи был указан сервер, которого нет в текущем списке серверов
+  (например, сервер удалили из справочника, а задачи с ним остались). Теперь в этом случае
+  используется безопасное значение по умолчанию вместо падения интерфейса.
+  Изменён файл: `src/pages/index/shared.tsx`.
+
 **Документация** (необязательно, но полезно):
 ```
 ARCHITECTURE.md

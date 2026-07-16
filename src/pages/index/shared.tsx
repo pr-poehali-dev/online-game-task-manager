@@ -161,8 +161,8 @@ export const categories: Category[] = [
   { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
 ];
 
-export function serverMeta(id: ServerId) {
-  return servers.find((s) => s.id === id)!;
+export function serverMeta(id: ServerId): Server {
+  return servers.find((s) => s.id === id) ?? { id, label: id || 'Сервер', color: '215 15% 55%' };
 }
 
 export function categoryMeta(id: CategoryId) {
