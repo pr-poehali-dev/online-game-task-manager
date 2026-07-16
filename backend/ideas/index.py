@@ -1,6 +1,9 @@
+import base64
 import json
 import os
+import uuid
 
+import boto3
 import psycopg2
 
 
@@ -65,7 +68,71 @@ def _topic_row(r):
         'authorId': r[4],
         'createdAt': r[5].isoformat() if r[5] else None,
         'updatedAt': r[6].isoformat() if r[6] else None,
+        'attachments': r[7] if len(r) > 7 and r[7] is not None else [],
     }
+
+
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+
+
+def _s3_client():
+    return boto3.client(
+        's3',
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def _public_url(key):
+    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+    if public_url:
+        return f"{public_url}/{key}"
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+
+def _decode_data(data_b64):
+    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+        data_b64 = data_b64.split(',', 1)[1]
+    return base64.b64decode(data_b64)
+
+
+def _upload_image(body):
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None
+    raw = _decode_data(data_b64)
+    ext = (body.get('ext') or 'png').lstrip('.').lower()
+    content_type = body.get('contentType') or f'image/{ext}'
+    key = f"ideas/{uuid.uuid4().hex}.{ext}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return _public_url(key)
+
+
+def _upload_file(body):
+    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None, 'no_data'
+    raw = _decode_data(data_b64)
+    if len(raw) > MAX_FILE_SIZE:
+        return None, 'file_too_large'
+    name = (body.get('name') or 'file').strip() or 'file'
+    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
+    ext = (body.get('ext') or name_ext).lstrip('.').lower()
+    content_type = body.get('contentType') or 'application/octet-stream'
+    key = f"ideas/files/{uuid.uuid4().hex}.{ext}" if ext else f"ideas/files/{uuid.uuid4().hex}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    attachment = {
+        'id': uuid.uuid4().hex,
+        'name': name,
+        'url': _public_url(key),
+        'size': len(raw),
+        'contentType': content_type,
+    }
+    return attachment, None
 
 
 def _comment_row(r):
@@ -92,7 +159,7 @@ def _norm_ids(raw):
     return result
 
 
-TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at"
+TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at, attachments"
 COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions"
 
 
@@ -108,7 +175,7 @@ def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, 
 
 
 def handler(event: dict, context) -> dict:
-    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Закрывать топик может автор или админ. Доступно авторизованным участникам.'''
+    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -134,6 +201,29 @@ def handler(event: dict, context) -> dict:
 
     qs = event.get('queryStringParameters') or {}
     action = body.get('action') or qs.get('action') or ('list' if method == 'GET' else '')
+
+    # Загрузка изображения для описания идеи (вставка в RichEditor) — нужно право на создание идей
+    if action == 'upload_image':
+        if not me['perms']['idea_create']:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        url = _upload_image(body)
+        cur.close(); conn.close()
+        if not url:
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
+
+    # Загрузка произвольного файла-вложения к идее
+    if action == 'upload_file':
+        if not me['perms']['idea_create']:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        attachment, err = _upload_file(body)
+        cur.close(); conn.close()
+        if err:
+            status = 413 if err == 'file_too_large' else 400
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
 
     # Список топиков (+ количество комментариев)
     if action == 'list' or (method == 'GET' and not qs.get('id')):
@@ -173,9 +263,38 @@ def handler(event: dict, context) -> dict:
         if not title:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
+        attachments = json.dumps(body.get('attachments') or [])
         cur.execute(
-            f"INSERT INTO {schema}.idea_topics (title, body, author_id) VALUES (%s, %s, %s) RETURNING {TOPIC_COLS}",
-            (title, body.get('body') or '', me['id'])
+            f"INSERT INTO {schema}.idea_topics (title, body, author_id, attachments) VALUES (%s, %s, %s, %s) RETURNING {TOPIC_COLS}",
+            (title, body.get('body') or '', me['id'], attachments)
+        )
+        topic = _topic_row(cur.fetchone())
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
+
+    # Редактировать топик (текст идеи и вложения) — автор или админ
+    if action == 'update':
+        tid = body.get('id')
+        if not tid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if row[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        title = (body.get('title') or '').strip()
+        if not title:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
+        attachments = json.dumps(body.get('attachments') or [])
+        cur.execute(
+            f"UPDATE {schema}.idea_topics SET title = %s, body = %s, attachments = %s, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TOPIC_COLS}",
+            (title, body.get('body') or '', attachments, int(tid))
         )
         topic = _topic_row(cur.fetchone())
         cur.close(); conn.close()

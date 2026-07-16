@@ -1,8 +1,11 @@
+import base64
 import json
 import os
 import urllib.request
 import urllib.error
+import uuid
 
+import boto3
 import psycopg2
 
 
@@ -226,13 +229,76 @@ def _row_to_task(r):
         'restartDone': bool(r[16]),
         'createdAt': r[17].isoformat() if r[17] else None,
         'creatorId': r[18],
+        'attachments': r[19] if r[19] is not None else [],
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments"
 )
+
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+
+
+def _s3_client():
+    return boto3.client(
+        's3',
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def _public_url(key):
+    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+    if public_url:
+        return f"{public_url}/{key}"
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+
+def _decode_data(data_b64):
+    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+        data_b64 = data_b64.split(',', 1)[1]
+    return base64.b64decode(data_b64)
+
+
+def _upload_image(body):
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None
+    raw = _decode_data(data_b64)
+    ext = (body.get('ext') or 'png').lstrip('.').lower()
+    content_type = body.get('contentType') or f'image/{ext}'
+    key = f"tasks/{uuid.uuid4().hex}.{ext}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return _public_url(key)
+
+
+def _upload_file(body):
+    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None, 'no_data'
+    raw = _decode_data(data_b64)
+    if len(raw) > MAX_FILE_SIZE:
+        return None, 'file_too_large'
+    name = (body.get('name') or 'file').strip() or 'file'
+    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
+    ext = (body.get('ext') or name_ext).lstrip('.').lower()
+    content_type = body.get('contentType') or 'application/octet-stream'
+    key = f"tasks/files/{uuid.uuid4().hex}.{ext}" if ext else f"tasks/files/{uuid.uuid4().hex}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    attachment = {
+        'id': uuid.uuid4().hex,
+        'name': name,
+        'url': _public_url(key),
+        'size': len(raw),
+        'contentType': content_type,
+    }
+    return attachment, None
 
 
 def _norm_kb(body):
@@ -278,7 +344,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач. Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -304,6 +370,29 @@ def handler(event: dict, context) -> dict:
 
     action = body.get('action') or (event.get('queryStringParameters') or {}).get('action') or ('list' if method == 'GET' else '')
 
+    # Загрузка изображения для описания задачи (вставка в RichEditor) — нужно право на создание или редактирование задач
+    if action == 'upload_image':
+        if not (me['perms']['task_create'] or me['perms']['task_edit_own']):
+            cur.close(); conn.close()
+            return _forbidden()
+        url = _upload_image(body)
+        cur.close(); conn.close()
+        if not url:
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
+
+    # Загрузка произвольного файла-вложения к задаче
+    if action == 'upload_file':
+        if not (me['perms']['task_create'] or me['perms']['task_edit_own']):
+            cur.close(); conn.close()
+            return _forbidden()
+        attachment, err = _upload_file(body)
+        cur.close(); conn.close()
+        if err:
+            status = 413 if err == 'file_too_large' else 400
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
+
     # Список задач
     if action == 'list' or method == 'GET':
         cur.execute(
@@ -314,7 +403,7 @@ def handler(event: dict, context) -> dict:
         tasks = []
         for r in cur.fetchall():
             d = _row_to_task(r)
-            d['commentCount'] = r[19]
+            d['commentCount'] = r[20]
             # Без права task_view_others — видит только задачи, где он исполнитель или автор
             if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
                 continue
@@ -335,10 +424,11 @@ def handler(event: dict, context) -> dict:
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
         kb_ids = json.dumps(_norm_kb(body))
+        attachments = json.dumps(body.get('attachments') or [])
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
@@ -355,6 +445,7 @@ def handler(event: dict, context) -> dict:
                 links,
                 kb_ids,
                 me['id'],
+                attachments,
             )
         )
         task = _row_to_task(cur.fetchone())
@@ -414,6 +505,7 @@ def handler(event: dict, context) -> dict:
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
         kb_ids = json.dumps(_norm_kb(body))
+        attachments = json.dumps(body.get('attachments') or [])
         # Предыдущие исполнители — чтобы уведомить только вновь добавленных
         cur.execute(f"SELECT assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
         prev_row = cur.fetchone()
@@ -421,7 +513,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, updated_at = NOW() "
+            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
@@ -438,6 +530,7 @@ def handler(event: dict, context) -> dict:
                 links,
                 kb_ids,
                 bool(body.get('restartDone', False)),
+                attachments,
                 int(task_id),
             )
         )

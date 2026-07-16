@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
-import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime } from './shared';
+import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, TASKS_URL, authHeaders } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
@@ -26,6 +27,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
+  const [attachments, setAttachments] = useState<Attachment[]>(task.attachments ?? []);
   const [archiveMenu, setArchiveMenu] = useState(false);
   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
   const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
@@ -47,6 +49,23 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
     setLinks((prev) => prev.filter((_, idx) => idx !== i));
   }
 
+  async function uploadImage(file: File): Promise<string> {
+    const dataUrl: string = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const res = await fetch(TASKS_URL, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
+    });
+    if (!res.ok) return '';
+    const d = await res.json();
+    return d.url || '';
+  }
+
   function handleSave() {
     if (!canFullEdit) {
       if (canEditDeploy) {
@@ -58,7 +77,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
       onSave({ ...task, column: form.column });
       return;
     }
-    onSave({ ...form, links });
+    onSave({ ...form, links, attachments });
   }
 
   return (
@@ -254,6 +273,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             <RichEditor
               content={form.description ?? ''}
               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
+              onImageUpload={uploadImage}
             />
           ) : (
             <div
@@ -262,6 +282,18 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             />
           )}
         </div>
+
+        {(canFullEdit || attachments.length > 0) && (
+          /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе */
+          <div>
+            <label className="block text-xs text-muted-foreground mb-2">Вложения</label>
+            {canFullEdit ? (
+              <AttachmentsField attachments={attachments} onChange={setAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} />
+            ) : (
+              <AttachmentsList attachments={attachments} />
+            )}
+          </div>
+        )}
 
         {canEditDeploy && (
           /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу */

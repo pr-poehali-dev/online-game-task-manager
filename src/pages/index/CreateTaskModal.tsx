@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import AttachmentsField from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
-import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus } from './shared';
-import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls } from './shared';
+import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
+import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -32,9 +33,27 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   });
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+
+  async function uploadImage(file: File): Promise<string> {
+    const dataUrl: string = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const res = await fetch(TASKS_URL, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
+    });
+    if (!res.ok) return '';
+    const d = await res.json();
+    return d.url || '';
+  }
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -48,6 +67,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
       ...form,
       id: 't' + Date.now(),
       links,
+      attachments,
     } as Task);
   }
 
@@ -136,7 +156,12 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
 
         <div>
           <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
-          <RichEditor content={form.description} onChange={(html) => set('description', html)} />
+          <RichEditor content={form.description} onChange={(html) => set('description', html)} onImageUpload={uploadImage} />
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
+          <AttachmentsField attachments={attachments} onChange={setAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} />
         </div>
 
         <div>

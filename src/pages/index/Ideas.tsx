@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
+import RichEditor from '@/components/RichEditor';
+import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
 import { useAuth } from '@/lib/auth';
 import { IDEAS_URL, authHeaders } from './shared';
 import MentionInput, { extractMentions } from './MentionInput';
@@ -21,6 +23,7 @@ interface TopicListItem {
   createdAt: string | null;
   updatedAt: string | null;
   commentsCount: number;
+  attachments?: Attachment[];
 }
 
 interface IdeaComment {
@@ -86,8 +89,12 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newBody, setNewBody] = useState('');
+  const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [replyTo, setReplyTo] = useState<IdeaComment | null>(null);
+  const [editingTopic, setEditingTopic] = useState(false);
+  const [editBody, setEditBody] = useState('');
+  const [editAttachments, setEditAttachments] = useState<Attachment[]>([]);
 
   const mentionMembers = authors.map((a) => ({ id: a.id, name: a.name }));
   const authorName = (id: number | null) => (id != null ? authors.find((a) => a.id === id)?.name ?? 'Участник' : 'Участник');
@@ -137,18 +144,55 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTopicId]);
 
+  async function uploadImage(file: File): Promise<string> {
+    const dataUrl: string = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    });
+    const ext = (file.name.split('.').pop() || 'png').toLowerCase();
+    const res = await fetch(IDEAS_URL, {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify({ action: 'upload_image', data: dataUrl, ext, contentType: file.type }),
+    });
+    if (!res.ok) return '';
+    const d = await res.json();
+    return d.url || '';
+  }
+
   async function createTopic() {
     if (!newTitle.trim()) return;
     try {
       const res = await fetch(IDEAS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'create', title: newTitle.trim(), body: newBody }),
+        body: JSON.stringify({ action: 'create', title: newTitle.trim(), body: newBody, attachments: newAttachments }),
       });
       if (res.ok) {
         setCreating(false);
         setNewTitle('');
         setNewBody('');
+        setNewAttachments([]);
+        loadList();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function saveTopicEdit() {
+    if (!current) return;
+    try {
+      const res = await fetch(IDEAS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'update', id: current.id, title: current.title, body: editBody, attachments: editAttachments }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCurrent(data.topic);
+        setEditingTopic(false);
         loadList();
       }
     } catch {
@@ -292,13 +336,16 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
             placeholder="О чём идея? Кратко..."
             className="w-full bg-transparent text-xl font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1.5 transition-colors placeholder:text-muted-foreground/50"
           />
-          <textarea
-            value={newBody}
-            onChange={(e) => setNewBody(e.target.value)}
+          <RichEditor
+            content={newBody}
+            onChange={setNewBody}
+            onImageUpload={uploadImage}
             placeholder="Опишите мысль подробнее: что предлагаете, зачем, какие плюсы и риски..."
-            rows={6}
-            className={inputCls + ' resize-none'}
           />
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
+            <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
+          </div>
         </div>
       </div>
     );
@@ -316,6 +363,15 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
           </button>
           {canManage(current) && (
             <div className="ml-auto flex items-center gap-2">
+              {!editingTopic && (
+                <button
+                  onClick={() => { setEditBody(current.body); setEditAttachments(current.attachments ?? []); setEditingTopic(true); }}
+                  className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+                >
+                  <Icon name="Pencil" size={13} />
+                  Редактировать
+                </button>
+              )}
               {current.status !== 'open' && (
                 <button onClick={() => setStatus('open')} className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
                   <Icon name="RotateCcw" size={13} />
@@ -351,7 +407,37 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
             <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(current.authorId)}</span>
             <span className="flex items-center gap-1"><Icon name="Clock" size={12} />{fmtDate(current.createdAt)}</span>
           </div>
-          {current.body && <p className="text-sm leading-relaxed whitespace-pre-wrap">{current.body}</p>}
+
+          {editingTopic ? (
+            <div className="space-y-3">
+              <RichEditor content={editBody} onChange={setEditBody} onImageUpload={uploadImage} />
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Вложения</label>
+                <AttachmentsField attachments={editAttachments} onChange={setEditAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} />
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={saveTopicEdit} className="h-8 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity">
+                  Сохранить
+                </button>
+                <button onClick={() => setEditingTopic(false)} className="h-8 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
+                  Отмена
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {current.body && <div className="kb-content prose-invert text-sm" dangerouslySetInnerHTML={{ __html: current.body }} />}
+              {!!current.attachments?.length && (
+                <div className="mt-4 pt-4 border-t border-border">
+                  <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Icon name="Paperclip" size={12} />
+                    Вложения ({current.attachments.length})
+                  </div>
+                  <AttachmentsList attachments={current.attachments} />
+                </div>
+              )}
+            </>
+          )}
         </div>
 
         <div className="mb-3 text-sm font-medium text-muted-foreground flex items-center gap-2">

@@ -169,6 +169,14 @@ export function categoryMeta(id: CategoryId) {
   return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
 }
 
+export interface Attachment {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  contentType: string;
+}
+
 export interface Task {
   id: string;
   title: string;
@@ -191,6 +199,7 @@ export interface Task {
   restartDone?: boolean;
   createdAt?: string | null;
   creatorId?: number | null;
+  attachments?: Attachment[];
 }
 
 
