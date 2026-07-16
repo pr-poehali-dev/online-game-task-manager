@@ -27,6 +27,15 @@ def _db():
     return conn
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в журнал активности (хранится 7 дней).'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 def _current_admin(cur, schema, token):
     if not token:
         return None
@@ -99,7 +108,7 @@ SECTION_TABLES = {
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Также управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -148,6 +157,45 @@ def handler(event: dict, context) -> dict:
 
     # POST: обновление роли / активности / приглашение по username / права / статистика
     action = body.get('action')
+
+    if action == 'activity_log':
+        # Чистим записи старше 7 дней при каждом просмотре — журнал не хранится дольше недели
+        cur.execute(f"DELETE FROM {schema}.activity_log WHERE created_at < NOW() - INTERVAL '7 days'")
+        date_from = _parse_dt(body.get('from'))
+        date_to = _parse_dt(body.get('to'))
+        target_user = body.get('user_id')
+        conditions = ["a.created_at >= NOW() - INTERVAL '7 days'"]
+        params = []
+        if date_from:
+            conditions.append("a.created_at >= %s")
+            params.append(date_from)
+        if date_to:
+            conditions.append("a.created_at <= %s")
+            params.append(date_to)
+        if target_user:
+            conditions.append("a.user_id = %s")
+            params.append(target_user)
+        where = " AND ".join(conditions)
+        cur.execute(
+            f"SELECT a.id, a.user_id, u.first_name, u.last_name, a.action, a.entity_type, a.entity_id, "
+            f"a.entity_title, a.details, a.created_at "
+            f"FROM {schema}.activity_log a LEFT JOIN {schema}.users u ON u.id = a.user_id "
+            f"WHERE {where} ORDER BY a.created_at DESC LIMIT 500",
+            tuple(params)
+        )
+        entries = [{
+            'id': r[0],
+            'userId': r[1],
+            'userName': f"{r[2]}{(' ' + r[3]) if r[3] else ''}" if r[2] else 'Неизвестный',
+            'action': r[4],
+            'entityType': r[5],
+            'entityId': r[6],
+            'entityTitle': r[7],
+            'details': r[8],
+            'createdAt': r[9].isoformat() if r[9] else None,
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'entries': entries})}
 
     if action == 'files_list':
         # Собираем все прикреплённые файлы по разделам: база знаний, идеи, задачи (отдельно активные и архивные)
@@ -227,6 +275,7 @@ def handler(event: dict, context) -> dict:
             (placeholder_tg, username, first_name, role, username, specialization)
         )
         new_id = cur.fetchone()[0]
+        _log_activity(cur, schema, admin_id, 'user_invite', 'user', new_id, first_name, f'@{username}')
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'id': new_id})}
 
@@ -373,6 +422,10 @@ def handler(event: dict, context) -> dict:
             f"UPDATE {schema}.users SET permissions = %s, updated_at = NOW() WHERE id = %s",
             (json.dumps(clean), target)
         )
+        cur.execute(f"SELECT first_name, last_name FROM {schema}.users WHERE id = %s", (target,))
+        urow = cur.fetchone()
+        target_name = f"{urow[0]}{(' ' + urow[1]) if urow and urow[1] else ''}" if urow else None
+        _log_activity(cur, schema, admin_id, 'user_permissions', 'user', target, target_name)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
@@ -381,18 +434,24 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
 
+    cur.execute(f"SELECT first_name, last_name FROM {schema}.users WHERE id = %s", (user_id,))
+    _urow = cur.fetchone()
+    _target_name = f"{_urow[0]}{(' ' + _urow[1]) if _urow[1] else ''}" if _urow else None
+
     if action == 'set_role':
         role = body.get('role')
         if role not in ('member', 'admin'):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_role'})}
         cur.execute(f"UPDATE {schema}.users SET role = %s, updated_at = NOW() WHERE id = %s", (role, user_id))
+        _log_activity(cur, schema, admin_id, 'user_set_role', 'user', user_id, _target_name, role)
     elif action == 'set_active':
         is_active = bool(body.get('is_active'))
         if int(user_id) == admin_id and not is_active:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'cant_disable_self'})}
         cur.execute(f"UPDATE {schema}.users SET is_active = %s, updated_at = NOW() WHERE id = %s", (is_active, user_id))
+        _log_activity(cur, schema, admin_id, 'user_set_active', 'user', user_id, _target_name, 'включён' if is_active else 'отключён')
     elif action == 'set_member':
         member_id = body.get('member_id')
         cur.execute(f"UPDATE {schema}.users SET member_id = %s, updated_at = NOW() WHERE id = %s", (member_id, user_id))
@@ -414,6 +473,7 @@ def handler(event: dict, context) -> dict:
                 (user_id,)
             )
             cur.execute(f"UPDATE {schema}.sessions SET expires_at = NOW() WHERE user_id = %s", (user_id,))
+            _log_activity(cur, schema, admin_id, 'user_remove', 'user', user_id, _target_name)
         else:
             cur.execute(f"UPDATE {schema}.users SET is_hidden = false, updated_at = NOW() WHERE id = %s", (user_id,))
     else:

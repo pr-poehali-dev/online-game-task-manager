@@ -27,6 +27,15 @@ def _db():
     return conn
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в журнал активности (хранится 7 дней).'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 ALL_PERMISSIONS = [
     'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
     'idea_create',
@@ -152,7 +161,7 @@ def _upload_file(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
+    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Создание/редактирование/удаление статей пишется в журнал активности (activity_log). Доступно всем авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -280,6 +289,7 @@ def handler(event: dict, context) -> dict:
             )
         )
         art = _row_full(cur.fetchone())
+        _log_activity(cur, schema, me['id'], 'kb_create', 'article', art['id'], art['title'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': art})}
 
@@ -307,10 +317,13 @@ def handler(event: dict, context) -> dict:
             )
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': _row_full(row)})}
+        art = _row_full(row)
+        _log_activity(cur, schema, me['id'], 'kb_update', 'article', art['id'], art['title'])
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'article': art})}
 
     # Удаление статьи — только администратор
     if action == 'delete':
@@ -321,7 +334,11 @@ def handler(event: dict, context) -> dict:
         if not art_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT title FROM {schema}.kb_articles WHERE id = %s", (int(art_id),))
+        trow = cur.fetchone()
+        art_title = trow[0] if trow else None
         cur.execute(f"DELETE FROM {schema}.kb_articles WHERE id = %s", (int(art_id),))
+        _log_activity(cur, schema, me['id'], 'kb_delete', 'article', art_id, art_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 

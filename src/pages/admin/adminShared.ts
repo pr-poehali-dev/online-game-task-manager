@@ -100,6 +100,54 @@ export interface FilesBySection {
   tasksArchived: AdminAttachment[];
 }
 
+export interface ActivityEntry {
+  id: number;
+  userId: number | null;
+  userName: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  entityTitle: string | null;
+  details: string | null;
+  createdAt: string | null;
+}
+
+export interface ActivityMeta {
+  label: string;
+  icon: string;
+  color: string;
+}
+
+export const ACTIVITY_META: Record<string, ActivityMeta> = {
+  login: { label: 'Вход в систему', icon: 'LogIn', color: '152 55% 50%' },
+  logout: { label: 'Выход', icon: 'LogOut', color: '215 15% 55%' },
+  task_create: { label: 'Создал задачу', icon: 'Plus', color: '210 80% 62%' },
+  task_update: { label: 'Изменил задачу', icon: 'Pencil', color: '210 80% 62%' },
+  task_deploy_status: { label: 'Сменил статус деплоя', icon: 'Rocket', color: '45 90% 55%' },
+  task_archive: { label: 'Отправил задачу в архив', icon: 'Archive', color: '0 65% 60%' },
+  task_unarchive: { label: 'Вернул задачу из архива', icon: 'ArchiveRestore', color: '152 55% 50%' },
+  task_delete: { label: 'Удалил задачу', icon: 'Trash2', color: '0 65% 60%' },
+  kb_create: { label: 'Создал статью', icon: 'BookOpen', color: '270 65% 65%' },
+  kb_update: { label: 'Изменил статью', icon: 'Pencil', color: '270 65% 65%' },
+  kb_delete: { label: 'Удалил статью', icon: 'Trash2', color: '0 65% 60%' },
+  idea_create: { label: 'Создал идею', icon: 'Lightbulb', color: '330 70% 62%' },
+  idea_update: { label: 'Изменил идею', icon: 'Pencil', color: '330 70% 62%' },
+  idea_status: { label: 'Сменил статус идеи', icon: 'Flag', color: '330 70% 62%' },
+  idea_delete: { label: 'Удалил идею', icon: 'Trash2', color: '0 65% 60%' },
+  sprint_create: { label: 'Создал спринт', icon: 'Zap', color: '45 90% 55%' },
+  sprint_update: { label: 'Изменил спринт', icon: 'Pencil', color: '45 90% 55%' },
+  sprint_delete: { label: 'Удалил спринт', icon: 'Trash2', color: '0 65% 60%' },
+  user_invite: { label: 'Пригласил участника', icon: 'UserPlus', color: '152 55% 50%' },
+  user_set_role: { label: 'Изменил роль участника', icon: 'Shield', color: '35 85% 58%' },
+  user_set_active: { label: 'Изменил доступ участника', icon: 'UserCheck', color: '35 85% 58%' },
+  user_permissions: { label: 'Изменил права участника', icon: 'KeySquare', color: '35 85% 58%' },
+  user_remove: { label: 'Скрыл участника из команды', icon: 'UserX', color: '0 65% 60%' },
+};
+
+export function activityMeta(action: string): ActivityMeta {
+  return ACTIVITY_META[action] ?? { label: action, icon: 'Circle', color: '215 15% 55%' };
+}
+
 export function fmtFileSize(bytes: number): string {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;

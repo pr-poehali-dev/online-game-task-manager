@@ -55,7 +55,7 @@ def _main_menu_keyboard():
 
 
 def handler(event: dict, context) -> dict:
-    '''Webhook Telegram-бота: принимает команду /start КОД, проверяет username в белом списке, создаёт сессию и подтверждает код входа.'''
+    '''Webhook Telegram-бота: принимает команду /start КОД, проверяет username в белом списке, создаёт сессию и подтверждает код входа. Успешный вход записывается в журнал действий (activity_log).'''
     method = event.get('httpMethod', 'POST')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': {'Access-Control-Allow-Origin': '*'}, 'body': ''}
@@ -178,6 +178,10 @@ def handler(event: dict, context) -> dict:
     cur.execute(
         f"UPDATE {schema}.login_codes SET status = 'confirmed', user_id = %s, session_token = %s WHERE id = %s",
         (user_id, session_token, code_id)
+    )
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, details) VALUES (%s, 'login', 'Через Telegram-бота')",
+        (user_id,)
     )
     cur.close(); conn.close()
 

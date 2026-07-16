@@ -82,6 +82,15 @@ def _db():
     return conn
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в журнал активности (хранится 7 дней).'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 ALL_PERMISSIONS = [
     'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
     'idea_create',
@@ -230,7 +239,7 @@ def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, 
 
 
 def handler(event: dict, context) -> dict:
-    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. При ответе на комментарий или упоминании (@) участнику также приходит сообщение в Telegram, если он входил через бота. Доступно авторизованным участникам.'''
+    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. При ответе на комментарий или упоминании (@) участнику также приходит сообщение в Telegram, если он входил через бота. Создание/редактирование/смена статуса/удаление идеи пишется в журнал активности (activity_log). Доступно авторизованным участникам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -324,6 +333,7 @@ def handler(event: dict, context) -> dict:
             (title, body.get('body') or '', me['id'], attachments)
         )
         topic = _topic_row(cur.fetchone())
+        _log_activity(cur, schema, me['id'], 'idea_create', 'idea', topic['id'], topic['title'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
@@ -352,6 +362,7 @@ def handler(event: dict, context) -> dict:
             (title, body.get('body') or '', attachments, int(tid))
         )
         topic = _topic_row(cur.fetchone())
+        _log_activity(cur, schema, me['id'], 'idea_update', 'idea', topic['id'], topic['title'])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
@@ -437,6 +448,7 @@ def handler(event: dict, context) -> dict:
         topic = _topic_row(cur.fetchone())
         status_label = {'sent': 'Отправлено на реализацию', 'wont_do': 'Решено не делать', 'open': 'Переоткрыто'}.get(status, status)
         _add_notification(cur, schema, row[0], 'idea_status', f'Статус идеи: {status_label}', row[1], tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'idea_status', 'idea', tid, row[1], status_label)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
@@ -446,7 +458,7 @@ def handler(event: dict, context) -> dict:
         if not tid:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
-        cur.execute(f"SELECT author_id FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        cur.execute(f"SELECT author_id, title FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
         row = cur.fetchone()
         if not row:
             cur.close(); conn.close()
@@ -456,6 +468,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         cur.execute(f"DELETE FROM {schema}.idea_comments WHERE topic_id = %s", (int(tid),))
         cur.execute(f"DELETE FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
+        _log_activity(cur, schema, me['id'], 'idea_delete', 'idea', tid, row[1])
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 

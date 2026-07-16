@@ -8,8 +8,9 @@ import UserList from './admin/UserList';
 import SessionsModal from './admin/SessionsModal';
 import StatsModal from './admin/StatsModal';
 import FilesModal from './admin/FilesModal';
+import ActivityLogModal from './admin/ActivityLogModal';
 import { ADMIN_URL, TOKEN_KEY, authFetch } from './admin/adminShared';
-import type { TeamUser, SessionInfo, UserStats, Permissions, FilesBySection } from './admin/adminShared';
+import type { TeamUser, SessionInfo, UserStats, Permissions, FilesBySection, ActivityEntry } from './admin/adminShared';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Admin() {
@@ -45,6 +46,11 @@ export default function Admin() {
   const [filesOpen, setFilesOpen] = useState(false);
   const [filesLoading, setFilesLoading] = useState(false);
   const [files, setFiles] = useState<FilesBySection | null>(null);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>([]);
+  const [activityUserFilter, setActivityUserFilter] = useState<number | 'all'>('all');
+  const [activityRange, setActivityRange] = useState<DateRange | undefined>(undefined);
 
   const load = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY) || '';
@@ -210,6 +216,43 @@ export default function Admin() {
     setFilesLoading(false);
   }
 
+  const loadActivity = useCallback(async (userFilter: number | 'all', range: DateRange | undefined) => {
+    setActivityLoading(true);
+    const payload: Record<string, unknown> = { action: 'activity_log' };
+    if (userFilter !== 'all') payload.user_id = userFilter;
+    if (range?.from) {
+      const from = new Date(range.from);
+      from.setHours(0, 0, 0, 0);
+      payload.from = from.toISOString();
+      const to = range.to ? new Date(range.to) : new Date(range.from);
+      to.setHours(23, 59, 59, 999);
+      payload.to = to.toISOString();
+    }
+    const res = await authFetch(payload);
+    if (res.ok) {
+      const data = await res.json();
+      setActivityEntries(data.entries || []);
+    } else {
+      setActivityEntries([]);
+    }
+    setActivityLoading(false);
+  }, []);
+
+  function openActivity() {
+    setActivityOpen(true);
+    loadActivity(activityUserFilter, activityRange);
+  }
+
+  function setActivityUserFilterAndReload(v: number | 'all') {
+    setActivityUserFilter(v);
+    loadActivity(v, activityRange);
+  }
+
+  function setActivityRangeAndReload(r: DateRange | undefined) {
+    setActivityRange(r);
+    loadActivity(activityUserFilter, r);
+  }
+
   async function deleteFile(section: 'knowledge' | 'ideas' | 'tasks', entityId: string, attachmentId: string) {
     await authFetch({ action: 'file_delete', section, entityId, attachmentId });
     setFiles((prev) => {
@@ -237,6 +280,9 @@ export default function Admin() {
         <span className="text-sm text-muted-foreground flex items-center gap-1.5"><Icon name="Shield" size={14} /> Админка</span>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
+          <button onClick={openActivity} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
+            <Icon name="History" size={15} /> Журнал
+          </button>
           <button onClick={openFiles} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
             <Icon name="Paperclip" size={15} /> Файлы
           </button>
@@ -326,6 +372,19 @@ export default function Admin() {
           loading={filesLoading}
           files={files}
           onDelete={deleteFile}
+        />
+      )}
+
+      {activityOpen && (
+        <ActivityLogModal
+          onClose={() => setActivityOpen(false)}
+          loading={activityLoading}
+          entries={activityEntries}
+          users={users}
+          userFilter={activityUserFilter}
+          setUserFilter={setActivityUserFilterAndReload}
+          range={activityRange}
+          setRange={setActivityRangeAndReload}
         />
       )}
     </div>

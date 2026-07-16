@@ -45,6 +45,15 @@ def _db():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в журнал активности (хранится 7 дней).'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 def _verify_telegram(data: dict, bot_token: str) -> bool:
     '''Проверка подписи Telegram Login Widget'''
     received_hash = data.get('hash', '')
@@ -65,7 +74,7 @@ def _verify_telegram(data: dict, bot_token: str) -> bool:
 
 
 def handler(event: dict, context) -> dict:
-    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа) и сохранение темы интерфейса (action=set_theme).'''
+    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа) и сохранение темы интерфейса (action=set_theme). Вход и выход записываются в журнал действий (activity_log).'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -211,7 +220,14 @@ def handler(event: dict, context) -> dict:
     # Выход
     if action == 'logout':
         if token:
+            cur.execute(
+                f"SELECT u.id FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id WHERE s.token = %s",
+                (token,)
+            )
+            urow = cur.fetchone()
             cur.execute(f"UPDATE {schema}.sessions SET expires_at = NOW() WHERE token = %s", (token,))
+            if urow:
+                _log_activity(cur, schema, urow[0], 'logout')
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
@@ -272,6 +288,7 @@ def handler(event: dict, context) -> dict:
         f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
         (user_id, session_token, expires)
     )
+    _log_activity(cur, schema, user_id, 'login', details='Telegram Login Widget')
 
     cur.execute(
         f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions, theme FROM {schema}.users WHERE id = %s",

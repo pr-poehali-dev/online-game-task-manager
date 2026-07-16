@@ -145,6 +145,15 @@ def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notifi
         _tg_send(tg_id, text, button_url)
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в журнал активности (хранится 7 дней).'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 def _norm_ids(raw):
     result = []
     for v in (raw or []):
@@ -356,7 +365,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -463,6 +472,7 @@ def handler(event: dict, context) -> dict:
         task = _row_to_task(cur.fetchone())
         _record_assignments(cur, schema, task['id'], assignee_ids, me['id'])
         _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'])
+        _log_activity(cur, schema, me['id'], 'task_create', 'task', task['id'], title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
@@ -499,6 +509,7 @@ def handler(event: dict, context) -> dict:
                 row = cur.fetchone()
                 if requested_deploy != own_row[4]:
                     _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids)
+                    _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], DEPLOY_STATUS_LABELS.get(requested_deploy, requested_deploy))
                 cur.close(); conn.close()
                 return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
             # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
@@ -554,8 +565,11 @@ def handler(event: dict, context) -> dict:
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
         _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id)
         new_deploy_status = body.get('deployStatus') or 'none'
+        task_title = (body.get('title') or '').strip()
         if new_deploy_status != own_row[4]:
-            _notify_deploy_status(cur, schema, task_id, (body.get('title') or '').strip(), new_deploy_status, me['id'], own_row[2], assignee_ids)
+            _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status, me['id'], own_row[2], assignee_ids)
+            _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status, new_deploy_status))
+        _log_activity(cur, schema, me['id'], 'task_update', 'task', task_id, task_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
@@ -650,10 +664,13 @@ def handler(event: dict, context) -> dict:
             (outcome, me['id'], int(task_id))
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+        task = _row_to_task(row)
+        _log_activity(cur, schema, me['id'], 'task_archive', 'task', task_id, task['title'], outcome)
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
     # Возврат задачи из архива — только администратор
     if action == 'unarchive':
@@ -670,10 +687,13 @@ def handler(event: dict, context) -> dict:
             (int(task_id),)
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+        task = _row_to_task(row)
+        _log_activity(cur, schema, me['id'], 'task_unarchive', 'task', task_id, task['title'])
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
     # Удаление задачи — только администратор
     if action == 'delete':
@@ -684,8 +704,12 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT title FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        trow = cur.fetchone()
+        task_title = trow[0] if trow else None
         cur.execute(f"DELETE FROM {schema}.task_comments WHERE task_id = %s", (str(task_id),))
         cur.execute(f"DELETE FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        _log_activity(cur, schema, me['id'], 'task_delete', 'task', task_id, task_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
