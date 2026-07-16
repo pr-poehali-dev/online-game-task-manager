@@ -48,8 +48,34 @@ interface ArticleListItem {
   isFavorite?: boolean;
 }
 
+export interface KbAttachment {
+  id: string;
+  name: string;
+  url: string;
+  size: number;
+  contentType: string;
+}
+
 interface Article extends ArticleListItem {
   content: string;
+  attachments?: KbAttachment[];
+}
+
+function fmtSize(bytes: number) {
+  if (!bytes && bytes !== 0) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function fileIconFor(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (['pdf'].includes(ext)) return 'FileText';
+  if (['doc', 'docx'].includes(ext)) return 'FileText';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'FileSpreadsheet';
+  if (['zip', 'rar', '7z'].includes(ext)) return 'FileArchive';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'FileImage';
+  return 'File';
 }
 
 interface Author {
@@ -135,7 +161,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialArticleId]);
 
-  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string }) {
+  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) {
     const action = payload.id ? 'update' : 'create';
     try {
       const res = await fetch(KNOWLEDGE_URL, {
@@ -361,6 +387,31 @@ function ArticleView({ article, authorName, onBack, onEdit, onDelete, onToggleFa
           <span className="flex items-center gap-1"><Icon name="Clock" size={12} />Обновлено {fmtDate(article.updatedAt)}</span>
         </div>
         <div className="kb-content prose-invert" dangerouslySetInnerHTML={{ __html: article.content || '<p class="text-muted-foreground">Статья пока пуста.</p>' }} />
+
+        {!!article.attachments?.length && (
+          <div className="mt-5 pt-4 border-t border-border">
+            <div className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+              <Icon name="Paperclip" size={12} />
+              Вложения ({article.attachments.length})
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {article.attachments.map((a) => (
+                <a
+                  key={a.id}
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm hover:border-primary/50 hover:bg-secondary/40 transition-colors"
+                >
+                  <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate">{a.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
+                  <Icon name="Download" size={13} className="text-muted-foreground shrink-0" />
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -370,20 +421,27 @@ function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
   article: Article | null;
   defaultCategory: KbCategoryId;
   onCancel: () => void;
-  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string }) => void;
+  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) => void;
 }) {
   const [title, setTitle] = useState(article?.title ?? '');
   const [category, setCategory] = useState<KbCategoryId>(article?.category ?? defaultCategory);
   const [excerpt, setExcerpt] = useState(article?.excerpt ?? '');
   const [content, setContent] = useState(article?.content ?? '');
+  const [attachments, setAttachments] = useState<KbAttachment[]>(article?.attachments ?? []);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [saving, setSaving] = useState(false);
 
-  async function uploadImage(file: File): Promise<string> {
-    const dataUrl: string = await new Promise((resolve) => {
+  async function readAsDataUrl(file: File): Promise<string> {
+    return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
       reader.readAsDataURL(file);
     });
+  }
+
+  async function uploadImage(file: File): Promise<string> {
+    const dataUrl = await readAsDataUrl(file);
     const ext = (file.name.split('.').pop() || 'png').toLowerCase();
     const res = await fetch(KNOWLEDGE_URL, {
       method: 'POST',
@@ -395,10 +453,40 @@ function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
     return d.url || '';
   }
 
+  async function handleAttachFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setUploadError('');
+    setUploadingFile(true);
+    try {
+      const dataUrl = await readAsDataUrl(file);
+      const res = await fetch(KNOWLEDGE_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'upload_file', data: dataUrl, name: file.name, contentType: file.type }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        setUploadError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 20 МБ)' : 'Не удалось загрузить файл');
+        return;
+      }
+      if (d.attachment) setAttachments((prev) => [...prev, d.attachment]);
+    } catch {
+      setUploadError('Не удалось загрузить файл');
+    } finally {
+      setUploadingFile(false);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
   function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content });
+    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content, attachments });
   }
 
   return (
@@ -446,6 +534,35 @@ function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
         <div>
           <label className="block text-xs text-muted-foreground mb-1.5">Содержание</label>
           <RichEditor content={content} onChange={setContent} onImageUpload={uploadImage} placeholder="Опишите решение: шаги, изображения, ссылки..." />
+        </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Вложения (документы, архивы и другие файлы)</label>
+          {!!attachments.length && (
+            <div className="flex flex-col gap-1.5 mb-2">
+              {attachments.map((a) => (
+                <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
+                  <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
+                  <span className="flex-1 truncate">{a.name}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachment(a.id)}
+                    title="Убрать вложение"
+                    className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <Icon name="X" size={13} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors cursor-pointer">
+            <Icon name={uploadingFile ? 'Loader2' : 'Paperclip'} size={14} className={uploadingFile ? 'animate-spin' : ''} />
+            {uploadingFile ? 'Загрузка...' : 'Прикрепить файл'}
+            <input type="file" className="hidden" onChange={handleAttachFile} disabled={uploadingFile} />
+          </label>
+          {uploadError && <p className="text-xs text-destructive mt-1.5">{uploadError}</p>}
         </div>
       </div>
     </div>

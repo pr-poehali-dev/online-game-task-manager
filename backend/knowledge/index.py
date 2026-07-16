@@ -60,7 +60,7 @@ def _current_user(cur, schema, token):
 
 
 LIST_COLUMNS = "id, title, category, excerpt, author_id, updated_by, created_at, updated_at"
-FULL_COLUMNS = LIST_COLUMNS + ", content"
+FULL_COLUMNS = LIST_COLUMNS + ", content, attachments"
 
 
 def _row_list(r):
@@ -79,6 +79,7 @@ def _row_list(r):
 def _row_full(r):
     d = _row_list(r)
     d['content'] = r[8] or ''
+    d['attachments'] = r[9] if r[9] is not None else []
     return d
 
 
@@ -87,32 +88,71 @@ def _favorite_ids(cur, schema, user_id):
     return {row[0] for row in cur.fetchall()}
 
 
-def _upload_image(body):
-    data_b64 = body.get('data')
-    if not data_b64:
-        return None
-    if ',' in data_b64 and data_b64.strip().startswith('data:'):
-        data_b64 = data_b64.split(',', 1)[1]
-    raw = base64.b64decode(data_b64)
-    ext = (body.get('ext') or 'png').lstrip('.').lower()
-    content_type = body.get('contentType') or f'image/{ext}'
-    key = f"kb/{uuid.uuid4().hex}.{ext}"
-    s3 = boto3.client(
+MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+
+
+def _s3_client():
+    return boto3.client(
         's3',
         endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
     )
-    bucket = os.environ.get('S3_BUCKET', 'files')
-    s3.put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+
+
+def _public_url(key):
     public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
     if public_url:
         return f"{public_url}/{key}"
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+def _decode_data(data_b64):
+    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+        data_b64 = data_b64.split(',', 1)[1]
+    return base64.b64decode(data_b64)
+
+
+def _upload_image(body):
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None
+    raw = _decode_data(data_b64)
+    ext = (body.get('ext') or 'png').lstrip('.').lower()
+    content_type = body.get('contentType') or f'image/{ext}'
+    key = f"kb/{uuid.uuid4().hex}.{ext}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return _public_url(key)
+
+
+def _upload_file(body):
+    '''Загружает произвольный файл (документ, архив и т.д.) в S3/MinIO и возвращает метаданные вложения.'''
+    data_b64 = body.get('data')
+    if not data_b64:
+        return None, 'no_data'
+    raw = _decode_data(data_b64)
+    if len(raw) > MAX_FILE_SIZE:
+        return None, 'file_too_large'
+    name = (body.get('name') or 'file').strip() or 'file'
+    name_ext = name.rsplit('.', 1)[-1] if '.' in name else ''
+    ext = (body.get('ext') or name_ext).lstrip('.').lower()
+    content_type = body.get('contentType') or 'application/octet-stream'
+    key = f"kb/files/{uuid.uuid4().hex}.{ext}" if ext else f"kb/files/{uuid.uuid4().hex}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    attachment = {
+        'id': uuid.uuid4().hex,
+        'name': name,
+        'url': _public_url(key),
+        'size': len(raw),
+        'contentType': content_type,
+    }
+    return attachment, None
+
+
 def handler(event: dict, context) -> dict:
-    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
+    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Доступно всем авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -204,6 +244,18 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_data'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'url': url})}
 
+    # Загрузка произвольного файла-вложения (документ, архив и т.д.) — нужно право на создание или редактирование статей
+    if action == 'upload_file':
+        if not (me['perms']['kb_create'] or me['perms']['kb_edit']):
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        attachment, err = _upload_file(body)
+        cur.close(); conn.close()
+        if err:
+            status = 413 if err == 'file_too_large' else 400
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
+
     # Создание статьи — по праву kb_create
     if action == 'create':
         if not me['perms']['kb_create']:
@@ -213,14 +265,16 @@ def handler(event: dict, context) -> dict:
         if not title:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
+        attachments = json.dumps(body.get('attachments') or [])
         cur.execute(
-            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, author_id, updated_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
+            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, attachments, author_id, updated_by) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
             (
                 title,
                 body.get('category') or 'other',
                 body.get('excerpt'),
                 body.get('content') or '',
+                attachments,
                 me['id'],
                 me['id'],
             )
@@ -238,14 +292,16 @@ def handler(event: dict, context) -> dict:
         if not art_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        attachments = json.dumps(body.get('attachments') or [])
         cur.execute(
             f"UPDATE {schema}.kb_articles SET title = %s, category = %s, excerpt = %s, content = %s, "
-            f"updated_by = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
+            f"attachments = %s, updated_by = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
                 body.get('category') or 'other',
                 body.get('excerpt'),
                 body.get('content') or '',
+                attachments,
                 me['id'],
                 int(art_id),
             )
