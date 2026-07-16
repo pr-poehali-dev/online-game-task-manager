@@ -72,7 +72,7 @@ def _topic_row(r):
     }
 
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
 
 
 def _s3_client():

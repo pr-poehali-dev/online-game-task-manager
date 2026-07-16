@@ -468,7 +468,7 @@ function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
       });
       const d = await res.json();
       if (!res.ok) {
-        setUploadError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 20 МБ)' : 'Не удалось загрузить файл');
+        setUploadError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
         return;
       }
       if (d.attachment) setAttachments((prev) => [...prev, d.attachment]);

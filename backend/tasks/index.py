@@ -238,7 +238,7 @@ TASK_COLUMNS = (
     "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments"
 )
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
 
 
 def _s3_client():

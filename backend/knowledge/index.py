@@ -88,7 +88,7 @@ def _favorite_ids(cur, schema, user_id):
     return {row[0] for row in cur.fetchall()}
 
 
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 МБ на файл
+MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
 
 
 def _s3_client():

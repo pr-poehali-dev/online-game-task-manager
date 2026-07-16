@@ -80,7 +80,7 @@ export default function AttachmentsField({
       });
       const d = await res.json();
       if (!res.ok) {
-        setError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 20 МБ)' : 'Не удалось загрузить файл');
+        setError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
         return;
       }
       if (d.attachment) onChange([...attachments, d.attachment]);
