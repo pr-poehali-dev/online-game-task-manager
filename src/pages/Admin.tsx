@@ -280,12 +280,6 @@ export default function Admin() {
         <span className="text-sm text-muted-foreground flex items-center gap-1.5"><Icon name="Shield" size={14} /> Админка</span>
         <div className="ml-auto flex items-center gap-2">
           <ThemeToggle />
-          <button onClick={openActivity} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
-            <Icon name="History" size={15} /> Журнал
-          </button>
-          <button onClick={openFiles} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
-            <Icon name="Paperclip" size={15} /> Файлы
-          </button>
           <button onClick={() => navigate('/')} className="flex items-center gap-2 h-8 px-3 rounded-lg bg-secondary/60 text-sm hover:bg-secondary transition-colors">
             <Icon name="LayoutGrid" size={15} /> Доска
           </button>
@@ -299,6 +293,15 @@ export default function Admin() {
       </header>
 
       <main className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center gap-2 mb-5">
+          <button onClick={openActivity} className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+            <Icon name="History" size={15} /> Журнал
+          </button>
+          <button onClick={openFiles} className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
+            <Icon name="Paperclip" size={15} /> Файлы
+          </button>
+        </div>
+
         <h1 className="text-xl font-semibold mb-1">Управление командой</h1>
         <p className="text-sm text-muted-foreground mb-6">Выдавайте доступ и назначайте администраторов. Приглашённый войдёт через Telegram.</p>
 
