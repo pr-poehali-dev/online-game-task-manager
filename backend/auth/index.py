@@ -262,7 +262,7 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'inactive'})}
 
     session_token = secrets.token_urlsafe(48)
-    expires = datetime.now(timezone.utc) + timedelta(days=30)
+    expires = datetime.now(timezone.utc) + timedelta(hours=24)
     cur.execute(
         f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
         (user_id, session_token, expires)
