@@ -112,6 +112,18 @@ def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id
         _tg_send(tg_id, text, button_url)
 
 
+def _notify_reply_or_mention(cur, schema, user_id, task_id, task_title, kind):
+    '''Уведомляет одного пользователя об ответе на его комментарий или упоминании — сообщение в Telegram (если вошёл через бота).'''
+    if not user_id:
+        return
+    label = 'Вам ответили в комментарии к задаче' if kind == 'reply' else 'Вас упомянули в комментарии к задаче'
+    icon = '↩️' if kind == 'reply' else '📣'
+    text = f"{icon} {label}:\n\n«{task_title}»"
+    button_url = _task_url(task_id)
+    for tg_id in _telegram_targets(cur, schema, [user_id]):
+        _tg_send(tg_id, text, button_url)
+
+
 def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notified, creator_id, assignee_ids):
     '''Уведомляет автора и исполнителей задачи о новом комментарии (кроме автора комментария
     и тех, кто уже уведомлён как ответ/упоминание — чтобы не дублировать уведомления).'''
@@ -740,11 +752,13 @@ def handler(event: dict, context) -> dict:
             prow = cur.fetchone()
             if prow and prow[0] and prow[0] != me['id']:
                 _add_notif(cur, schema, prow[0], 'task_reply', 'Ответ на ваш комментарий', task_title, 'task', task_id, me['id'])
+                _notify_reply_or_mention(cur, schema, prow[0], task_id, task_title, 'reply')
                 notified.add(prow[0])
         # Упоминания
         for uid in mentions:
             if uid not in notified:
                 _add_notif(cur, schema, uid, 'task_mention', 'Вас упомянули в задаче', task_title, 'task', task_id, me['id'])
+                _notify_reply_or_mention(cur, schema, uid, task_id, task_title, 'mention')
                 notified.add(uid)
         # Новый комментарий — уведомляем автора и исполнителей задачи, кто ещё не получил reply/mention уведомление
         _notify_comment(cur, schema, task_id, task_title, me['id'], notified, task_creator_id, task_assignee_ids)

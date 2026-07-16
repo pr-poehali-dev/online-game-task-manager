@@ -1,10 +1,65 @@
 import base64
 import json
 import os
+import urllib.request
+import urllib.error
 import uuid
 
 import boto3
 import psycopg2
+
+
+def _tg_send(chat_id, text, button_url=None):
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {'chat_id': chat_id, 'text': text}
+    if button_url:
+        payload['reply_markup'] = {
+            'inline_keyboard': [[{'text': '🔗 Открыть идею', 'url': button_url}]]
+        }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        print(f"[ideas] tg send HTTP {e.code}: {e.read().decode('utf-8', 'ignore')}")
+    except Exception as e:
+        print(f"[ideas] tg send error: {e}")
+
+
+def _telegram_targets(cur, schema, user_ids):
+    '''Возвращает telegram_id пользователей из списка, которые вошли через бота и активны.'''
+    if not user_ids:
+        return []
+    cur.execute(
+        f"SELECT telegram_id FROM {schema}.users "
+        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
+        (user_ids,)
+    )
+    return [r[0] for r in cur.fetchall()]
+
+
+def _idea_url(topic_id=None):
+    '''Прямая ссылка на идею (если известен её id) или просто на приложение.'''
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    if not app_url:
+        return None
+    return f"{app_url}/?idea={topic_id}" if topic_id else app_url
+
+
+def _notify_reply_or_mention(cur, schema, user_id, topic_id, topic_title, kind):
+    '''Уведомляет одного пользователя об ответе на его комментарий или упоминании в идее — сообщение в Telegram (если вошёл через бота).'''
+    if not user_id:
+        return
+    label = 'Вам ответили в обсуждении идеи' if kind == 'reply' else 'Вас упомянули в обсуждении идеи'
+    icon = '↩️' if kind == 'reply' else '📣'
+    text = f"{icon} {label}:\n\n«{topic_title}»"
+    button_url = _idea_url(topic_id)
+    for tg_id in _telegram_targets(cur, schema, [user_id]):
+        _tg_send(tg_id, text, button_url)
 
 
 def _cors_headers():
@@ -175,7 +230,7 @@ def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, 
 
 
 def handler(event: dict, context) -> dict:
-    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Доступно авторизованным участникам.'''
+    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. При ответе на комментарий или упоминании (@) участнику также приходит сообщение в Telegram, если он входил через бота. Доступно авторизованным участникам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -327,11 +382,13 @@ def handler(event: dict, context) -> dict:
             prow = cur.fetchone()
             if prow and prow[0] and prow[0] != me['id']:
                 _add_notification(cur, schema, prow[0], 'idea_reply', 'Ответ на ваш комментарий', topic_title, tid, me['id'])
+                _notify_reply_or_mention(cur, schema, prow[0], tid, topic_title, 'reply')
                 notified.add(prow[0])
         # Упоминания
         for uid in mentions:
             if uid not in notified:
                 _add_notification(cur, schema, uid, 'idea_mention', 'Вас упомянули в обсуждении', topic_title, tid, me['id'])
+                _notify_reply_or_mention(cur, schema, uid, tid, topic_title, 'mention')
                 notified.add(uid)
         # Уведомить автора темы (если это не ответ и не упоминание ему)
         if trow and trow[0] and trow[0] != me['id'] and trow[0] not in notified:
