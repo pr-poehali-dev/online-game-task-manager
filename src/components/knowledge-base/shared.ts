@@ -32,6 +32,8 @@ export function kbCatMeta(id: string) {
   return kbCategories.find((c) => c.id === id) ?? kbCategories[kbCategories.length - 1];
 }
 
+export type KbVisibility = 'public' | 'private';
+
 export interface ArticleListItem {
   id: string;
   title: string;
@@ -42,6 +44,8 @@ export interface ArticleListItem {
   createdAt: string | null;
   updatedAt: string | null;
   isFavorite?: boolean;
+  visibility: KbVisibility;
+  allowedUserIds: number[];
 }
 
 export interface KbAttachment {

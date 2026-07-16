@@ -54,7 +54,15 @@ export default function ArticleView({ article, authorName, onBack, onEdit, onDel
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-6">
-        <CatBadge id={article.category} />
+        <div className="flex items-center gap-2">
+          <CatBadge id={article.category} />
+          {article.visibility === 'private' && (
+            <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md bg-secondary text-muted-foreground">
+              <Icon name="Lock" size={10} />
+              Приватная
+            </span>
+          )}
+        </div>
         <h1 className="text-2xl font-bold mt-3 mb-2 leading-tight">{article.title}</h1>
         <div className="text-xs text-muted-foreground mb-5 flex items-center gap-3 flex-wrap">
           <span className="flex items-center gap-1"><Icon name="User" size={12} />{authorName(article.authorId)}</span>

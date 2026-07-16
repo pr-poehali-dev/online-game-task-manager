@@ -4,7 +4,7 @@ import { KNOWLEDGE_URL, authHeaders } from './knowledge-base/shared';
 import ArticleList from './knowledge-base/ArticleList';
 import ArticleView from './knowledge-base/ArticleView';
 import ArticleEditor from './knowledge-base/ArticleEditor';
-import type { ArticleListItem, Article, KbCategoryId, KbAttachment, Author } from './knowledge-base/shared';
+import type { ArticleListItem, Article, KbCategoryId, KbAttachment, KbVisibility, Author } from './knowledge-base/shared';
 
 export { KNOWLEDGE_URL, kbAuthHeaders, kbCategories } from './knowledge-base/shared';
 export type { KbArticleBrief, KbCategoryId, KbAttachment } from './knowledge-base/shared';
@@ -66,7 +66,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialArticleId]);
 
-  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) {
+  async function saveArticle(payload: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[]; visibility: KbVisibility; allowedUserIds: number[] }) {
     const action = payload.id ? 'update' : 'create';
     try {
       const res = await fetch(KNOWLEDGE_URL, {
@@ -127,6 +127,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
       <ArticleEditor
         article={editing === 'new' ? null : editing}
         defaultCategory={category === 'all' ? 'other' : category}
+        authors={authors}
         onCancel={() => setEditing(null)}
         onSave={saveArticle}
       />

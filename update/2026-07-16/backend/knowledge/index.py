@@ -68,7 +68,7 @@ def _current_user(cur, schema, token):
     return {'id': row[0], 'role': row[1], 'perms': _effective_perms(row[1], row[2])}
 
 
-LIST_COLUMNS = "id, title, category, excerpt, author_id, updated_by, created_at, updated_at"
+LIST_COLUMNS = "id, title, category, excerpt, author_id, updated_by, created_at, updated_at, visibility, allowed_user_ids"
 FULL_COLUMNS = LIST_COLUMNS + ", content, attachments"
 
 
@@ -82,19 +82,44 @@ def _row_list(r):
         'updatedById': r[5],
         'createdAt': r[6].isoformat() if r[6] else None,
         'updatedAt': r[7].isoformat() if r[7] else None,
+        'visibility': r[8] or 'public',
+        'allowedUserIds': r[9] if r[9] is not None else [],
     }
 
 
 def _row_full(r):
     d = _row_list(r)
-    d['content'] = r[8] or ''
-    d['attachments'] = r[9] if r[9] is not None else []
+    d['content'] = r[10] or ''
+    d['attachments'] = r[11] if r[11] is not None else []
     return d
+
+
+def _can_view(article_dict, me):
+    '''Админ видит всё. Публичная статья доступна всем. Приватная — только тем, кто в списке допущенных, плюс автору.'''
+    if me['role'] == 'admin':
+        return True
+    if article_dict.get('visibility', 'public') != 'private':
+        return True
+    if article_dict.get('authorId') == me['id']:
+        return True
+    return me['id'] in (article_dict.get('allowedUserIds') or [])
 
 
 def _favorite_ids(cur, schema, user_id):
     cur.execute(f"SELECT article_id FROM {schema}.kb_favorites WHERE user_id = %s", (user_id,))
     return {row[0] for row in cur.fetchall()}
+
+
+def _norm_ids(raw):
+    result = []
+    for v in (raw or []):
+        try:
+            iv = int(v)
+        except (TypeError, ValueError):
+            continue
+        if iv not in result:
+            result.append(iv)
+    return result
 
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -161,7 +186,7 @@ def _upload_file(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Создание/редактирование/удаление статей пишется в журнал активности (activity_log). Доступно всем авторизованным участникам команды.'''
+    '''База знаний: статьи с решениями рабочих задач. Список, чтение, создание, редактирование и удаление статей, загрузка изображений (upload_image) и произвольных файлов-вложений (upload_file) в S3/MinIO, добавление статей в избранное. Статья может быть публичной (видна всем) или приватной (видна только указанному списку участников, автору и админам) — поля visibility/allowedUserIds. Создание/редактирование/удаление статей пишется в журнал активности (activity_log). Доступно всем авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -188,7 +213,7 @@ def handler(event: dict, context) -> dict:
     qs = event.get('queryStringParameters') or {}
     action = body.get('action') or qs.get('action') or ('list' if method == 'GET' else '')
 
-    # Список статей (без тяжёлого content)
+    # Список статей (без тяжёлого content) — приватные показываем только автору, допущенным и админам
     if action == 'list' or (method == 'GET' and not qs.get('id')):
         cur.execute(f"SELECT {LIST_COLUMNS} FROM {schema}.kb_articles ORDER BY updated_at DESC")
         rows = cur.fetchall()
@@ -196,6 +221,8 @@ def handler(event: dict, context) -> dict:
         items = []
         for r in rows:
             d = _row_list(r)
+            if not _can_view(d, me):
+                continue
             d['isFavorite'] = r[0] in fav_ids
             items.append(d)
         cur.close(); conn.close()
@@ -210,6 +237,9 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         art = _row_full(row)
+        if not _can_view(art, me):
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         fav_ids = _favorite_ids(cur, schema, me['id'])
         art['isFavorite'] = int(art_id) in fav_ids
         cur.close(); conn.close()
@@ -275,9 +305,11 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
         attachments = json.dumps(body.get('attachments') or [])
+        visibility = 'private' if body.get('visibility') == 'private' else 'public'
+        allowed_ids = json.dumps(_norm_ids(body.get('allowedUserIds')) if visibility == 'private' else [])
         cur.execute(
-            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, attachments, author_id, updated_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
+            f"INSERT INTO {schema}.kb_articles (title, category, excerpt, content, attachments, author_id, updated_by, visibility, allowed_user_ids) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {FULL_COLUMNS}",
             (
                 title,
                 body.get('category') or 'other',
@@ -286,6 +318,8 @@ def handler(event: dict, context) -> dict:
                 attachments,
                 me['id'],
                 me['id'],
+                visibility,
+                allowed_ids,
             )
         )
         art = _row_full(cur.fetchone())
@@ -303,9 +337,11 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
         attachments = json.dumps(body.get('attachments') or [])
+        visibility = 'private' if body.get('visibility') == 'private' else 'public'
+        allowed_ids = json.dumps(_norm_ids(body.get('allowedUserIds')) if visibility == 'private' else [])
         cur.execute(
             f"UPDATE {schema}.kb_articles SET title = %s, category = %s, excerpt = %s, content = %s, "
-            f"attachments = %s, updated_by = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
+            f"attachments = %s, updated_by = %s, visibility = %s, allowed_user_ids = %s, updated_at = NOW() WHERE id = %s RETURNING {FULL_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
                 body.get('category') or 'other',
@@ -313,6 +349,8 @@ def handler(event: dict, context) -> dict:
                 body.get('content') or '',
                 attachments,
                 me['id'],
+                visibility,
+                allowed_ids,
                 int(art_id),
             )
         )

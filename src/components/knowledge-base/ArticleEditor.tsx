@@ -1,20 +1,24 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
+import UserMultiSelect from './UserMultiSelect';
 import { KNOWLEDGE_URL, authHeaders, kbCategories, inputCls, fmtSize, fileIconFor } from './shared';
-import type { Article, KbCategoryId, KbAttachment } from './shared';
+import type { Article, KbCategoryId, KbAttachment, KbVisibility, Author } from './shared';
 
-export default function ArticleEditor({ article, defaultCategory, onCancel, onSave }: {
+export default function ArticleEditor({ article, defaultCategory, authors, onCancel, onSave }: {
   article: Article | null;
   defaultCategory: KbCategoryId;
+  authors: Author[];
   onCancel: () => void;
-  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[] }) => void;
+  onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[]; visibility: KbVisibility; allowedUserIds: number[] }) => void;
 }) {
   const [title, setTitle] = useState(article?.title ?? '');
   const [category, setCategory] = useState<KbCategoryId>(article?.category ?? defaultCategory);
   const [excerpt, setExcerpt] = useState(article?.excerpt ?? '');
   const [content, setContent] = useState(article?.content ?? '');
   const [attachments, setAttachments] = useState<KbAttachment[]>(article?.attachments ?? []);
+  const [visibility, setVisibility] = useState<KbVisibility>(article?.visibility ?? 'public');
+  const [allowedUserIds, setAllowedUserIds] = useState<number[]>(article?.allowedUserIds ?? []);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -73,7 +77,7 @@ export default function ArticleEditor({ article, defaultCategory, onCancel, onSa
   function submit() {
     if (!title.trim() || saving) return;
     setSaving(true);
-    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content, attachments });
+    onSave({ id: article?.id, title: title.trim(), category, excerpt: excerpt.trim(), content, attachments, visibility, allowedUserIds });
   }
 
   return (
@@ -118,6 +122,41 @@ export default function ArticleEditor({ article, defaultCategory, onCancel, onSa
             <input value={excerpt} onChange={(e) => setExcerpt(e.target.value)} placeholder="1-2 предложения для списка" className={inputCls} />
           </div>
         </div>
+
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1.5">Доступ к статье</label>
+          <div className="flex gap-2 mb-2">
+            <button
+              type="button"
+              onClick={() => setVisibility('public')}
+              className={`flex-1 h-9 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                visibility === 'public' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+              }`}
+            >
+              <Icon name="Globe" size={14} />
+              Публичная
+            </button>
+            <button
+              type="button"
+              onClick={() => setVisibility('private')}
+              className={`flex-1 h-9 rounded-lg border text-sm font-medium transition-colors flex items-center justify-center gap-1.5 ${
+                visibility === 'private' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+              }`}
+            >
+              <Icon name="Lock" size={14} />
+              Приватная
+            </button>
+          </div>
+          {visibility === 'public' ? (
+            <p className="text-xs text-muted-foreground">Статья видна всем участникам команды.</p>
+          ) : (
+            <div>
+              <p className="text-xs text-muted-foreground mb-1.5">Выберите, кому открыть доступ (администраторам и автору статья доступна всегда):</p>
+              <UserMultiSelect authors={authors} value={allowedUserIds} onChange={setAllowedUserIds} />
+            </div>
+          )}
+        </div>
+
         <div>
           <label className="block text-xs text-muted-foreground mb-1.5">Содержание</label>
           <RichEditor content={content} onChange={setContent} onImageUpload={uploadImage} placeholder="Опишите решение: шаги, изображения, ссылки..." />

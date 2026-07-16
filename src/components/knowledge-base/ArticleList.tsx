@@ -88,7 +88,12 @@ export default function ArticleList({
               className="relative text-left rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all group cursor-pointer"
             >
               <div className="flex items-center justify-between mb-2 pr-6">
-                <CatBadge id={a.category} />
+                <div className="flex items-center gap-1.5">
+                  <CatBadge id={a.category} />
+                  {a.visibility === 'private' && (
+                    <Icon name="Lock" size={11} className="text-muted-foreground" />
+                  )}
+                </div>
                 <Icon name="ChevronRight" size={15} className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
               <button
