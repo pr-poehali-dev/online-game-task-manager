@@ -201,7 +201,7 @@ export default function Index() {
   function handleOpenTaskById(taskId: string) {
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
-      setView(task.column === 'restart' ? 'restart' : 'board');
+      setView(task.archived ? 'archive' : task.column === 'restart' ? 'restart' : 'board');
       setSelectedTask(task);
     }
   }
@@ -222,6 +222,28 @@ export default function Index() {
     setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tasks, searchParams]);
+
+  // Открытие конкретной статьи базы знаний по прямой ссылке (например из хранилища файлов в админке: /?article=123)
+  useEffect(() => {
+    const articleId = searchParams.get('article');
+    if (!articleId) return;
+    handleOpenArticle(articleId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('article');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // Открытие конкретной идеи по прямой ссылке (например из хранилища файлов в админке: /?idea=123)
+  useEffect(() => {
+    const ideaId = searchParams.get('idea');
+    if (!ideaId) return;
+    handleOpenIdeaById(ideaId);
+    const next = new URLSearchParams(searchParams);
+    next.delete('idea');
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Быстрый переход к своим задачам по прямой ссылке (например из кнопки бота: /?my=1)
   useEffect(() => {

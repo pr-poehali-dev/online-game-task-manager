@@ -6,11 +6,11 @@ import type { AdminAttachment, FilesBySection } from './adminShared';
 
 type SectionKey = 'knowledge' | 'ideas' | 'tasksActive' | 'tasksArchived';
 
-const SECTIONS: { key: SectionKey; label: string; icon: string; section: 'knowledge' | 'ideas' | 'tasks' }[] = [
-  { key: 'knowledge', label: 'База знаний', icon: 'BookOpen', section: 'knowledge' },
-  { key: 'ideas', label: 'Идеи', icon: 'Lightbulb', section: 'ideas' },
-  { key: 'tasksActive', label: 'Задачи', icon: 'ClipboardList', section: 'tasks' },
-  { key: 'tasksArchived', label: 'Задачи · в архиве', icon: 'Archive', section: 'tasks' },
+const SECTIONS: { key: SectionKey; label: string; icon: string; section: 'knowledge' | 'ideas' | 'tasks'; urlParam: string }[] = [
+  { key: 'knowledge', label: 'База знаний', icon: 'BookOpen', section: 'knowledge', urlParam: 'article' },
+  { key: 'ideas', label: 'Идеи', icon: 'Lightbulb', section: 'ideas', urlParam: 'idea' },
+  { key: 'tasksActive', label: 'Задачи', icon: 'ClipboardList', section: 'tasks', urlParam: 'task' },
+  { key: 'tasksArchived', label: 'Задачи · в архиве', icon: 'Archive', section: 'tasks', urlParam: 'task' },
 ];
 
 function fmtDate(d: string | null) {
@@ -94,7 +94,16 @@ export default function FilesModal({
                             {a.name}
                           </a>
                           <div className="text-[11px] text-muted-foreground truncate">
-                            {a.entityTitle} · {fmtDate(a.updatedAt)}
+                            <a
+                              href={`/?${s.urlParam}=${a.entityId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="hover:underline hover:text-primary"
+                              title="Открыть источник"
+                            >
+                              {a.entityTitle}
+                            </a>
+                            {' · '}{fmtDate(a.updatedAt)}
                           </div>
                         </div>
                         <span className="text-xs text-muted-foreground shrink-0">{fmtFileSize(a.size)}</span>
