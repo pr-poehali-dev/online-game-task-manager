@@ -1,0 +1,1 @@
+ALTER TABLE t_p84024572_online_game_task_man.task_assignment_events DROP CONSTRAINT task_assignment_events_task_id_fkey;

@@ -1,3 +1,21 @@
+diff --git a/backend/tasks/index.py b/backend/tasks/index.py
+index 9774916..1860deb 100644
+--- a/backend/tasks/index.py
++++ b/backend/tasks/index.py
+@@ -708,9 +708,13 @@ def handler(event: dict, context) -> dict:
+         trow = cur.fetchone()
+         task_title = trow[0] if trow else None
+         cur.execute(f"DELETE FROM {schema}.task_comments WHERE task_id = %s", (str(task_id),))
++        cur.execute(f"DELETE FROM {schema}.task_assignment_events WHERE task_id = %s", (int(task_id),))
+         cur.execute(f"DELETE FROM {schema}.tasks WHERE id = %s", (int(task_id),))
++        deleted = cur.rowcount
+         _log_activity(cur, schema, me['id'], 'task_delete', 'task', task_id, task_title)
+         cur.close(); conn.close()
++        if not deleted:
++            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+ 
+     # Список комментариев задачи
 diff --git a/index.html b/index.html
 index b405e4c..288efb9 100755
 --- a/index.html
@@ -215,3 +233,97 @@ index 727c266..a0d779e 100644
              .map(({ srv, tasksForServer }) => (
                <div key={srv.id}>
                  <div className="flex items-center gap-2 mb-3">
+diff --git a/src/pages/index/useTaskActions.ts b/src/pages/index/useTaskActions.ts
+index d10e271..d6a5cd9 100644
+--- a/src/pages/index/useTaskActions.ts
++++ b/src/pages/index/useTaskActions.ts
+@@ -60,36 +60,35 @@ export function useTaskActions(
+     }
+   }
+ 
+-  function handleDeleteTask(id: string) {
++  async function handleDeleteTask(id: string) {
+     const task = tasks.find((t) => t.id === id);
+     if (!task) return;
+     setSelectedTask(null);
+     setTasks((prev) => prev.filter((t) => t.id !== id));
+ 
+-    let cancelled = false;
+-    const timer = setTimeout(async () => {
+-      if (cancelled) return;
+-      try {
+-        await fetch(TASKS_URL, {
+-          method: 'POST',
+-          headers: authHeaders(),
+-          body: JSON.stringify({ action: 'delete', id }),
+-        });
+-      } catch {
+-        /* ignore */
++    try {
++      const res = await fetch(TASKS_URL, {
++        method: 'POST',
++        headers: authHeaders(),
++        body: JSON.stringify({ action: 'delete', id }),
++      });
++      if (!res.ok) {
++        setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
++        toast.error('Не удалось удалить задачу');
++        return;
+       }
+-    }, 5000);
++    } catch {
++      setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
++      toast.error('Не удалось удалить задачу');
++      return;
++    }
+ 
+     toast(`Задача удалена`, {
+       description: task.title,
+       duration: 5000,
+       action: {
+         label: 'Восстановить',
+-        onClick: () => {
+-          cancelled = true;
+-          clearTimeout(timer);
+-          setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+-        },
++        onClick: () => handleAddTask({ ...task, id: undefined as unknown as string }),
+       },
+     });
+   }
+@@ -154,17 +153,25 @@ export function useTaskActions(
+ 
+   async function handleDeleteArchivedTask(id: string) {
+     const task = tasks.find((t) => t.id === id);
++    if (!task) return;
+     setTasks((prev) => prev.filter((t) => t.id !== id));
+     try {
+-      await fetch(TASKS_URL, {
++      const res = await fetch(TASKS_URL, {
+         method: 'POST',
+         headers: authHeaders(),
+         body: JSON.stringify({ action: 'delete', id }),
+       });
++      if (!res.ok) {
++        setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
++        toast.error('Не удалось удалить задачу');
++        return;
++      }
+     } catch {
+-      /* ignore */
++      setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
++      toast.error('Не удалось удалить задачу');
++      return;
+     }
+-    toast(`Задача удалена окончательно`, { description: task?.title });
++    toast(`Задача удалена окончательно`, { description: task.title });
+   }
+ 
+   return {
+@@ -178,4 +185,4 @@ export function useTaskActions(
+     handleToggleRestartDone,
+     handleDeleteArchivedTask,
+   };
+-}
++}
+\ No newline at end of file
