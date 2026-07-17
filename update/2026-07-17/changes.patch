@@ -1,0 +1,33 @@
+diff --git a/src/pages/index/Restart.tsx b/src/pages/index/Restart.tsx
+index 727c266..a0d779e 100644
+--- a/src/pages/index/Restart.tsx
++++ b/src/pages/index/Restart.tsx
+@@ -1,7 +1,7 @@
+ import { useState } from 'react';
+ import Icon from '@/components/ui/icon';
+ import type { Task, TeamMember, TaskOutcome } from './shared';
+-import { taskAssigneeIds, outcomes, servers, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
++import { taskAssigneeIds, outcomes, servers, serverMeta, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
+ import type { PermissionKey } from '@/lib/auth';
+ 
+ export default function Restart({
+@@ -108,9 +108,16 @@ export default function Restart({
+         </div>
+       ) : (
+         <div className="space-y-6">
+-          {servers
+-            .map((srv) => ({ srv, tasksForServer: restartTasks.filter((t) => t.server === srv.id) }))
+-            .filter(({ tasksForServer }) => tasksForServer.length > 0)
++          {(() => {
++            const knownIds = new Set(servers.map((s) => s.id));
++            const extraIds = Array.from(new Set(restartTasks.map((t) => t.server).filter((id) => !knownIds.has(id))));
++            const groups = [
++              ...servers,
++              ...extraIds.map((id) => serverMeta(id)),
++            ].map((srv) => ({ srv, tasksForServer: restartTasks.filter((t) => t.server === srv.id) }))
++              .filter(({ tasksForServer }) => tasksForServer.length > 0);
++            return groups;
++          })()
+             .map(({ srv, tasksForServer }) => (
+               <div key={srv.id}>
+                 <div className="flex items-center gap-2 mb-3">
