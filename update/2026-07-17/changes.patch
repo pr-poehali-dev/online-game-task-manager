@@ -16,6 +16,14 @@ index 9774916..1860deb 100644
          return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
  
      # Список комментариев задачи
+diff --git a/db_migrations/V0035__drop_task_assignment_events_fkey.sql b/db_migrations/V0035__drop_task_assignment_events_fkey.sql
+new file mode 100644
+index 0000000..f3f9a80
+--- /dev/null
++++ b/db_migrations/V0035__drop_task_assignment_events_fkey.sql
+@@ -0,0 +1 @@
++ALTER TABLE t_p84024572_online_game_task_man.task_assignment_events DROP CONSTRAINT task_assignment_events_task_id_fkey;
+\ No newline at end of file
 diff --git a/index.html b/index.html
 index b405e4c..288efb9 100755
 --- a/index.html

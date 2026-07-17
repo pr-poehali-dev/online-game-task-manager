@@ -67,13 +67,20 @@ export function useTaskActions(
     setTasks((prev) => prev.filter((t) => t.id !== id));
 
     try {
-      await fetch(TASKS_URL, {
+      const res = await fetch(TASKS_URL, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ action: 'delete', id }),
       });
+      if (!res.ok) {
+        setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+        toast.error('Не удалось удалить задачу');
+        return;
+      }
     } catch {
-      /* ignore */
+      setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+      toast.error('Не удалось удалить задачу');
+      return;
     }
 
     toast(`Задача удалена`, {
@@ -146,17 +153,25 @@ export function useTaskActions(
 
   async function handleDeleteArchivedTask(id: string) {
     const task = tasks.find((t) => t.id === id);
+    if (!task) return;
     setTasks((prev) => prev.filter((t) => t.id !== id));
     try {
-      await fetch(TASKS_URL, {
+      const res = await fetch(TASKS_URL, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ action: 'delete', id }),
       });
+      if (!res.ok) {
+        setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+        toast.error('Не удалось удалить задачу');
+        return;
+      }
     } catch {
-      /* ignore */
+      setTasks((prev) => (prev.some((t) => t.id === id) ? prev : [...prev, task]));
+      toast.error('Не удалось удалить задачу');
+      return;
     }
-    toast(`Задача удалена окончательно`, { description: task?.title });
+    toast(`Задача удалена окончательно`, { description: task.title });
   }
 
   return {
