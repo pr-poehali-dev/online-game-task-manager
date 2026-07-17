@@ -57,27 +57,27 @@ index b405e4c..288efb9 100755
 \ No newline at end of file
 diff --git a/public/apple-touch-icon.png b/public/apple-touch-icon.png
 new file mode 100644
-index 0000000..aa88066
+index 0000000..95d233c
 Binary files /dev/null and b/public/apple-touch-icon.png differ
 diff --git a/public/favicon-16.png b/public/favicon-16.png
 new file mode 100644
-index 0000000..ebbbb30
+index 0000000..a7f8984
 Binary files /dev/null and b/public/favicon-16.png differ
 diff --git a/public/favicon-192.png b/public/favicon-192.png
 new file mode 100644
-index 0000000..0555e35
+index 0000000..fbca572
 Binary files /dev/null and b/public/favicon-192.png differ
 diff --git a/public/favicon-32.png b/public/favicon-32.png
 new file mode 100644
-index 0000000..c0cc824
+index 0000000..cfe4a46
 Binary files /dev/null and b/public/favicon-32.png differ
 diff --git a/public/favicon-512.png b/public/favicon-512.png
 new file mode 100644
-index 0000000..f9a8154
+index 0000000..76e69ee
 Binary files /dev/null and b/public/favicon-512.png differ
 diff --git a/public/favicon.ico b/public/favicon.ico
 new file mode 100644
-index 0000000..399e7ef
+index 0000000..7cf6b30
 Binary files /dev/null and b/public/favicon.ico differ
 diff --git a/public/favicon.svg b/public/favicon.svg
 deleted file mode 100755
@@ -210,7 +210,7 @@ index 0000000..ba4c480
 Binary files /dev/null and b/public/og-image.jpg differ
 diff --git a/public/telegram-bot-avatar.jpg b/public/telegram-bot-avatar.jpg
 new file mode 100644
-index 0000000..0cda9ea
+index 0000000..1051632
 Binary files /dev/null and b/public/telegram-bot-avatar.jpg differ
 diff --git a/src/pages/index/Board.tsx b/src/pages/index/Board.tsx
 index 8b3d304..33da7af 100644
@@ -239,7 +239,7 @@ index 8b3d304..33da7af 100644
 +}
 \ No newline at end of file
 diff --git a/src/pages/index/Restart.tsx b/src/pages/index/Restart.tsx
-index 727c266..a0d779e 100644
+index 727c266..a2e1ab0 100644
 --- a/src/pages/index/Restart.tsx
 +++ b/src/pages/index/Restart.tsx
 @@ -1,7 +1,7 @@
@@ -271,6 +271,36 @@ index 727c266..a0d779e 100644
              .map(({ srv, tasksForServer }) => (
                <div key={srv.id}>
                  <div className="flex items-center gap-2 mb-3">
+@@ -164,7 +171,8 @@ function RestartTaskCard({
+   const done = !!t.restartDone;
+   return (
+     <div
+-      className="group relative rounded-xl border bg-card p-4 transition-all animate-scale-in"
++      onClick={() => onCardClick(t)}
++      className="group relative rounded-xl border bg-card p-4 transition-all animate-scale-in cursor-pointer hover:border-primary/50"
+       style={done
+         ? { borderColor: 'hsl(152 55% 45% / 0.6)', background: 'hsl(152 55% 45% / 0.08)' }
+         : undefined}
+@@ -176,9 +184,7 @@ function RestartTaskCard({
+           {done && <Icon name="CircleCheck" size={16} className="text-[hsl(152_55%_50%)]" />}
+         </div>
+       </div>
+-      <button onClick={() => onCardClick(t)} className="text-left w-full">
+-        <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
+-      </button>
++      <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
+       {t.deployStatus && t.deployStatus !== 'none' && (
+         <div className="mb-2"><DeployBadge status={t.deployStatus} /></div>
+       )}
+@@ -187,7 +193,7 @@ function RestartTaskCard({
+         <ServerBadge id={t.server} />
+       </div>
+       {isAdmin && (
+-        <div className="flex items-center gap-2">
++        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+           {done ? (
+             <>
+               <button
 diff --git a/src/pages/index/useTaskActions.ts b/src/pages/index/useTaskActions.ts
 index d10e271..d6a5cd9 100644
 --- a/src/pages/index/useTaskActions.ts

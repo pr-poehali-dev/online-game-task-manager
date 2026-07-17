@@ -171,7 +171,8 @@ function RestartTaskCard({
   const done = !!t.restartDone;
   return (
     <div
-      className="group relative rounded-xl border bg-card p-4 transition-all animate-scale-in"
+      onClick={() => onCardClick(t)}
+      className="group relative rounded-xl border bg-card p-4 transition-all animate-scale-in cursor-pointer hover:border-primary/50"
       style={done
         ? { borderColor: 'hsl(152 55% 45% / 0.6)', background: 'hsl(152 55% 45% / 0.08)' }
         : undefined}
@@ -183,9 +184,7 @@ function RestartTaskCard({
           {done && <Icon name="CircleCheck" size={16} className="text-[hsl(152_55%_50%)]" />}
         </div>
       </div>
-      <button onClick={() => onCardClick(t)} className="text-left w-full">
-        <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
-      </button>
+      <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
       {t.deployStatus && t.deployStatus !== 'none' && (
         <div className="mb-2"><DeployBadge status={t.deployStatus} /></div>
       )}
@@ -194,7 +193,7 @@ function RestartTaskCard({
         <ServerBadge id={t.server} />
       </div>
       {isAdmin && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           {done ? (
             <>
               <button
