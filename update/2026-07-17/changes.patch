@@ -208,6 +208,36 @@ diff --git a/public/og-image.jpg b/public/og-image.jpg
 new file mode 100644
 index 0000000..ba4c480
 Binary files /dev/null and b/public/og-image.jpg differ
+diff --git a/public/telegram-bot-avatar.jpg b/public/telegram-bot-avatar.jpg
+new file mode 100644
+index 0000000..0cda9ea
+Binary files /dev/null and b/public/telegram-bot-avatar.jpg differ
+diff --git a/src/pages/index/Board.tsx b/src/pages/index/Board.tsx
+index 8b3d304..33da7af 100644
+--- a/src/pages/index/Board.tsx
++++ b/src/pages/index/Board.tsx
+@@ -328,11 +328,11 @@ export default function Board({
+                 <button
+                   key={o.id}
+                   onClick={() => { onMoveTask(pendingDrop.task, pendingDrop.targetColumn, o.id); setPendingDrop(null); }}
+-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
++                  className="w-full flex items-start gap-2 px-2 py-1.5 rounded-md text-sm text-left hover:bg-secondary/60 transition-colors"
+                   style={{ color: `hsl(${o.color})` }}
+                 >
+-                  <Icon name={o.icon} size={14} />
+-                  {o.label}
++                  <Icon name={o.icon} size={14} className="shrink-0 mt-0.5" />
++                  <span className="leading-snug">{o.label}</span>
+                 </button>
+               ))}
+             </div>
+@@ -347,4 +347,4 @@ export default function Board({
+       )}
+     </DndContext>
+   );
+-}
++}
+\ No newline at end of file
 diff --git a/src/pages/index/Restart.tsx b/src/pages/index/Restart.tsx
 index 727c266..a0d779e 100644
 --- a/src/pages/index/Restart.tsx
