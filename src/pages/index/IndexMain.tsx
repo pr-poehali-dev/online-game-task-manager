@@ -104,7 +104,7 @@ export default function IndexMain({
   handleAddTask: (t: Task) => void;
   createSprint: boolean;
   setCreateSprint: (v: boolean) => void;
-  handleCreateSprint: (s: Sprint) => void;
+  handleCreateSprint: (s: Sprint, taskIds?: string[]) => void;
   isAdmin: boolean;
   can: (key: PermissionKey) => boolean;
   currentUserId: number | null;
@@ -232,6 +232,7 @@ export default function IndexMain({
         <CreateSprintModal
           onClose={() => setCreateSprint(false)}
           onCreate={handleCreateSprint}
+          availableTasks={activeTasks.filter((t) => !t.sprintId)}
         />
       )}
     </>

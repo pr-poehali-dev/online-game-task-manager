@@ -258,6 +258,7 @@ export interface Sprint {
   startDate: string;
   endDate: string;
   status: 'active' | 'planned' | 'done';
+  server?: ServerId | null;
 }
 
 export const columns: { id: ColumnId; title: string; icon: string }[] = [
