@@ -334,7 +334,11 @@ def _upload_file(body):
     data_b64 = body.get('data')
     if not data_b64:
         return None, 'no_data'
-    raw = _decode_data(data_b64)
+    try:
+        raw = _decode_data(data_b64)
+    except Exception:
+        # Битые/оборванные данные (например, запрос был обрезан прокси на большом файле)
+        return None, 'bad_data'
     if len(raw) > MAX_FILE_SIZE:
         return None, 'file_too_large'
     name = (body.get('name') or 'file').strip() or 'file'
@@ -569,37 +573,44 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-        assignee_ids = _norm_assignees(body)
+        # Подгружаем текущие значения задачи — поля, которых нет в теле запроса (частичное обновление,
+        # например быстрая смена статуса деплоя при перетаскивании карточки), не должны затираться на NULL.
+        cur.execute(f"SELECT {TASK_COLUMNS} FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        existing_row = cur.fetchone()
+        if not existing_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        existing = _row_to_task(existing_row)
+
+        has_assignees = 'assigneeIds' in body or 'assigneeId' in body
+        assignee_ids = _norm_assignees(body) if has_assignees else (existing['assigneeIds'] or [])
         assignee_id = assignee_ids[0] if assignee_ids else None
-        links = json.dumps(body.get('links') or [])
-        kb_ids = json.dumps(_norm_kb(body))
-        attachments = json.dumps(body.get('attachments') or [])
-        # Предыдущие исполнители — чтобы уведомить только вновь добавленных
-        cur.execute(f"SELECT assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
-        prev_row = cur.fetchone()
-        prev_ids = prev_row[0] if prev_row and prev_row[0] else []
+        links = json.dumps(body.get('links')) if 'links' in body else json.dumps(existing['links'] or [])
+        kb_ids = json.dumps(_norm_kb(body)) if 'kbArticleIds' in body else json.dumps(existing['kbArticleIds'] or [])
+        attachments = json.dumps(body.get('attachments')) if 'attachments' in body else json.dumps(existing['attachments'] or [])
+        prev_ids = existing['assigneeIds'] or []
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
             f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
-                (body.get('title') or '').strip(),
-                body.get('column') or 'todo',
+                (body.get('title') if 'title' in body else existing['title'] or '').strip(),
+                body.get('column', existing['column']) or 'todo',
                 assignee_id,
                 json.dumps(assignee_ids),
-                body.get('priority') or 'medium',
-                body.get('version'),
-                body.get('server'),
-                body.get('category') or 'other',
-                body.get('sprintId'),
-                body.get('deployStatus') or 'none',
-                body.get('description'),
+                body.get('priority', existing['priority']) or 'medium',
+                body.get('version', existing['version']),
+                body.get('server', existing['server']),
+                body.get('category', existing['category']) or 'other',
+                body.get('sprintId', existing['sprintId']),
+                body.get('deployStatus', existing['deployStatus']) or 'none',
+                body.get('description', existing['description']),
                 links,
                 kb_ids,
-                bool(body.get('restartDone', False)),
+                bool(body.get('restartDone', existing['restartDone'])),
                 attachments,
-                body.get('deadline'),
+                body.get('deadline', existing['deadline']),
                 int(task_id),
             )
         )
@@ -609,9 +620,10 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
-        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id, body.get('description'))
-        new_deploy_status = body.get('deployStatus') or 'none'
-        task_title = (body.get('title') or '').strip()
+        task_title_full = (body.get('title') if 'title' in body else existing['title'] or '').strip()
+        _notify_assignees(cur, schema, new_ids, task_title_full, me['id'], task_id, body.get('description', existing['description']))
+        new_deploy_status = body.get('deployStatus', existing['deployStatus']) or 'none'
+        task_title = task_title_full
         if new_deploy_status != own_row[4]:
             _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status, me['id'], own_row[2], assignee_ids)
             _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status, new_deploy_status))

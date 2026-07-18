@@ -334,7 +334,11 @@ def _upload_file(body):
     data_b64 = body.get('data')
     if not data_b64:
         return None, 'no_data'
-    raw = _decode_data(data_b64)
+    try:
+        raw = _decode_data(data_b64)
+    except Exception:
+        # Битые/оборванные данные (например, запрос был обрезан прокси на большом файле)
+        return None, 'bad_data'
     if len(raw) > MAX_FILE_SIZE:
         return None, 'file_too_large'
     name = (body.get('name') or 'file').strip() or 'file'

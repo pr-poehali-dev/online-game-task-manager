@@ -4,6 +4,7 @@ import os
 import re
 import urllib.request
 import urllib.error
+import urllib.parse
 import uuid
 
 import boto3
@@ -178,6 +179,14 @@ def _decode_data(data_b64):
     return base64.b64decode(data_b64)
 
 
+def _content_disposition(name):
+    '''Формирует заголовок Content-Disposition с оригинальным именем файла (в т.ч. кириллица/спецсимволы),
+    чтобы при скачивании из S3/MinIO браузер сохранял файл под его настоящим именем, а не под ключом-хэшем.'''
+    ascii_fallback = name.encode('ascii', 'ignore').decode('ascii') or 'file'
+    encoded = urllib.parse.quote(name)
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
+
+
 def _upload_image(body):
     data_b64 = body.get('data')
     if not data_b64:
@@ -196,7 +205,10 @@ def _upload_file(body):
     data_b64 = body.get('data')
     if not data_b64:
         return None, 'no_data'
-    raw = _decode_data(data_b64)
+    try:
+        raw = _decode_data(data_b64)
+    except Exception:
+        return None, 'bad_data'
     if len(raw) > MAX_FILE_SIZE:
         return None, 'file_too_large'
     name = (body.get('name') or 'file').strip() or 'file'
@@ -205,7 +217,10 @@ def _upload_file(body):
     content_type = body.get('contentType') or 'application/octet-stream'
     key = f"ideas/files/{uuid.uuid4().hex}.{ext}" if ext else f"ideas/files/{uuid.uuid4().hex}"
     bucket = os.environ.get('S3_BUCKET', 'files')
-    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    _s3_client().put_object(
+        Bucket=bucket, Key=key, Body=raw, ContentType=content_type,
+        ContentDisposition=_content_disposition(name),
+    )
     attachment = {
         'id': uuid.uuid4().hex,
         'name': name,

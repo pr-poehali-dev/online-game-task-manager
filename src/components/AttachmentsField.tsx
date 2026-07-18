@@ -84,7 +84,9 @@ export default function AttachmentsField({
       });
       const d = await res.json();
       if (!res.ok) {
-        setError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
+        if (d.error === 'file_too_large') setError('Файл слишком большой (максимум 300 МБ)');
+        else if (d.error === 'bad_data') setError('Файл повреждён при загрузке — проверьте соединение и попробуйте ещё раз');
+        else setError('Не удалось загрузить файл');
         return;
       }
       if (d.attachment) onChange([...attachments, d.attachment]);

@@ -84,7 +84,9 @@ export default function AttachmentsField({
       });
       const d = await res.json();
       if (!res.ok) {
-        setError(d.error === 'file_too_large' ? 'Файл слишком большой (максимум 300 МБ)' : 'Не удалось загрузить файл');
+        if (d.error === 'file_too_large') setError('Файл слишком большой (максимум 300 МБ)');
+        else if (d.error === 'bad_data') setError('Файл повреждён при загрузке — проверьте соединение и попробуйте ещё раз');
+        else setError('Не удалось загрузить файл');
         return;
       }
       if (d.attachment) onChange([...attachments, d.attachment]);
@@ -107,7 +109,15 @@ export default function AttachmentsField({
             {attachments.map((a) => (
               <div key={a.id} className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs bg-secondary/40">
                 <Icon name={fileIconFor(a.name)} size={12} className="text-muted-foreground shrink-0" />
-                <span className="max-w-[140px] truncate">{a.name}</span>
+                <a
+                  href={a.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Скачать файл"
+                  className="max-w-[140px] truncate hover:text-primary hover:underline transition-colors"
+                >
+                  {a.name}
+                </a>
                 <button
                   type="button"
                   onClick={() => remove(a.id)}
@@ -139,8 +149,25 @@ export default function AttachmentsField({
           {attachments.map((a) => (
             <div key={a.id} className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm">
               <Icon name={fileIconFor(a.name)} size={16} className="text-muted-foreground shrink-0" />
-              <span className="flex-1 truncate">{a.name}</span>
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Скачать файл"
+                className="flex-1 truncate hover:text-primary hover:underline transition-colors"
+              >
+                {a.name}
+              </a>
               <span className="text-xs text-muted-foreground shrink-0">{fmtSize(a.size)}</span>
+              <a
+                href={a.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Скачать файл"
+                className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <Icon name="Download" size={13} />
+              </a>
               <button
                 type="button"
                 onClick={() => remove(a.id)}
