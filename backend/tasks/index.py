@@ -715,6 +715,12 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         task = _row_to_task(row)
         _log_activity(cur, schema, me['id'], 'task_archive', 'task', task_id, task['title'], outcome)
+        # Автозапись в журнал патчноутов сервера — только для задач, выполненных из раздела «К рестарту»
+        if task['column'] == 'restart' and outcome == 'done' and task.get('server'):
+            cur.execute(
+                f"INSERT INTO {schema}.patchnotes (server, task_id, task_title) VALUES (%s, %s, %s)",
+                (task['server'], int(task_id), task['title'])
+            )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 

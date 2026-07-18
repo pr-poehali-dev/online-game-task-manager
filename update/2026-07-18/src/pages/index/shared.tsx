@@ -7,6 +7,7 @@ export const TASKS_URL = (func2url as Record<string, string>).tasks;
 export const SPRINTS_URL = (func2url as Record<string, string>).sprints;
 export const IDEAS_URL = (func2url as Record<string, string>).ideas;
 export const NOTIFICATIONS_URL = (func2url as Record<string, string>).notifications;
+export const PATCHNOTES_URL = (func2url as Record<string, string>).patchnotes;
 export const TOKEN_KEY = 'era_auth_token';
 
 export function authHeaders(): Record<string, string> {
@@ -140,7 +141,7 @@ export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
 export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
-export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas';
+export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas' | 'patchnotes';
 
 export interface Comment {
   id: string;

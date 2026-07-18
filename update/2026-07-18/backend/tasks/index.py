@@ -4,6 +4,7 @@ import os
 import re
 import urllib.request
 import urllib.error
+import urllib.parse
 import uuid
 
 import boto3
@@ -307,6 +308,14 @@ def _decode_data(data_b64):
     return base64.b64decode(data_b64)
 
 
+def _content_disposition(name):
+    '''Формирует заголовок Content-Disposition с оригинальным именем файла (в т.ч. кириллица/спецсимволы),
+    чтобы при скачивании из S3/MinIO браузер сохранял файл под его настоящим именем, а не под ключом-хэшем.'''
+    ascii_fallback = name.encode('ascii', 'ignore').decode('ascii') or 'file'
+    encoded = urllib.parse.quote(name)
+    return f"attachment; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
+
+
 def _upload_image(body):
     data_b64 = body.get('data')
     if not data_b64:
@@ -334,7 +343,10 @@ def _upload_file(body):
     content_type = body.get('contentType') or 'application/octet-stream'
     key = f"tasks/files/{uuid.uuid4().hex}.{ext}" if ext else f"tasks/files/{uuid.uuid4().hex}"
     bucket = os.environ.get('S3_BUCKET', 'files')
-    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    _s3_client().put_object(
+        Bucket=bucket, Key=key, Body=raw, ContentType=content_type,
+        ContentDisposition=_content_disposition(name),
+    )
     attachment = {
         'id': uuid.uuid4().hex,
         'name': name,
@@ -703,6 +715,12 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         task = _row_to_task(row)
         _log_activity(cur, schema, me['id'], 'task_archive', 'task', task_id, task['title'], outcome)
+        # Автозапись в журнал патчноутов сервера — только для задач, выполненных из раздела «К рестарту»
+        if task['column'] == 'restart' and outcome == 'done' and task.get('server'):
+            cur.execute(
+                f"INSERT INTO {schema}.patchnotes (server, task_id, task_title) VALUES (%s, %s, %s)",
+                (task['server'], int(task_id), task['title'])
+            )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 
