@@ -437,6 +437,15 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
 
+    # Загрузка файла-вложения к комментарию — доступно любому, кто может видеть/комментировать задачи
+    if action == 'comment_upload_file':
+        attachment, err = _upload_file(body)
+        cur.close(); conn.close()
+        if err:
+            status = 413 if err == 'file_too_large' else 400
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
+
     # Список задач
     if action == 'list' or method == 'GET':
         cur.execute(
@@ -756,7 +765,7 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
-            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions "
+            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions, attachments "
             f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
             (str(task_id),)
         )
@@ -765,15 +774,17 @@ def handler(event: dict, context) -> dict:
             'createdAt': r[4].isoformat() if r[4] else None,
             'parentId': str(r[5]) if r[5] else None,
             'mentions': r[6] if r[6] is not None else [],
+            'attachments': r[7] if r[7] is not None else [],
         } for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comments': comments})}
 
-    # Добавить комментарий к задаче (+ ответ + упоминания)
+    # Добавить комментарий к задаче (+ ответ + упоминания + вложения)
     if action == 'comment':
         task_id = body.get('taskId')
         text = (body.get('text') or '').strip()
-        if not task_id or not text:
+        attachments = body.get('attachments') or []
+        if not task_id or (not text and not attachments):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
         if me['role'] != 'admin' and not me['perms']['task_view_others']:
@@ -787,9 +798,9 @@ def handler(event: dict, context) -> dict:
         parent_id = int(parent_id) if parent_id else None
         mentions = _norm_ids(body.get('mentions'))
         cur.execute(
-            f"INSERT INTO {schema}.task_comments (task_id, user_id, text, parent_id, mentions) "
-            f"VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
-            (str(task_id), me['id'], text, parent_id, json.dumps(mentions))
+            f"INSERT INTO {schema}.task_comments (task_id, user_id, text, parent_id, mentions, attachments) "
+            f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, created_at",
+            (str(task_id), me['id'], text, parent_id, json.dumps(mentions), json.dumps(attachments))
         )
         new = cur.fetchone()
         # Заголовок и участники задачи (автор, исполнители) для уведомлений
@@ -819,6 +830,7 @@ def handler(event: dict, context) -> dict:
             'id': str(new[0]), 'taskId': str(task_id), 'authorId': me['id'], 'text': text,
             'createdAt': new[1].isoformat() if new[1] else None,
             'parentId': str(parent_id) if parent_id else None, 'mentions': mentions,
+            'attachments': attachments,
         }
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}

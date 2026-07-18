@@ -151,3 +151,28 @@ db_migrations/V0041__add_in_progress_status_faq.sql   — накатить на 
 backend/tasks/index.py                                 — заменить целиком (включает и правки из п.1, п.4)
 src/pages/index/shared.tsx                             — (уже входит в п.1/п.2, если переносите их)
 ```
+
+## 6. Вложения (файлы и изображения) в комментариях задач и идей
+
+### Что добавлено
+Теперь к любому комментарию — в задачах и в обсуждениях идей — можно прикрепить
+один или несколько файлов (документы, архивы, изображения и т.д.), точно так же,
+как это уже работало для описания задачи/идеи. Рядом с полем ввода комментария
+появилась кнопка со скрепкой — она загружает файл и прикрепляет его к сообщению.
+Отправить комментарий можно и без текста, если приложен хотя бы один файл.
+
+Ограничение на размер файла то же, что и для остальных вложений — до 300 МБ.
+
+### Файлы для переноса
+```
+db_migrations/V0042__add_attachments_to_comments.sql   — накатить на БД
+backend/tasks/index.py                                  — заменить целиком (включает и правки из п.1, п.4, п.5)
+backend/ideas/index.py                                  — заменить целиком
+src/components/AttachmentsField.tsx
+src/pages/index/TaskModalShared.tsx
+src/pages/index/TaskComments.tsx
+src/pages/index/Ideas.tsx
+src/pages/index/ideas/shared.tsx
+src/pages/index/ideas/IdeaComments.tsx
+src/pages/index/ideas/IdeaDetail.tsx
+```

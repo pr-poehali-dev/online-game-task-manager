@@ -225,6 +225,7 @@ def _comment_row(r):
         'createdAt': r[4].isoformat() if r[4] else None,
         'parentId': str(r[5]) if len(r) > 5 and r[5] else None,
         'mentions': (r[6] if len(r) > 6 and r[6] is not None else []),
+        'attachments': (r[7] if len(r) > 7 and r[7] is not None else []),
     }
 
 
@@ -241,7 +242,7 @@ def _norm_ids(raw):
 
 
 TOPIC_COLS = "id, title, body, status, author_id, created_at, updated_at, attachments"
-COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions"
+COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions, attachments"
 
 
 def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, actor_id):
@@ -299,6 +300,15 @@ def handler(event: dict, context) -> dict:
         if not me['perms']['idea_create']:
             cur.close(); conn.close()
             return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        attachment, err = _upload_file(body)
+        cur.close(); conn.close()
+        if err:
+            status = 413 if err == 'file_too_large' else 400
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
+
+    # Загрузка файла-вложения к комментарию — доступно любому авторизованному участнику
+    if action == 'comment_upload_file':
         attachment, err = _upload_file(body)
         cur.close(); conn.close()
         if err:
@@ -383,20 +393,21 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
-    # Добавить комментарий (+ ответ + упоминания)
+    # Добавить комментарий (+ ответ + упоминания + вложения)
     if action == 'comment':
         tid = body.get('topicId')
         text = (body.get('text') or '').strip()
-        if not tid or not text:
+        attachments = body.get('attachments') or []
+        if not tid or (not text and not attachments):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
         parent_id = body.get('parentId')
         parent_id = int(parent_id) if parent_id else None
         mentions = _norm_ids(body.get('mentions'))
         cur.execute(
-            f"INSERT INTO {schema}.idea_comments (topic_id, author_id, text, parent_id, mentions) "
-            f"VALUES (%s, %s, %s, %s, %s) RETURNING {COMMENT_COLS}",
-            (int(tid), me['id'], text, parent_id, json.dumps(mentions))
+            f"INSERT INTO {schema}.idea_comments (topic_id, author_id, text, parent_id, mentions, attachments) "
+            f"VALUES (%s, %s, %s, %s, %s, %s) RETURNING {COMMENT_COLS}",
+            (int(tid), me['id'], text, parent_id, json.dumps(mentions), json.dumps(attachments))
         )
         comment = _comment_row(cur.fetchone())
         cur.execute(f"UPDATE {schema}.idea_topics SET updated_at = NOW() WHERE id = %s", (int(tid),))
