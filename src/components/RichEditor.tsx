@@ -63,7 +63,7 @@ export default function RichEditor({ content, onChange, placeholder, onImageUplo
       StarterKit,
       Underline,
       Placeholder.configure({ placeholder: placeholder ?? 'Опишите задачу подробнее...' }),
-      Link.configure({ openOnClick: false, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
+      Link.configure({ openOnClick: false, autolink: true, linkOnPaste: true, HTMLAttributes: { rel: 'noopener noreferrer', target: '_blank' } }),
       Image.configure({ inline: false }),
       Table.configure({ resizable: false }),
       TableRow,
