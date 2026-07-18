@@ -1,12 +1,28 @@
 import base64
 import json
 import os
+import re
 import urllib.request
 import urllib.error
 import uuid
 
 import boto3
 import psycopg2
+
+
+SNIPPET_LEN = 100
+
+
+def _snippet(text, length=SNIPPET_LEN):
+    '''Первые N символов текста для превью в уведомлении: убирает HTML-теги (описание задач — rich text)
+    и схлопывает пробелы/переносы строк, добавляет многоточие, если текст обрезан.'''
+    if not text:
+        return ''
+    plain = re.sub(r'<[^>]+>', ' ', text)
+    plain = re.sub(r'\s+', ' ', plain).strip()
+    if len(plain) <= length:
+        return plain
+    return plain[:length].rstrip() + '…'
 
 
 def _tg_send(chat_id, text, button_url=None):
@@ -61,21 +77,23 @@ def _task_url(task_id=None):
     return f"{app_url}/?task={task_id}" if task_id else app_url
 
 
-def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None):
+def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, description=None):
     '''Уведомляет назначенных исполнителей (кроме назначившего) о новой задаче: запись в БД + сообщение в Telegram.'''
     targets = [uid for uid in user_ids if uid and uid != actor_id]
     if not targets:
         return
+    snippet = _snippet(description)
+    notif_body = f'«{title}»' + (f'\n{snippet}' if snippet else '')
     # Внутреннее уведомление в приложении — для всех назначенных
     for uid in targets:
         cur.execute(
             f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
             f"VALUES (%s, 'task_assigned', %s, %s, 'task', %s, %s)",
-            (uid, 'Вам назначена задача', title, str(task_id) if task_id else None, actor_id)
+            (uid, 'Вам назначена задача', notif_body, str(task_id) if task_id else None, actor_id)
         )
     # Telegram — только тем, кто вошёл через бота
     button_url = _task_url(task_id)
-    text = f"📌 Вам назначена задача:\n\n«{title}»\n\nОткройте таск-менеджер, чтобы посмотреть детали."
+    text = f"📌 Вам назначена задача:\n\n«{title}»" + (f'\n{snippet}' if snippet else '') + "\n\nОткройте таск-менеджер, чтобы посмотреть детали."
     for tg_id in _telegram_targets(cur, schema, targets):
         _tg_send(tg_id, text, button_url)
 
@@ -112,19 +130,20 @@ def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id
         _tg_send(tg_id, text, button_url)
 
 
-def _notify_reply_or_mention(cur, schema, user_id, task_id, task_title, kind):
+def _notify_reply_or_mention(cur, schema, user_id, task_id, task_title, kind, comment_text=None):
     '''Уведомляет одного пользователя об ответе на его комментарий или упоминании — сообщение в Telegram (если вошёл через бота).'''
     if not user_id:
         return
     label = 'Вам ответили в комментарии к задаче' if kind == 'reply' else 'Вас упомянули в комментарии к задаче'
     icon = '↩️' if kind == 'reply' else '📣'
-    text = f"{icon} {label}:\n\n«{task_title}»"
+    snippet = _snippet(comment_text)
+    text = f"{icon} {label}:\n\n«{task_title}»" + (f'\n{snippet}' if snippet else '')
     button_url = _task_url(task_id)
     for tg_id in _telegram_targets(cur, schema, [user_id]):
         _tg_send(tg_id, text, button_url)
 
 
-def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notified, creator_id, assignee_ids):
+def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notified, creator_id, assignee_ids, comment_text=None):
     '''Уведомляет автора и исполнителей задачи о новом комментарии (кроме автора комментария
     и тех, кто уже уведомлён как ответ/упоминание — чтобы не дублировать уведомления).'''
     targets = set()
@@ -137,10 +156,12 @@ def _notify_comment(cur, schema, task_id, task_title, actor_id, commenter_notifi
     targets -= commenter_notified
     if not targets:
         return
+    snippet = _snippet(comment_text)
+    notif_body = f'«{task_title}»' + (f'\n{snippet}' if snippet else '')
     for uid in targets:
-        _add_notif(cur, schema, uid, 'task_comment', 'Новый комментарий к задаче', task_title, 'task', task_id, actor_id)
+        _add_notif(cur, schema, uid, 'task_comment', 'Новый комментарий к задаче', notif_body, 'task', task_id, actor_id)
     button_url = _task_url(task_id)
-    text = f"💬 Новый комментарий к задаче:\n\n«{task_title}»"
+    text = f"💬 Новый комментарий к задаче:\n\n«{task_title}»" + (f'\n{snippet}' if snippet else '')
     for tg_id in _telegram_targets(cur, schema, list(targets)):
         _tg_send(tg_id, text, button_url)
 
@@ -473,7 +494,7 @@ def handler(event: dict, context) -> dict:
         )
         task = _row_to_task(cur.fetchone())
         _record_assignments(cur, schema, task['id'], assignee_ids, me['id'])
-        _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'])
+        _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'], body.get('description'))
         _log_activity(cur, schema, me['id'], 'task_create', 'task', task['id'], title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
@@ -566,7 +587,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
-        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id)
+        _notify_assignees(cur, schema, new_ids, (body.get('title') or '').strip(), me['id'], task_id, body.get('description'))
         new_deploy_status = body.get('deployStatus') or 'none'
         task_title = (body.get('title') or '').strip()
         if new_deploy_status != own_row[4]:
@@ -782,17 +803,17 @@ def handler(event: dict, context) -> dict:
             cur.execute(f"SELECT user_id FROM {schema}.task_comments WHERE id = %s", (parent_id,))
             prow = cur.fetchone()
             if prow and prow[0] and prow[0] != me['id']:
-                _add_notif(cur, schema, prow[0], 'task_reply', 'Ответ на ваш комментарий', task_title, 'task', task_id, me['id'])
-                _notify_reply_or_mention(cur, schema, prow[0], task_id, task_title, 'reply')
+                _add_notif(cur, schema, prow[0], 'task_reply', 'Ответ на ваш комментарий', f'«{task_title}»' + (f'\n{_snippet(text)}' if _snippet(text) else ''), 'task', task_id, me['id'])
+                _notify_reply_or_mention(cur, schema, prow[0], task_id, task_title, 'reply', text)
                 notified.add(prow[0])
         # Упоминания
         for uid in mentions:
             if uid not in notified:
-                _add_notif(cur, schema, uid, 'task_mention', 'Вас упомянули в задаче', task_title, 'task', task_id, me['id'])
-                _notify_reply_or_mention(cur, schema, uid, task_id, task_title, 'mention')
+                _add_notif(cur, schema, uid, 'task_mention', 'Вас упомянули в задаче', f'«{task_title}»' + (f'\n{_snippet(text)}' if _snippet(text) else ''), 'task', task_id, me['id'])
+                _notify_reply_or_mention(cur, schema, uid, task_id, task_title, 'mention', text)
                 notified.add(uid)
         # Новый комментарий — уведомляем автора и исполнителей задачи, кто ещё не получил reply/mention уведомление
-        _notify_comment(cur, schema, task_id, task_title, me['id'], notified, task_creator_id, task_assignee_ids)
+        _notify_comment(cur, schema, task_id, task_title, me['id'], notified, task_creator_id, task_assignee_ids, text)
         comment = {
             'id': str(new[0]), 'taskId': str(task_id), 'authorId': me['id'], 'text': text,
             'createdAt': new[1].isoformat() if new[1] else None,
