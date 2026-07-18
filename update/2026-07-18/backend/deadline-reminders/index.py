@@ -49,12 +49,12 @@ def _tg_send(chat_id, text, button_url=None):
 
 
 def _telegram_targets(cur, schema, user_ids):
-    '''Возвращает telegram_id пользователей из списка, которые вошли через бота и активны.'''
+    '''Возвращает telegram_id пользователей из списка, которые вошли через бота, активны и не отключили уведомления в Telegram.'''
     if not user_ids:
         return []
     cur.execute(
         f"SELECT telegram_id FROM {schema}.users "
-        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true",
+        f"WHERE id = ANY(%s) AND telegram_id > 0 AND is_active = true AND tg_notify_muted = false",
         (user_ids,)
     )
     return [r[0] for r in cur.fetchall()]
