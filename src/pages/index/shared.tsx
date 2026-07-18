@@ -94,7 +94,7 @@ export function taskAge(iso: string | null | undefined): string {
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
-export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'other';
+export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
 export type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas';
@@ -158,6 +158,8 @@ export const categories: Category[] = [
   { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
   { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
   { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
+  { id: 'logs', label: 'Логи', icon: 'ScrollText', color: '25 80% 55%' },
+  { id: 'events', label: 'Эвенты', icon: 'PartyPopper', color: '300 65% 62%' },
   { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
 ];
 
