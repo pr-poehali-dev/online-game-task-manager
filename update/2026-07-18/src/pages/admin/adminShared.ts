@@ -67,6 +67,7 @@ export interface TeamUser {
   permissions: Permissions;
   show_in_team: boolean;
   tg_notify_muted: boolean;
+  show_tg_contact: boolean;
 }
 
 export interface SessionInfo {
@@ -145,6 +146,7 @@ export const ACTIVITY_META: Record<string, ActivityMeta> = {
   user_remove: { label: 'Скрыл участника из команды', icon: 'UserX', color: '0 65% 60%' },
   user_set_name: { label: 'Изменил имя участника', icon: 'Pencil', color: '35 85% 58%' },
   user_set_tg_muted: { label: 'Изменил переписку в Telegram', icon: 'BellOff', color: '35 85% 58%' },
+  user_set_show_tg_contact: { label: 'Изменил кнопку Telegram в команде', icon: 'Send', color: '35 85% 58%' },
 };
 
 export function activityMeta(action: string): ActivityMeta {

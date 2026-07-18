@@ -154,6 +154,11 @@ export default function Admin() {
     await authFetch({ action: 'set_show_in_team', user_id: u.id, show_in_team: !u.show_in_team });
   }
 
+  async function toggleShowTgContact(u: TeamUser) {
+    setUsers((prev) => prev.map((x) => (x.id === u.id ? { ...x, show_tg_contact: !u.show_tg_contact } : x)));
+    await authFetch({ action: 'set_show_tg_contact', user_id: u.id, show_tg_contact: !u.show_tg_contact });
+  }
+
   async function hideUser(u: TeamUser) {
     if (!confirm(`Скрыть ${u.first_name} из команды? Аккаунт будет отключён и убран из списка.`)) return;
     await authFetch({ action: 'set_hidden', user_id: u.id, is_hidden: true });
@@ -362,6 +367,7 @@ export default function Admin() {
           toggleActive={toggleActive}
           toggleShowInTeam={toggleShowInTeam}
           toggleTgMuted={toggleTgMuted}
+          toggleShowTgContact={toggleShowTgContact}
           hideUser={hideUser}
           impersonate={impersonate}
           impersonatingId={impersonatingId}

@@ -108,7 +108,7 @@ SECTION_TABLES = {
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -138,7 +138,7 @@ def handler(event: dict, context) -> dict:
             f"u.tg_username, u.is_active, u.created_at, u.specialization, u.permissions, "
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
-            f"u.show_in_team, u.tg_notify_muted "
+            f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC"
         )
         rows = cur.fetchall()
@@ -152,6 +152,7 @@ def handler(event: dict, context) -> dict:
             'active_sessions': r[14] or 0,
             'show_in_team': r[15] if r[15] is not None else True,
             'tg_notify_muted': bool(r[16]),
+            'show_tg_contact': r[17] if r[17] is not None else True,
         } for r in rows]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users, 'permissionKeys': ALL_PERMISSIONS})}
@@ -466,6 +467,10 @@ def handler(event: dict, context) -> dict:
         tg_notify_muted = bool(body.get('tg_notify_muted'))
         cur.execute(f"UPDATE {schema}.users SET tg_notify_muted = %s, updated_at = NOW() WHERE id = %s", (tg_notify_muted, user_id))
         _log_activity(cur, schema, admin_id, 'user_set_tg_muted', 'user', user_id, _target_name, 'скрыта переписка в Telegram' if tg_notify_muted else 'переписка в Telegram включена')
+    elif action == 'set_show_tg_contact':
+        show_tg_contact = bool(body.get('show_tg_contact'))
+        cur.execute(f"UPDATE {schema}.users SET show_tg_contact = %s, updated_at = NOW() WHERE id = %s", (show_tg_contact, user_id))
+        _log_activity(cur, schema, admin_id, 'user_set_show_tg_contact', 'user', user_id, _target_name, 'скрыта кнопка Telegram в списке команды' if not show_tg_contact else 'кнопка Telegram в списке команды включена')
     elif action == 'set_name':
         first_name = (body.get('first_name') or '').strip()
         last_name = (body.get('last_name') or '').strip() or None

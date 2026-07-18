@@ -31,6 +31,7 @@ export default function UserList({
   toggleActive,
   toggleShowInTeam,
   toggleTgMuted,
+  toggleShowTgContact,
   hideUser,
   impersonate,
   impersonatingId,
@@ -63,6 +64,7 @@ export default function UserList({
   toggleActive: (u: TeamUser) => void;
   toggleShowInTeam: (u: TeamUser) => void;
   toggleTgMuted: (u: TeamUser) => void;
+  toggleShowTgContact: (u: TeamUser) => void;
   hideUser: (u: TeamUser) => void;
   impersonate: (u: TeamUser) => void;
   impersonatingId: number | null;
@@ -296,6 +298,15 @@ export default function UserList({
                         className="h-3.5 w-3.5 rounded border-border accent-primary"
                       />
                       Скрыть написание в Telegram (бот не будет присылать сообщения этому участнику)
+                    </label>
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!u.show_tg_contact}
+                        onChange={() => toggleShowTgContact(u)}
+                        className="h-3.5 w-3.5 rounded border-border accent-primary"
+                      />
+                      Скрыть кнопку «написать в Telegram» в списке команды
                     </label>
                   </div>
                 </div>
