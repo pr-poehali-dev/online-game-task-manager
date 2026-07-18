@@ -138,7 +138,7 @@ export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
-export type DeployStatus = 'none' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
+export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas';
 
@@ -154,6 +154,7 @@ export const deployStatuses: { id: DeployStatus; label: string; color: string; i
   { id: 'none',          label: 'Без статуса',                     color: '215 15% 50%', icon: 'Minus',          column: 'todo' },
   { id: 'unfeasible',    label: 'Нереализуемо',                    color: '0 0% 55%',    icon: 'Ban',            column: 'todo' },
   { id: 'tested_rework', label: 'На доработку (есть замечания)',   color: '0 65% 60%',   icon: 'CircleX',        column: 'todo' },
+  { id: 'in_progress',   label: 'Взято в работу',                  color: '35 85% 58%',  icon: 'Hammer',         column: 'progress' },
   { id: 'local',         label: 'Готово локально у скриптера',     color: '270 65% 65%', icon: 'Code2',          column: 'progress' },
   { id: 'test',          label: 'На тестировании (залито на тестовый)', color: '210 80% 62%', icon: 'FlaskConical', column: 'progress' },
   { id: 'tested_ok',     label: 'Протестировано — всё ок',         color: '152 55% 50%', icon: 'CircleCheck',    column: 'progress' },
