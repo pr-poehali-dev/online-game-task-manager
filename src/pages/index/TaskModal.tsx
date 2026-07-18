@@ -4,7 +4,7 @@ import RichEditor from '@/components/RichEditor';
 import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, TASKS_URL, authHeaders } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
@@ -28,6 +28,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments ?? []);
+  const [deadlineLocal, setDeadlineLocal] = useState(isoToMskLocal(task.deadline));
   const [archiveMenu, setArchiveMenu] = useState(false);
   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
   const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
@@ -77,7 +78,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
       onSave({ ...task, column: form.column });
       return;
     }
-    onSave({ ...form, links, attachments });
+    onSave({ ...form, links, attachments, deadline: deadlineLocal ? mskLocalToIso(deadlineLocal) : null });
   }
 
   return (
@@ -212,6 +213,15 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                 { value: '', label: '— Без спринта —' },
                 ...sprints.filter((s) => s.status !== 'done' || s.id === form.sprintId).map((s) => ({ value: s.id, label: s.title })),
               ]} />
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн (МСК)</label>
+                <input
+                  type="datetime-local"
+                  value={deadlineLocal}
+                  onChange={(e) => setDeadlineLocal(e.target.value)}
+                  className={inputCls}
+                />
+              </div>
               <div className="md:col-span-4">
                 <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
               </div>
@@ -222,6 +232,12 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                 <label className="block text-xs text-muted-foreground mb-1.5">Категория</label>
                 <CategoryBadge id={form.category} />
               </div>
+              {task.deadline && (
+                <div>
+                  <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн</label>
+                  <DeadlineBadge iso={task.deadline} />
+                </div>
+              )}
               {taskAssigneeIds(form).length > 0 && (
                 <div className="md:col-span-2">
                   <label className="block text-xs text-muted-foreground mb-1.5">Исполнители</label>

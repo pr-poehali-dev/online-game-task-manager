@@ -251,12 +251,13 @@ def _row_to_task(r):
         'createdAt': r[17].isoformat() if r[17] else None,
         'creatorId': r[18],
         'attachments': r[19] if r[19] is not None else [],
+        'deadline': r[20].isoformat() if r[20] else None,
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline"
 )
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -424,7 +425,7 @@ def handler(event: dict, context) -> dict:
         tasks = []
         for r in cur.fetchall():
             d = _row_to_task(r)
-            d['commentCount'] = r[20]
+            d['commentCount'] = r[21]
             # Без права task_view_others — видит только задачи, где он исполнитель или автор
             if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
                 continue
@@ -448,8 +449,8 @@ def handler(event: dict, context) -> dict:
         attachments = json.dumps(body.get('attachments') or [])
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments, deadline) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
@@ -467,6 +468,7 @@ def handler(event: dict, context) -> dict:
                 kb_ids,
                 me['id'],
                 attachments,
+                body.get('deadline'),
             )
         )
         task = _row_to_task(cur.fetchone())
@@ -536,7 +538,7 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, updated_at = NOW() "
+            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
@@ -554,6 +556,7 @@ def handler(event: dict, context) -> dict:
                 kb_ids,
                 bool(body.get('restartDone', False)),
                 attachments,
+                body.get('deadline'),
                 int(task_id),
             )
         )

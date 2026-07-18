@@ -4,7 +4,7 @@ import RichEditor from '@/components/RichEditor';
 import AttachmentsField from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
-import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders } from './shared';
+import { servers, categories, deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -30,6 +30,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     category: (preset?.category ?? 'other') as CategoryId,
     sprintId: activeSprint?.id ?? '',
     description: '',
+    deadline: '',
   });
   const [links, setLinks] = useState<{ url: string; label: string }[]>([]);
   const [newLink, setNewLink] = useState({ url: '', label: '' });
@@ -68,6 +69,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
       id: 't' + Date.now(),
       links,
       attachments,
+      deadline: form.deadline ? mskLocalToIso(form.deadline) : null,
     } as Task);
   }
 
@@ -149,6 +151,15 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             { value: '', label: '— Без спринта —' },
             ...sprints.filter((s) => s.status !== 'done').map((s) => ({ value: s.id, label: s.title })),
           ]} />
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн (МСК)</label>
+            <input
+              type="datetime-local"
+              value={form.deadline}
+              onChange={(e) => set('deadline', e.target.value)}
+              className={inputCls}
+            />
+          </div>
           <div className="md:col-span-4">
             <KbMultiSelect articles={kbArticles} value={form.kbArticleIds} onChange={setKbIds} />
           </div>

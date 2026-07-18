@@ -78,6 +78,49 @@ export function formatMskDateTime(iso: string | null | undefined): string {
   }) + ' МСК';
 }
 
+export function formatDeadline(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toLocaleString('ru-RU', {
+    timeZone: 'Europe/Moscow',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+export type DeadlineState = 'overdue' | 'soon' | 'normal';
+
+export function deadlineState(iso: string | null | undefined): DeadlineState {
+  const d = new Date(iso as string).getTime();
+  const diff = d - Date.now();
+  if (diff < 0) return 'overdue';
+  if (diff < 24 * 60 * 60 * 1000) return 'soon';
+  return 'normal';
+}
+
+export function mskLocalToIso(localValue: string): string {
+  if (!localValue) return '';
+  const withSeconds = localValue.length === 16 ? `${localValue}:00` : localValue;
+  return `${withSeconds}+03:00`;
+}
+
+export function isoToMskLocal(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
+  return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`;
+}
+
 export function taskAge(iso: string | null | undefined): string {
   if (!iso) return '';
   const created = new Date(iso).getTime();
@@ -202,6 +245,7 @@ export interface Task {
   createdAt?: string | null;
   creatorId?: number | null;
   attachments?: Attachment[];
+  deadline?: string | null;
 }
 
 
@@ -339,6 +383,27 @@ export function AssigneeStack({ ids, team, size = 24, max = 3 }: { ids: number[]
         </span>
       )}
     </div>
+  );
+}
+
+export function DeadlineBadge({ iso }: { iso: string | null | undefined }) {
+  if (!iso) return null;
+  const state = deadlineState(iso);
+  const colors: Record<DeadlineState, string> = {
+    overdue: '0 65% 60%',
+    soon: '35 90% 60%',
+    normal: '215 15% 55%',
+  };
+  const color = colors[state];
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md shrink-0"
+      style={{ background: `hsl(${color} / 0.12)`, color: `hsl(${color})` }}
+      title={state === 'overdue' ? 'Срок истёк' : 'Дедлайн'}
+    >
+      <Icon name={state === 'overdue' ? 'AlarmClockOff' : 'AlarmClock'} size={11} />
+      {formatDeadline(iso)}
+    </span>
   );
 }
 

@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome, DeployStatus } from './shared';
-import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, taskAge } from './shared';
+import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 type SortMode = 'none' | 'priority' | 'date_new' | 'date_old';
@@ -118,11 +118,12 @@ function TaskCard({
         <PriorityBadge p={t.priority} />
       </div>
       <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
-      {t.deployStatus && t.deployStatus !== 'none' && (
-        <div className="mb-2">
-          <DeployBadge status={t.deployStatus} />
+      {(t.deployStatus && t.deployStatus !== 'none') || t.deadline ? (
+        <div className="flex items-center flex-wrap gap-1.5 mb-2">
+          {t.deployStatus && t.deployStatus !== 'none' && <DeployBadge status={t.deployStatus} />}
+          {t.deadline && <DeadlineBadge iso={t.deadline} />}
         </div>
-      )}
+      ) : null}
       <div className="flex items-center gap-2">
         <AssigneeStack ids={assignees} team={team} size={24} />
         <ServerBadge id={t.server} />
