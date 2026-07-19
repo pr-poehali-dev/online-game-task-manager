@@ -111,6 +111,12 @@
   line-height: 1.65;
   color: hsl(var(--foreground));
 }
+.tiptap-editor-large .ProseMirror {
+  min-height: 320px;
+  padding: 16px 18px;
+  font-size: 0.975rem;
+  line-height: 1.75;
+}
 .tiptap-editor .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;

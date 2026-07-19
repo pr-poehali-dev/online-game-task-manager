@@ -16,6 +16,7 @@ interface Props {
   onChange: (html: string) => void;
   placeholder?: string;
   onImageUpload?: (file: File) => Promise<string>;
+  large?: boolean;
 }
 
 function ToolBtn({
@@ -49,7 +50,7 @@ function Divider() {
   return <div className="w-px h-5 bg-border mx-0.5 shrink-0" />;
 }
 
-export default function RichEditor({ content, onChange, placeholder, onImageUpload }: Props) {
+export default function RichEditor({ content, onChange, placeholder, onImageUpload, large }: Props) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
@@ -206,7 +207,7 @@ export default function RichEditor({ content, onChange, placeholder, onImageUplo
       </div>
 
       {/* Editor area */}
-      <div className="tiptap-editor max-h-72 overflow-y-auto scrollbar-thin">
+      <div className={`tiptap-editor overflow-y-auto scrollbar-thin ${large ? 'tiptap-editor-large max-h-[32rem]' : 'max-h-72'}`}>
         <EditorContent editor={editor} />
       </div>
 

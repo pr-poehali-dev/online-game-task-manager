@@ -4,7 +4,7 @@ import RichEditor from '@/components/RichEditor';
 import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, DeployBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
@@ -30,6 +30,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const [attachments, setAttachments] = useState<Attachment[]>(task.attachments ?? []);
   const [deadlineLocal, setDeadlineLocal] = useState(isoToMskLocal(task.deadline));
   const [archiveMenu, setArchiveMenu] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(false);
   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
   const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
   const canFullEdit = isAdmin || (can('task_edit_own') && isCreator);
@@ -290,10 +291,11 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               content={form.description ?? ''}
               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
               onImageUpload={uploadImage}
+              large
             />
           ) : (
             <div
-              className="rounded-xl border border-border bg-secondary/20 px-3 py-2 text-sm max-h-72 overflow-y-auto scrollbar-thin prose prose-sm prose-invert max-w-none"
+              className="kb-content rounded-xl border border-border bg-secondary/20 px-4 py-3 max-h-[32rem] overflow-y-auto scrollbar-thin"
               dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
             />
           )}
@@ -314,37 +316,49 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         {canEditDeploy && (
           /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу */
           <div>
-            <label className="block text-xs text-muted-foreground mb-2">Статус деплоя</label>
-            <div className="space-y-3">
-              {columns.map((col) => (
-                <div key={col.id}>
-                  <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <Icon name={col.icon} size={11} />
-                    {col.title}
+            <button
+              type="button"
+              onClick={() => setDeployOpen((v) => !v)}
+              className="w-full flex items-center gap-2 mb-2"
+            >
+              <Icon name="ChevronRight" size={14} className={`text-muted-foreground transition-transform ${deployOpen ? 'rotate-90' : ''}`} />
+              <span className="text-xs text-muted-foreground">Статус деплоя</span>
+              {(form.deployStatus ?? 'none') !== 'none' && !deployOpen && (
+                <span className="ml-1"><DeployBadge status={form.deployStatus ?? 'none'} /></span>
+              )}
+            </button>
+            {deployOpen && (
+              <div className="space-y-3 animate-scale-in">
+                {columns.map((col) => (
+                  <div key={col.id}>
+                    <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <Icon name={col.icon} size={11} />
+                      {col.title}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
+                        const active = (form.deployStatus ?? 'none') === ds.id;
+                        return (
+                          <button
+                            key={ds.id}
+                            onClick={() => { setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column })); setDeployOpen(false); }}
+                            className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
+                            style={{
+                              background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
+                              borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
+                              color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
+                            }}
+                          >
+                            <Icon name={ds.icon} size={12} />
+                            {ds.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {deployStatuses.filter((ds) => ds.column === col.id).map((ds) => {
-                      const active = (form.deployStatus ?? 'none') === ds.id;
-                      return (
-                        <button
-                          key={ds.id}
-                          onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
-                          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
-                          style={{
-                            background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
-                            borderColor: active ? `hsl(${ds.color} / 0.5)` : 'hsl(var(--border))',
-                            color: active ? `hsl(${ds.color})` : 'hsl(var(--muted-foreground))',
-                          }}
-                        >
-                          <Icon name={ds.icon} size={12} />
-                          {ds.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
