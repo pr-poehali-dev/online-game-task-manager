@@ -86,7 +86,7 @@ export default function Index() {
   });
 
   return (
-    <div className="min-h-screen grid-bg text-foreground flex">
+    <div className="h-screen grid-bg text-foreground flex overflow-hidden">
       <IndexSidebar
         view={view}
         category={category}

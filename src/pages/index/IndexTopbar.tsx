@@ -336,7 +336,7 @@ export default function IndexTopbar({
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col">
             <SidebarContent
               view={view}
               category={category}
