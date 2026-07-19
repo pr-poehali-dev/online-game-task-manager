@@ -43,10 +43,11 @@ export function renderMentionText(text: string, names: string[]) {
   });
 }
 
-export function AssigneeMultiSelect({ team, value, onChange }: {
+export function AssigneeMultiSelect({ team, value, onChange, compact }: {
   team: TeamMember[];
   value: number[];
   onChange: (ids: number[]) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const toggle = (id: number) => {
@@ -58,11 +59,11 @@ export function AssigneeMultiSelect({ team, value, onChange }: {
 
   return (
     <div className="md:col-span-2">
-      <label className="block text-xs text-muted-foreground mb-1.5">Исполнители</label>
+      <label className={`block text-muted-foreground ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>Исполнители</label>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full min-h-9 rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary"
+        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
       >
         {selected.length === 0 && <span className="text-muted-foreground">Не назначен</span>}
         {selected.map((m) => (
@@ -105,10 +106,11 @@ export function AssigneeMultiSelect({ team, value, onChange }: {
   );
 }
 
-export function KbMultiSelect({ articles, value, onChange }: {
+export function KbMultiSelect({ articles, value, onChange, compact }: {
   articles: KbArticleBrief[];
   value: number[];
   onChange: (ids: number[]) => void;
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const toggle = (id: number) => {
@@ -120,14 +122,14 @@ export function KbMultiSelect({ articles, value, onChange }: {
 
   return (
     <div className="md:col-span-2">
-      <label className="block text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
-        <Icon name="BookOpen" size={12} />
+      <label className={`text-muted-foreground flex items-center gap-1.5 ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>
+        <Icon name="BookOpen" size={compact ? 11 : 12} />
         Связанные статьи базы знаний
       </label>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full min-h-9 rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary"
+        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
       >
         {selected.length === 0 && <span className="text-muted-foreground">Не выбрано</span>}
         {selected.map((a) => (
