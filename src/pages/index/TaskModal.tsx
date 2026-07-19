@@ -156,7 +156,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         </div>
       </div>
 
-      <div className="px-6 py-5 space-y-5">
+      <div className="px-6 py-5 space-y-4">
         {/* Title */}
         <div>
           <input
@@ -170,16 +170,16 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Creation meta: дата создания по МСК + автор */}
         {(task.createdAt || task.creatorId != null) && (
-          <div className="flex items-center flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground -mt-2">
+          <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground -mt-3">
             {task.createdAt && (
-              <span className="flex items-center gap-1.5">
-                <Icon name="Calendar" size={12} />
+              <span className="flex items-center gap-1">
+                <Icon name="Calendar" size={11} />
                 Создана {formatMskDateTime(task.createdAt)}
               </span>
             )}
             {task.creatorId != null && (
-              <span className="flex items-center gap-1.5">
-                <AssigneeAvatar a={resolveAssignee(team, task.creatorId)} size={18} />
+              <span className="flex items-center gap-1">
+                <AssigneeAvatar a={resolveAssignee(team, task.creatorId)} size={15} />
                 {resolveAssignee(team, task.creatorId).name}
               </span>
             )}
@@ -187,9 +187,9 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         )}
 
         {/* Meta grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           {!canFullEdit && !canEditDeploy && (
-            <Select label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
+            <Select compact label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
               { value: 'todo', label: 'To Do' },
               { value: 'progress', label: 'In Progress' },
               { value: 'done', label: 'Done' },
@@ -197,51 +197,51 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
           {canFullEdit ? (
             <>
-              <Select label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
+              <Select compact label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
                 { value: 'critical', label: 'Критический' },
                 { value: 'high', label: 'Высокий' },
                 { value: 'medium', label: 'Средний' },
                 { value: 'low', label: 'Низкий' },
               ]} />
-              <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
+              <Select compact label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
                 servers.map((s) => ({ value: s.id, label: s.label }))
               } />
-              <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
+              <Select compact label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
                 categories.map((c) => ({ value: c.id, label: c.label }))
               } />
-              <AssigneeMultiSelect team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
-              <Select label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
+              <AssigneeMultiSelect compact team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
+              <Select compact label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
                 { value: '', label: '— Без спринта —' },
                 ...sprints.filter((s) => s.status !== 'done' || s.id === form.sprintId).map((s) => ({ value: s.id, label: s.title })),
               ]} />
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн (МСК)</label>
+                <label className="block text-[10px] text-muted-foreground mb-1">Дедлайн (МСК)</label>
                 <input
                   type="datetime-local"
                   value={deadlineLocal}
                   onChange={(e) => setDeadlineLocal(e.target.value)}
-                  className={inputCls}
+                  className="w-full rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                 />
               </div>
               <div className="md:col-span-4">
-                <KbMultiSelect articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
+                <KbMultiSelect compact articles={kbArticles} value={form.kbArticleIds ?? []} onChange={setKbIds} />
               </div>
             </>
           ) : (
             <>
               <div>
-                <label className="block text-xs text-muted-foreground mb-1.5">Категория</label>
+                <label className="block text-[10px] text-muted-foreground mb-1">Категория</label>
                 <CategoryBadge id={form.category} />
               </div>
               {task.deadline && (
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн</label>
+                  <label className="block text-[10px] text-muted-foreground mb-1">Дедлайн</label>
                   <DeadlineBadge iso={task.deadline} />
                 </div>
               )}
               {taskAssigneeIds(form).length > 0 && (
                 <div className="md:col-span-2">
-                  <label className="block text-xs text-muted-foreground mb-1.5">Исполнители</label>
+                  <label className="block text-[10px] text-muted-foreground mb-1">Исполнители</label>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {taskAssigneeIds(form).map((id) => (
                       <span key={id} className="inline-flex items-center gap-1.5 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
@@ -254,8 +254,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               )}
               {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
                 <div>
-                  <label className="block text-xs text-muted-foreground mb-1.5">Спринт</label>
-                  <span className="text-sm">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
+                  <label className="block text-[10px] text-muted-foreground mb-1">Спринт</label>
+                  <span className="text-xs">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
                 </div>
               )}
             </>
@@ -285,7 +285,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Description */}
         <div>
-          <label className="block text-xs text-muted-foreground mb-1.5">Описание</label>
+          <label className="block text-[10px] text-muted-foreground mb-1">Описание</label>
           {canFullEdit ? (
             <RichEditor
               content={form.description ?? ''}
