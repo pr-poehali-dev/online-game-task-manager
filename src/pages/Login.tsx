@@ -3,12 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import BotLoginButton from '@/components/BotLoginButton';
 import type { AuthUser } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
 import ThemeToggle from '@/components/ThemeToggle';
-
+import DevOnlyLoginButton from '@/components/DevOnlyLoginButton';
 export default function Login() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  const { applySession } = useAuth();
 
   function handleSuccess(user: AuthUser) {
     setError(null);
@@ -46,6 +48,8 @@ export default function Login() {
               <span>{error}</span>
             </div>
           )}
+
+          <DevOnlyLoginButton applySession={applySession} onSuccess={handleSuccess} onError={setError} />
         </div>
 
         <button
