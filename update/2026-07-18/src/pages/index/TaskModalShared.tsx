@@ -17,19 +17,30 @@ export interface TaskComment {
 }
 
 export function renderMentionText(text: string, names: string[]) {
-  if (names.length === 0) return text;
   const esc = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).sort((a, b) => b.length - a.length);
-  const re = new RegExp(`@(${esc.join('|')})`, 'gu');
-  const parts: (string | { m: string })[] = [];
+  const pattern = esc.length > 0 ? `(https?:\\/\\/[^\\s]+)|(@(?:${esc.join('|')}))` : `(https?:\\/\\/[^\\s]+)`;
+  const re = new RegExp(pattern, 'gu');
+  const parts: (string | { url: string } | { mention: string })[] = [];
   let last = 0;
   let match: RegExpExecArray | null;
   while ((match = re.exec(text)) !== null) {
     if (match.index > last) parts.push(text.slice(last, match.index));
-    parts.push({ m: match[0] });
+    if (match[1]) parts.push({ url: match[1] });
+    else if (match[2]) parts.push({ mention: match[2] });
     last = match.index + match[0].length;
   }
   if (last < text.length) parts.push(text.slice(last));
-  return parts.map((p, i) => typeof p === 'string' ? <span key={i}>{p}</span> : <span key={i} className="text-primary font-medium">{p.m}</span>);
+  return parts.map((p, i) => {
+    if (typeof p === 'string') return <span key={i}>{p}</span>;
+    if ('url' in p) {
+      return (
+        <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-primary underline hover:opacity-80 break-all">
+          {p.url}
+        </a>
+      );
+    }
+    return <span key={i} className="text-primary font-medium">{p.mention}</span>;
+  });
 }
 
 export function AssigneeMultiSelect({ team, value, onChange }: {
