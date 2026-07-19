@@ -172,7 +172,7 @@ function RestartTaskCard({
   return (
     <div
       onClick={() => onCardClick(t)}
-      className="group relative rounded-xl border bg-card p-4 transition-all animate-scale-in cursor-pointer hover:border-primary/50"
+      className={`group relative rounded-xl border bg-card p-4 transition-all animate-scale-in cursor-pointer hover:border-primary/50 ${archiveMenu === t.id ? 'z-20' : ''}`}
       style={done
         ? { borderColor: 'hsl(152 55% 45% / 0.6)', background: 'hsl(152 55% 45% / 0.08)' }
         : undefined}
@@ -213,7 +213,7 @@ function RestartTaskCard({
                   <Icon name="ChevronDown" size={12} />
                 </button>
                 {archiveMenu === t.id && (
-                  <div className="absolute right-0 top-9 z-10 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+                  <div className="absolute right-0 top-9 z-30 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
                     {outcomes.map((o) => (
                       <button
