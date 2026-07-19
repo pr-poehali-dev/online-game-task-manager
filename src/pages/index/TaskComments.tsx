@@ -46,7 +46,7 @@ export default function TaskComments({ taskId, team }: {
       const res = await fetch(TASKS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'comment', taskId, text: newComment.trim(), parentId: replyTo?.id ?? null, mentions, attachments: newAttachments }),
+        body: JSON.stringify({ action: 'comment', taskId, text: newComment.trim(), parentId: (replyTo?.parentId ?? replyTo?.id) ?? null, mentions, attachments: newAttachments }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -87,11 +87,9 @@ export default function TaskComments({ taskId, team }: {
             <span className="text-xs text-muted-foreground">
               {c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
-            {!isReply && (
-              <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
-                <Icon name="CornerDownRight" size={11} /> Ответить
-              </button>
-            )}
+            <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
+              <Icon name="CornerDownRight" size={11} /> Ответить
+            </button>
             {canDel && (
               <button
                 onClick={() => removeComment(c.id)}

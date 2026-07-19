@@ -139,7 +139,7 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
       const res = await fetch(IDEAS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'comment', topicId: current.id, text: newComment.trim(), parentId: replyTo?.id ?? null, mentions, attachments: newCommentAttachments }),
+        body: JSON.stringify({ action: 'comment', topicId: current.id, text: newComment.trim(), parentId: (replyTo?.parentId ?? replyTo?.id) ?? null, mentions, attachments: newCommentAttachments }),
       });
       if (res.ok) {
         const data = await res.json();

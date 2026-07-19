@@ -39,14 +39,12 @@ export function CommentItem({
         <div className="flex items-center gap-2 mb-0.5">
           <span className="text-xs font-medium">{name}</span>
           <span className="text-xs text-muted-foreground">{fmtDate(comment.createdAt)}</span>
-          {!isReply && (
-            <button
-              onClick={() => onReply(comment)}
-              className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
-            >
-              <Icon name="CornerDownRight" size={11} /> Ответить
-            </button>
-          )}
+          <button
+            onClick={() => onReply(comment)}
+            className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+          >
+            <Icon name="CornerDownRight" size={11} /> Ответить
+          </button>
           {canDelete && (
             <button
               onClick={() => onDelete(comment.id)}
