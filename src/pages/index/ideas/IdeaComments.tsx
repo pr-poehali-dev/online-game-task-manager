@@ -2,7 +2,7 @@ import Icon from '@/components/ui/icon';
 import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
 import MentionInput from '../MentionInput';
 import { IDEAS_URL, authHeaders } from '../shared';
-import { inputCls, initialsFor, renderText, fmtDate } from './shared';
+import { initialsFor, renderText, fmtDate } from './shared';
 import type { IdeaComment } from './shared';
 
 export function CommentItem({
@@ -164,14 +164,14 @@ export default function IdeaComments({
           </div>
         )}
         <div className="flex gap-2">
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
             <MentionInput
               value={newComment}
               onChange={setNewComment}
               members={mentionMembers}
               onSubmit={onSubmit}
               placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
-              className={inputCls + ' resize-none w-full'}
+              className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} action="comment_upload_file" compact />
           </div>

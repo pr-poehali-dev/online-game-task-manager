@@ -103,41 +103,37 @@ export default function AttachmentsField({
 
   if (compact) {
     return (
-      <div>
-        {!!attachments.length && (
-          <div className="flex flex-wrap gap-1.5 mb-1.5">
-            {attachments.map((a) => (
-              <div key={a.id} className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs bg-secondary/40">
-                <Icon name={fileIconFor(a.name)} size={12} className="text-muted-foreground shrink-0" />
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Скачать файл"
-                  className="max-w-[140px] truncate hover:text-primary hover:underline transition-colors"
-                >
-                  {a.name}
-                </a>
-                <button
-                  type="button"
-                  onClick={() => remove(a.id)}
-                  title="Убрать вложение"
-                  className="text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <Icon name="X" size={11} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="flex flex-wrap items-center gap-1.5 px-1.5 pb-1.5">
         <label
           title="Прикрепить файл"
-          className="inline-flex items-center justify-center h-9 w-9 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors cursor-pointer shrink-0"
+          className="inline-flex items-center justify-center h-6 w-6 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer shrink-0"
         >
-          <Icon name={uploading ? 'Loader2' : 'Paperclip'} size={15} className={uploading ? 'animate-spin' : ''} />
+          <Icon name={uploading ? 'Loader2' : 'Paperclip'} size={13} className={uploading ? 'animate-spin' : ''} />
           <input type="file" className="hidden" onChange={handleFile} disabled={uploading} />
         </label>
-        {error && <p className="text-xs text-destructive mt-1">{error}</p>}
+        {attachments.map((a) => (
+          <div key={a.id} className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs bg-secondary/40">
+            <Icon name={fileIconFor(a.name)} size={12} className="text-muted-foreground shrink-0" />
+            <a
+              href={a.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Скачать файл"
+              className="max-w-[140px] truncate hover:text-primary hover:underline transition-colors"
+            >
+              {a.name}
+            </a>
+            <button
+              type="button"
+              onClick={() => remove(a.id)}
+              title="Убрать вложение"
+              className="text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <Icon name="X" size={11} />
+            </button>
+          </div>
+        ))}
+        {error && <p className="text-xs text-destructive w-full">{error}</p>}
       </div>
     );
   }

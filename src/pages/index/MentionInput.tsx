@@ -89,7 +89,7 @@ export default function MentionInput({ value, onChange, members, onSubmit, place
   }
 
   return (
-    <div className="relative flex-1">
+    <div className="relative flex-1 min-w-0">
       <textarea
         ref={ref}
         value={value}
