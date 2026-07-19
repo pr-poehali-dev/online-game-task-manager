@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
 import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
 import type { TeamMember } from './shared';
-import { resolveAssignee, AssigneeAvatar, inputCls, TASKS_URL, authHeaders } from './shared';
+import { resolveAssignee, AssigneeAvatar, TASKS_URL, authHeaders } from './shared';
 import MentionInput, { extractMentions } from './MentionInput';
 import type { TaskComment } from './TaskModalShared';
 import { renderMentionText } from './TaskModalShared';
@@ -145,14 +145,14 @@ export default function TaskComments({ taskId, team }: {
         </div>
       )}
       <div className="flex gap-2">
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
           <MentionInput
             value={newComment}
             onChange={setNewComment}
             members={mentionMembers}
             onSubmit={addComment}
             placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
-            className={inputCls + ' resize-none w-full'}
+            className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" compact />
         </div>
