@@ -72,6 +72,14 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
     return d.url || '';
   }
 
+  function changeDeployStatus(ds: (typeof deployStatuses)[number]) {
+    // Быстрая смена статуса деплоя прямо со страницы просмотра, без входа в режим редактирования
+    const updated = { ...task, column: ds.column, deployStatus: ds.id };
+    setForm(updated);
+    setDeployOpen(false);
+    onSave(updated);
+  }
+
   function cancelEdit() {
     setForm({ ...task });
     setLinks(task.links ?? []);
@@ -335,22 +343,22 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           </div>
         )}
 
-        {isEditing && canEditDeploy && (
-          /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу, только в режиме редактирования */
+        {!isEditing && canEditDeploy && (
+          /* Deploy status — быстрая смена статуса прямо со страницы просмотра, сохраняется сразу без входа в режим редактирования */
           <div>
             <button
               type="button"
               onClick={() => setDeployOpen((v) => !v)}
-              className="w-full flex items-center gap-2 mb-2"
+              className="flex items-center gap-2"
             >
               <Icon name="ChevronRight" size={14} className={`text-muted-foreground transition-transform ${deployOpen ? 'rotate-90' : ''}`} />
               <span className="text-xs text-muted-foreground">Статус деплоя</span>
-              {(form.deployStatus ?? 'none') !== 'none' && !deployOpen && (
-                <span className="ml-1"><DeployBadge status={form.deployStatus ?? 'none'} /></span>
+              {(form.deployStatus ?? 'none') !== 'none' && (
+                <DeployBadge status={form.deployStatus ?? 'none'} />
               )}
             </button>
             {deployOpen && (
-              <div className="space-y-3 animate-scale-in">
+              <div className="space-y-3 animate-scale-in mt-2">
                 {columns.map((col) => (
                   <div key={col.id}>
                     <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -363,7 +371,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                         return (
                           <button
                             key={ds.id}
-                            onClick={() => { setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column })); setDeployOpen(false); }}
+                            onClick={() => changeDeployStatus(ds)}
                             className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
                             style={{
                               background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',
@@ -381,12 +389,6 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                 ))}
               </div>
             )}
-          </div>
-        )}
-        {!isEditing && canEditDeploy && (form.deployStatus ?? 'none') !== 'none' && (
-          <div>
-            <label className="block text-[10px] text-muted-foreground mb-1">Статус деплоя</label>
-            <DeployBadge status={form.deployStatus ?? 'none'} />
           </div>
         )}
 
