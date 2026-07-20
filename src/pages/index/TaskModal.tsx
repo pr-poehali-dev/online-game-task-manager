@@ -124,7 +124,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           {!isEditing && (canFullEdit || canEditDeploy) && (
             <button
               onClick={() => setEditing(true)}
-              className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+              className="h-8 px-3.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-sm"
             >
               <Icon name="Pencil" size={13} />
               Редактировать
