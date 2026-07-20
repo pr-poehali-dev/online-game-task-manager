@@ -115,15 +115,48 @@ async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<DroppedF
   return out;
 }
 
-async function postJson(body: Record<string, unknown>) {
+const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5 МБ — одиночный запрос к серверу ограничен ~3 МБ
+
+async function postJson(body: Record<string, unknown>, signal?: AbortSignal) {
   const res = await fetch(PATCHES_URL, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
+    signal,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { code: data.error });
   return data;
+}
+
+interface UploadQueueItem {
+  path: string;
+  file: File;
+}
+
+async function uploadFileInChunks(
+  server: ServerId,
+  path: string,
+  file: File,
+  taskId: string,
+  signal: AbortSignal,
+  onProgress: (fraction: number) => void
+) {
+  const init = await postJson({ action: 'file_init', server, path, taskId: taskId || null }, signal);
+  const fileId = init.fileId as string;
+  const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
+  try {
+    for (let i = 0; i < totalParts; i++) {
+      const slice = file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, file.size));
+      const b64 = await blobToBase64(slice);
+      await postJson({ action: 'file_chunk', fileId, partNumber: i, data: b64 }, signal);
+      onProgress((i + 1) / totalParts);
+    }
+    await postJson({ action: 'file_complete', fileId, totalParts }, signal);
+  } catch (err) {
+    postJson({ action: 'file_abort', fileId, totalParts }).catch(() => {});
+    throw err;
+  }
 }
 
 function TreeFolder({
@@ -272,12 +305,17 @@ export default function Patches({
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>(initialTaskId || '');
   const [dragActive, setDragActive] = useState<string | null>(null);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[] | null>(null);
+  const [uploadIndex, setUploadIndex] = useState(0);
+  const [fileProgress, setFileProgress] = useState(0);
   const appliedInitial = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
+  const uploading = uploadQueue !== null;
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -317,29 +355,45 @@ export default function Patches({
   const handleDropFiles = useCallback(async (rootFolder: string, dropped: DroppedFile[]) => {
     if (dropped.length === 0) return;
     setUploadError('');
-    setUploading(true);
+    const queue: UploadQueueItem[] = dropped.map((d) => ({
+      path: d.path.startsWith(`${rootFolder}/`) ? d.path : `${rootFolder}/${d.path}`,
+      file: d.file,
+    }));
+    setUploadQueue(queue);
+    setUploadIndex(0);
+    setFileProgress(0);
+    cancelledRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
-      const filesPayload: { path: string; data: string }[] = [];
-      for (const d of dropped) {
-        const rel = d.path.startsWith(`${rootFolder}/`) ? d.path : `${rootFolder}/${d.path}`;
-        const b64 = await blobToBase64(d.file);
-        filesPayload.push({ path: rel, data: b64 });
+      for (let i = 0; i < queue.length; i++) {
+        if (cancelledRef.current) break;
+        setUploadIndex(i);
+        setFileProgress(0);
+        await uploadFileInChunks(active, queue[i].path, queue[i].file, selectedTaskId, controller.signal, setFileProgress);
       }
-      await postJson({
-        action: 'upload_batch',
-        server: active,
-        taskId: selectedTaskId || null,
-        files: filesPayload,
-      });
       await load(active);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
-      if (code === 'file_too_large') setUploadError('Суммарный размер загружаемых файлов превышает 300 МБ');
-      else setUploadError('Не удалось загрузить файлы — проверьте соединение и попробуйте ещё раз');
+      if (code === 'cancelled' || (err as Error)?.name === 'AbortError') {
+        setUploadError('Загрузка отменена');
+      } else if (code === 'file_too_large') {
+        setUploadError('Файл слишком большой (максимум 200 МБ)');
+      } else {
+        setUploadError('Не удалось загрузить файлы — проверьте соединение и попробуйте ещё раз');
+      }
+      await load(active);
     } finally {
-      setUploading(false);
+      setUploadQueue(null);
+      abortRef.current = null;
     }
   }, [active, selectedTaskId, load]);
+
+  function handleCancelUpload() {
+    cancelledRef.current = true;
+    abortRef.current?.abort();
+  }
 
   async function handleDelete(path: string) {
     try {
@@ -410,11 +464,24 @@ export default function Patches({
             {zipping ? 'Собираю...' : `Скачать файлы задачи (${taskFilesCount})`}
           </button>
         )}
-        {canManage && uploading && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
-            <Icon name="Loader2" size={13} className="animate-spin" />
-            Загрузка файлов...
-          </span>
+        {canManage && uploading && uploadQueue && (
+          <div className="flex items-center gap-2 w-full">
+            <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
+              <div
+                className="h-full bg-primary transition-all duration-200"
+                style={{ width: `${Math.round(((uploadIndex + fileProgress) / uploadQueue.length) * 100)}%` }}
+              />
+            </div>
+            <span className="text-xs text-muted-foreground shrink-0">
+              Файл {uploadIndex + 1}/{uploadQueue.length} · {Math.round(fileProgress * 100)}%
+            </span>
+            <button
+              onClick={handleCancelUpload}
+              className="h-7 px-2.5 rounded-md border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors shrink-0"
+            >
+              Отменить
+            </button>
+          </div>
         )}
         {uploadError && <p className="text-xs text-destructive w-full">{uploadError}</p>}
       </div>

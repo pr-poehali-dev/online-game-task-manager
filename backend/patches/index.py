@@ -11,7 +11,7 @@ import boto3
 import psycopg2
 
 
-MAX_TOTAL_SIZE = 300 * 1024 * 1024  # 300 МБ суммарно на один запрос загрузки
+MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
 
 FIXED_ROOTS = [
     'animations', 'data', 'l2text', 'maps', 'staticmeshes',
@@ -131,12 +131,14 @@ def _row_to_file(r):
 
 def handler(event: dict, context) -> dict:
     '''Файловое дерево клиентского патча по фиксированным корневым папкам (animations, data, l2text,
-    maps, staticmeshes, System, System_eng, systextures, textures) в разрезе серверов. Поддерживает
-    пакетную загрузку файлов (в т.ч. перетаскиванием целой папки с сохранением структуры) суммарным
-    объёмом до 300 МБ за запрос, привязку загруженных файлов к задаче (один файл может относиться сразу
-    к нескольким задачам), скачивание отдельного файла и сборку архива файлов конкретной задачи,
-    удаление файла. Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление —
-    администраторам и участникам с правом полного редактирования задач.'''
+    maps, staticmeshes, System, System_eng, systextures, textures) в разрезе серверов. Каждый файл
+    (в т.ч. из перетащенной целиком папки) грузится кусочками по ~1.5 МБ (file_init/file_chunk/
+    file_complete/file_abort — одиночный HTTP-запрос физически ограничен ~3 МБ) и собирается на
+    сервере в готовый файл до 200 МБ, с привязкой к задаче (один файл может относиться сразу к
+    нескольким задачам). Поддерживает скачивание отдельного файла и сборку архива файлов конкретной
+    задачи, удаление файла и полную очистку дерева сервера. Просмотр и скачивание доступны всем
+    авторизованным участникам, загрузка/удаление — администраторам и участникам с правом полного
+    редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -177,7 +179,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'files': files, 'roots': FIXED_ROOTS})
 
-    if action in ('upload_batch', 'delete', 'clear_server'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -185,64 +187,125 @@ def handler(event: dict, context) -> dict:
     s3 = _s3_client()
     bucket = _bucket()
 
-    if action == 'upload_batch':
+    if action == 'file_init':
+        # Инициализация загрузки одного файла — каждый файл дерева патча грузится отдельными
+        # кусочками (одиночный HTTP-запрос к функции физически ограничен ~3 МБ), кусочки временно
+        # складываются в S3 и склеиваются в file_complete.
         server = _safe_server(body.get('server'))
+        rel_path = _safe_rel_path(body.get('path') or '')
         task_id = body.get('taskId')
-        files_in = body.get('files') or []
-        if not server or not files_in:
+        if not server or not rel_path:
             cur.close(); conn.close()
             return _bad('bad_request')
         try:
             task_id_int = int(task_id) if task_id else None
         except (TypeError, ValueError):
             task_id_int = None
+        file_id = uuid.uuid4().hex
+        meta = {'server': server, 'path': rel_path, 'taskId': task_id_int}
+        s3.put_object(Bucket=bucket, Key=f"patches/_chunks/{file_id}/meta.json", Body=json.dumps(meta).encode())
+        cur.close(); conn.close()
+        return _ok({'fileId': file_id})
 
-        decoded = []
-        total_size = 0
-        for f in files_in:
-            rel_path = _safe_rel_path(f.get('path') or '')
-            if not rel_path:
-                continue
+    if action == 'file_chunk':
+        file_id = body.get('fileId')
+        part_number = body.get('partNumber')
+        data_b64 = body.get('data')
+        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or part_number is None or not data_b64:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        try:
+            raw = _decode_b64(data_b64)
+        except Exception:
+            cur.close(); conn.close()
+            return _bad('bad_data')
+        chunk_key = f"patches/_chunks/{file_id}/{int(part_number):06d}"
+        s3.put_object(Bucket=bucket, Key=chunk_key, Body=raw)
+        cur.close(); conn.close()
+        return _ok({'ok': True})
+
+    if action == 'file_complete':
+        file_id = body.get('fileId')
+        total_parts = body.get('totalParts')
+        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or not total_parts:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        prefix = f"patches/_chunks/{file_id}/"
+        try:
+            meta_obj = s3.get_object(Bucket=bucket, Key=f"{prefix}meta.json")
+            meta = json.loads(meta_obj['Body'].read())
+        except Exception:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        server = meta['server']
+        rel_path = meta['path']
+        task_id_int = meta.get('taskId')
+
+        buf = io.BytesIO()
+        chunk_keys = []
+        for i in range(int(total_parts)):
+            chunk_key = f"{prefix}{i:06d}"
             try:
-                raw = _decode_b64(f.get('data') or '')
+                obj = s3.get_object(Bucket=bucket, Key=chunk_key)
             except Exception:
                 cur.close(); conn.close()
-                return _bad('bad_data')
-            total_size += len(raw)
-            if total_size > MAX_TOTAL_SIZE:
+                return _bad('missing_chunk')
+            buf.write(obj['Body'].read())
+            chunk_keys.append(chunk_key)
+            if buf.tell() > MAX_FILE_SIZE:
                 cur.close(); conn.close()
                 return _bad('file_too_large')
-            decoded.append((rel_path, raw))
+        raw = buf.getvalue()
 
-        if not decoded:
-            cur.close(); conn.close()
-            return _bad('no_valid_files')
+        file_key = f"patches/{server}/{rel_path}"
+        s3.put_object(
+            Bucket=bucket, Key=file_key, Body=raw,
+            ContentDisposition=_content_disposition(rel_path.rsplit('/', 1)[-1]),
+        )
+        for key in chunk_keys:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
+        try:
+            s3.delete_object(Bucket=bucket, Key=f"{prefix}meta.json")
+        except Exception:
+            pass
 
-        saved = 0
-        for rel_path, raw in decoded:
-            file_key = f"patches/{server}/{rel_path}"
-            s3.put_object(
-                Bucket=bucket, Key=file_key, Body=raw,
-                ContentDisposition=_content_disposition(rel_path.rsplit('/', 1)[-1]),
-            )
-            cur.execute(
-                f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s",
-                (server, rel_path)
-            )
-            existing = cur.fetchone()
-            task_ids = list(existing[0]) if existing and existing[0] else []
-            if task_id_int is not None and task_id_int not in task_ids:
-                task_ids.append(task_id_int)
-            cur.execute(
-                f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_ids, uploaded_by, updated_at) "
-                f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
-                f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
-                f"size = EXCLUDED.size, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
-                (server, rel_path, file_key, len(raw), json.dumps(task_ids), me['id'])
-            )
-            saved += 1
+        cur.execute(
+            f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s",
+            (server, rel_path)
+        )
+        existing = cur.fetchone()
+        task_ids = list(existing[0]) if existing and existing[0] else []
+        if task_id_int is not None and task_id_int not in task_ids:
+            task_ids.append(task_id_int)
+        cur.execute(
+            f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_ids, uploaded_by, updated_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
+            f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
+            f"size = EXCLUDED.size, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
+            (server, rel_path, file_key, len(raw), json.dumps(task_ids), me['id'])
+        )
         cur.close(); conn.close()
-        return _ok({'ok': True, 'savedCount': saved, 'skipped': len(files_in) - len(decoded)})
+        return _ok({'ok': True, 'path': rel_path, 'size': len(raw)})
+
+    if action == 'file_abort':
+        file_id = body.get('fileId')
+        total_parts = body.get('totalParts') or 0
+        if file_id and re.match(r'^[a-f0-9]{32}$', file_id):
+            prefix = f"patches/_chunks/{file_id}/"
+            for i in range(int(total_parts) + 1):
+                try:
+                    s3.delete_object(Bucket=bucket, Key=f"{prefix}{i:06d}")
+                except Exception:
+                    pass
+            try:
+                s3.delete_object(Bucket=bucket, Key=f"{prefix}meta.json")
+            except Exception:
+                pass
+        cur.close(); conn.close()
+        return _ok({'ok': True})
 
     if action == 'delete':
         server = _safe_server(body.get('server'))

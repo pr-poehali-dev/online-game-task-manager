@@ -15,10 +15,10 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "POST upload_batch without token unauthorized",
+      "name": "POST file_init without token unauthorized",
       "method": "POST",
       "path": "/",
-      "body": {"action": "upload_batch", "server": "c4x1", "files": []},
+      "body": {"action": "file_init", "server": "c4x1", "path": "data/test.txt"},
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
