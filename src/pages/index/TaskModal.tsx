@@ -252,34 +252,32 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               </div>
             </>
           ) : (
-            <div className="col-span-2 md:col-span-4 rounded-xl border border-border bg-secondary/20 p-4 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3">
-              <div>
-                <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Категория</label>
+            <div className="col-span-2 md:col-span-4 rounded-lg border border-border bg-secondary/20 px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Категория</span>
                 <CategoryBadge id={form.category} />
               </div>
               {task.deadline && (
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Дедлайн</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Дедлайн</span>
                   <DeadlineBadge iso={task.deadline} />
                 </div>
               )}
               {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
-                <div>
-                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Спринт</label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Спринт</span>
                   <span className="text-xs font-medium text-foreground">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
                 </div>
               )}
               {taskAssigneeIds(form).length > 0 && (
-                <div className="col-span-2 md:col-span-4">
-                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Исполнители</label>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {taskAssigneeIds(form).map((id) => (
-                      <span key={id} className="inline-flex items-center gap-1.5 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
-                        <AssigneeAvatar a={resolveAssignee(team, id)} size={16} />
-                        {resolveAssignee(team, id).name}
-                      </span>
-                    ))}
-                  </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Исполнители</span>
+                  {taskAssigneeIds(form).map((id) => (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
+                      <AssigneeAvatar a={resolveAssignee(team, id)} size={14} />
+                      {resolveAssignee(team, id).name}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
