@@ -177,7 +177,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'files': files, 'roots': FIXED_ROOTS})
 
-    if action in ('upload_batch', 'delete'):
+    if action in ('upload_batch', 'delete', 'clear_server'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -265,6 +265,24 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'clear_server':
+        # Служебное действие — полностью очищает дерево файлов сервера (удаляет из S3 и из БД).
+        # Используется, например, чтобы убрать ошибочно загруженные данные перед началом реальной работы с патчем.
+        server = _safe_server(body.get('server'))
+        if not server:
+            cur.close(); conn.close()
+            return _bad('no_server')
+        cur.execute(f"SELECT file_key FROM {schema}.patch_files WHERE server = %s", (server,))
+        keys = [r[0] for r in cur.fetchall()]
+        for key in keys:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
+        cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s", (server,))
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'deletedCount': len(keys)})
 
     if action == 'task_zip':
         server = _safe_server(qs.get('server') or body.get('server'))
