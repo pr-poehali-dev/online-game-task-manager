@@ -1,3 +1,4 @@
+import base64
 import io
 import json
 import os
@@ -9,6 +10,9 @@ import zipfile
 
 import boto3
 import psycopg2
+
+
+MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на архив
 
 
 def _cors_headers():
@@ -152,71 +156,59 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'files': files})}
 
     # Все действия ниже изменяют или собирают данные патча — только для тех, кто может полностью редактировать задачи
-    if action in ('upload_init', 'zip_ingest', 'delete'):
+    if action in ('zip_upload', 'delete'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
 
-    if action == 'upload_init':
+    if action == 'zip_upload':
         server = _safe_server(body.get('server'))
-        if not server:
-            cur.close(); conn.close()
-            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_server'})}
-        staging_key = f"patches/_staging/{uuid.uuid4().hex}.zip"
-        url = _s3_client().generate_presigned_url(
-            'put_object',
-            Params={'Bucket': _bucket(), 'Key': staging_key, 'ContentType': 'application/zip'},
-            ExpiresIn=3600,
-        )
-        cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'uploadUrl': url, 'stagingKey': staging_key})}
-
-    if action == 'zip_ingest':
-        server = _safe_server(body.get('server'))
-        staging_key = body.get('stagingKey')
         task_id = body.get('taskId')
-        if not server or not staging_key or not staging_key.startswith('patches/_staging/'):
+        data_b64 = body.get('data')
+        if not server or not data_b64:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        try:
+            if ',' in data_b64 and data_b64.strip().startswith('data:'):
+                data_b64 = data_b64.split(',', 1)[1]
+            raw = base64.b64decode(data_b64)
+        except Exception:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_data'})}
+        if len(raw) > MAX_FILE_SIZE:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'file_too_large'})}
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            with tempfile.NamedTemporaryFile(suffix='.zip', delete=True) as tmp:
-                s3.download_fileobj(bucket, staging_key, tmp)
-                tmp.flush()
-                count = 0
-                total_size = 0
-                with zipfile.ZipFile(tmp.name) as zf:
-                    for info in zf.infolist():
-                        if info.is_dir():
-                            continue
-                        rel_path = _safe_rel_path(info.filename)
-                        if not rel_path:
-                            continue
-                        file_key = f"patches/{server}/{rel_path}"
-                        with zf.open(info) as member:
-                            data = member.read()
-                        s3.put_object(
-                            Bucket=bucket, Key=file_key, Body=data,
-                            ContentDisposition=_content_disposition(rel_path.rsplit('/', 1)[-1]),
-                        )
-                        cur.execute(
-                            f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_id, uploaded_by, updated_at) "
-                            f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
-                            f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
-                            f"size = EXCLUDED.size, task_id = EXCLUDED.task_id, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
-                            (server, rel_path, file_key, len(data), int(task_id) if task_id else None, me['id'])
-                        )
-                        count += 1
-                        total_size += len(data)
-        except Exception:
+            count = 0
+            total_size = 0
+            with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+                for info in zf.infolist():
+                    if info.is_dir():
+                        continue
+                    rel_path = _safe_rel_path(info.filename)
+                    if not rel_path:
+                        continue
+                    file_key = f"patches/{server}/{rel_path}"
+                    with zf.open(info) as member:
+                        data = member.read()
+                    s3.put_object(
+                        Bucket=bucket, Key=file_key, Body=data,
+                        ContentDisposition=_content_disposition(rel_path.rsplit('/', 1)[-1]),
+                    )
+                    cur.execute(
+                        f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_id, uploaded_by, updated_at) "
+                        f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
+                        f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
+                        f"size = EXCLUDED.size, task_id = EXCLUDED.task_id, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
+                        (server, rel_path, file_key, len(data), int(task_id) if task_id else None, me['id'])
+                    )
+                    count += 1
+                    total_size += len(data)
+        except zipfile.BadZipFile:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_zip'})}
-        finally:
-            try:
-                s3.delete_object(Bucket=bucket, Key=staging_key)
-            except Exception:
-                pass
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'filesCount': count, 'totalSize': total_size})}
 

@@ -185,33 +185,29 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
     setUploadError('');
     setUploading(true);
     try {
-      const initRes = await fetch(PATCHES_URL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'upload_init', server: active }),
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = () => reject(new Error('read_failed'));
+        reader.readAsDataURL(file);
       });
-      const initData = await initRes.json();
-      if (!initRes.ok) throw new Error(initData.error || 'upload_init_failed');
-
-      const putRes = await fetch(initData.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/zip' },
-        body: file,
-      });
-      if (!putRes.ok) throw new Error('put_failed');
-
-      const ingestRes = await fetch(PATCHES_URL, {
+      const res = await fetch(PATCHES_URL, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({
-          action: 'zip_ingest',
+          action: 'zip_upload',
           server: active,
-          stagingKey: initData.stagingKey,
+          data: dataUrl,
           taskId: taskId || null,
         }),
       });
-      const ingestData = await ingestRes.json();
-      if (!ingestRes.ok) throw new Error(ingestData.error || 'ingest_failed');
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.error === 'file_too_large') setUploadError('Архив слишком большой (максимум 300 МБ)');
+        else if (data.error === 'bad_zip') setUploadError('Файл повреждён или это не ZIP-архив');
+        else setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
+        return;
+      }
       await load(active);
     } catch {
       setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
