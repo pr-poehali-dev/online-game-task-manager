@@ -3,20 +3,17 @@ import io
 import json
 import os
 import re
-import struct
 import time
 import urllib.parse
 import uuid
-import zlib
 import zipfile
 
 import boto3
 import psycopg2
 
 
-PART_MAX = 60 * 1024 * 1024  # защитный предел на один кусок при загрузке (реально шлём по ~20 МБ)
+PART_MAX = 30 * 1024 * 1024  # защитный предел на один кусок при загрузке (реально шлём по ~20 МБ)
 BATCH_TIME_BUDGET = 90  # секунд — оставляем запас под таймаут функции (рекомендовано 120с)
-BATCH_SIZE_TARGET = 8 * 1024 * 1024  # набираем не меньше 8 МБ на порцию (минимум для части S3, кроме последней)
 
 
 def _cors_headers():
@@ -122,16 +119,28 @@ def _row_to_file(r):
     }
 
 
-class S3RangeReader(io.RawIOBase):
-    '''Читает объект S3 небольшими диапазонами по запросу — позволяет модулю zipfile работать
-    с архивом в несколько гигабайт, не загружая его целиком в память функции.'''
+class MultiPartReader(io.RawIOBase):
+    '''Читает набор частей загруженного архива (сохранённых как отдельные объекты в хранилище)
+    как единый последовательный поток — позволяет модулю zipfile распаковывать архивы в
+    несколько гигабайт, не загружая их целиком в память функции (доступно только 256 МБ).
+    Хранилище не поддерживает частичное чтение объекта (Range игнорируется и всегда возвращает
+    объект целиком), поэтому текущая часть докачивается полностью и кэшируется — сами части
+    небольшие (около 20 МБ), поэтому это не создаёт нагрузки на память.'''
 
-    def __init__(self, s3, bucket, key, size):
+    def __init__(self, s3, bucket, part_keys, part_sizes):
         self.s3 = s3
         self.bucket = bucket
-        self.key = key
-        self.size = size
+        self.part_keys = part_keys
+        self.part_sizes = part_sizes
+        self.offsets = []
+        total = 0
+        for sz in part_sizes:
+            self.offsets.append(total)
+            total += sz
+        self.size = total
         self.pos = 0
+        self._cache_idx = None
+        self._cache_data = None
 
     def readable(self):
         return True
@@ -151,51 +160,36 @@ class S3RangeReader(io.RawIOBase):
     def tell(self):
         return self.pos
 
+    def _locate(self, pos):
+        # Находит индекс части и смещение внутри неё для абсолютной позиции pos
+        for i in range(len(self.offsets) - 1, -1, -1):
+            if pos >= self.offsets[i]:
+                return i, pos - self.offsets[i]
+        return 0, 0
+
     def readinto(self, b):
         length = len(b)
         if self.pos >= self.size or length == 0:
             return 0
-        end = min(self.pos + length, self.size) - 1
-        resp = self.s3.get_object(Bucket=self.bucket, Key=self.key, Range=f'bytes={self.pos}-{end}')
-        data = resp['Body'].read()
-        n = len(data)
-        b[:n] = data
+        part_idx, part_off = self._locate(self.pos)
+        if self._cache_idx != part_idx:
+            resp = self.s3.get_object(Bucket=self.bucket, Key=self.part_keys[part_idx])
+            self._cache_data = resp['Body'].read()
+            self._cache_idx = part_idx
+        chunk = self._cache_data[part_off:part_off + length]
+        n = len(chunk)
+        b[:n] = chunk
         self.pos += n
         return n
 
 
-def _dos_datetime(ts=None):
-    t = time.localtime(ts)
-    dos_time = (t.tm_hour << 11) | (t.tm_min << 5) | (t.tm_sec // 2)
-    dos_date = ((max(t.tm_year, 1980) - 1980) << 9) | (t.tm_mon << 5) | t.tm_mday
-    return dos_time, dos_date
-
-
-def _local_file_header(name_bytes, crc, size, dos_time, dos_date):
-    return struct.pack(
-        '<4sHHHHHIII HH'.replace(' ', ''),
-        b'PK\x03\x04', 20, 0x0800, 0, dos_time, dos_date, crc, size, size, len(name_bytes), 0
-    ) + name_bytes
-
-
-def _central_dir_entry(name_bytes, crc, size, dos_time, dos_date, offset):
-    return struct.pack(
-        '<4sHHHHHHIIIHHHHHII',
-        b'PK\x01\x02', 20, 20, 0x0800, 0, dos_time, dos_date, crc, size, size,
-        len(name_bytes), 0, 0, 0, 0, 0, offset
-    ) + name_bytes
-
-
-def _eocd(entry_count, cd_size, cd_offset):
-    return struct.pack('<4sHHHHIIH', b'PK\x05\x06', 0, 0, entry_count, entry_count, cd_size, cd_offset, 0)
-
-
 def handler(event: dict, context) -> dict:
     '''Файловое дерево клиентского патча по серверам: список файлов, потоковая загрузка ZIP-архива
-    частями (без ограничения на общий размер патча — поддерживает архивы в несколько гигабайт) с
-    последующей пакетной распаковкой в дерево S3, скачивание отдельного файла (прямая ссылка), потоковая
-    сборка и скачивание всего патча сервера одним архивом, удаление файла. Просмотр и скачивание доступны
-    всем авторизованным участникам, загрузка/удаление — администраторам и участникам с правом полного
+    небольшими частями (без ограничения на общий размер патча — поддерживает архивы в несколько
+    гигабайт, части хранятся как отдельные объекты и склеиваются при чтении) с последующей пакетной
+    распаковкой в дерево S3, скачивание отдельного файла (прямая ссылка), удаление файла. Сборка
+    полного архива сервера выполняется на стороне браузера. Просмотр и скачивание доступны всем
+    авторизованным участникам, загрузка/удаление — администраторам и участникам с правом полного
     редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
@@ -238,7 +232,7 @@ def handler(event: dict, context) -> dict:
         return _ok({'files': files})
 
     # Загрузка и удаление — только для тех, кто может полностью редактировать задачи
-    if action in ('mpu_init', 'mpu_part', 'mpu_complete', 'mpu_abort', 'zip_ingest_batch', 'delete'):
+    if action in ('upload_part', 'zip_ingest_batch', 'upload_abort', 'delete'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -246,22 +240,14 @@ def handler(event: dict, context) -> dict:
     s3 = _s3_client()
     bucket = _bucket()
 
-    if action == 'mpu_init':
-        server = _safe_server(body.get('server'))
-        if not server:
+    if action == 'upload_part':
+        upload_key = body.get('uploadKey') or uuid.uuid4().hex
+        if not re.match(r'^[a-f0-9]{32}$', upload_key):
             cur.close(); conn.close()
-            return _bad('no_server')
-        staging_key = f"patches/_staging/{uuid.uuid4().hex}.zip"
-        res = s3.create_multipart_upload(Bucket=bucket, Key=staging_key, ContentType='application/zip')
-        cur.close(); conn.close()
-        return _ok({'stagingKey': staging_key, 'uploadId': res['UploadId']})
-
-    if action == 'mpu_part':
-        staging_key = body.get('stagingKey')
-        upload_id = body.get('uploadId')
+            return _bad('bad_request')
         part_number = body.get('partNumber')
         data_b64 = body.get('data')
-        if not staging_key or not staging_key.startswith('patches/_staging/') or not upload_id or not part_number or not data_b64:
+        if not part_number or not data_b64:
             cur.close(); conn.close()
             return _bad('bad_request')
         try:
@@ -274,54 +260,32 @@ def handler(event: dict, context) -> dict:
         if len(raw) > PART_MAX:
             cur.close(); conn.close()
             return _bad('part_too_large')
-        res = s3.upload_part(Bucket=bucket, Key=staging_key, UploadId=upload_id, PartNumber=int(part_number), Body=raw)
+        part_key = f"patches/_staging/{upload_key}/{int(part_number):06d}.part"
+        s3.put_object(Bucket=bucket, Key=part_key, Body=raw)
         cur.close(); conn.close()
-        return _ok({'etag': res['ETag']})
-
-    if action == 'mpu_complete':
-        staging_key = body.get('stagingKey')
-        upload_id = body.get('uploadId')
-        parts = body.get('parts') or []
-        if not staging_key or not upload_id or not parts:
-            cur.close(); conn.close()
-            return _bad('bad_request')
-        try:
-            s3.complete_multipart_upload(
-                Bucket=bucket, Key=staging_key, UploadId=upload_id,
-                MultipartUpload={'Parts': [{'ETag': p['etag'], 'PartNumber': int(p['partNumber'])} for p in parts]},
-            )
-        except Exception:
-            cur.close(); conn.close()
-            return _bad('complete_failed')
-        cur.close(); conn.close()
-        return _ok({'ok': True})
-
-    if action == 'mpu_abort':
-        staging_key = body.get('stagingKey')
-        upload_id = body.get('uploadId')
-        if staging_key and upload_id:
-            try:
-                s3.abort_multipart_upload(Bucket=bucket, Key=staging_key, UploadId=upload_id)
-            except Exception:
-                pass
-        cur.close(); conn.close()
-        return _ok({'ok': True})
+        return _ok({'uploadKey': upload_key, 'partNumber': int(part_number), 'size': len(raw)})
 
     if action == 'zip_ingest_batch':
         server = _safe_server(body.get('server'))
-        staging_key = body.get('stagingKey')
+        upload_key = body.get('uploadKey')
         task_id = body.get('taskId')
+        total_parts = body.get('totalParts')
         offset = int(body.get('offset') or 0)
-        if not server or not staging_key or not staging_key.startswith('patches/_staging/'):
+        if not server or not upload_key or not re.match(r'^[a-f0-9]{32}$', upload_key) or not total_parts:
             cur.close(); conn.close()
             return _bad('bad_request')
-        try:
-            head = s3.head_object(Bucket=bucket, Key=staging_key)
-        except Exception:
-            cur.close(); conn.close()
-            return _bad('not_found', 404)
-        size = head['ContentLength']
-        reader = io.BufferedReader(S3RangeReader(s3, bucket, staging_key, size), buffer_size=2 * 1024 * 1024)
+        part_keys = []
+        part_sizes = []
+        for i in range(1, int(total_parts) + 1):
+            key = f"patches/_staging/{upload_key}/{i:06d}.part"
+            try:
+                head = s3.head_object(Bucket=bucket, Key=key)
+            except Exception:
+                cur.close(); conn.close()
+                return _bad('missing_part')
+            part_keys.append(key)
+            part_sizes.append(head['ContentLength'])
+        reader = io.BufferedReader(MultiPartReader(s3, bucket, part_keys, part_sizes), buffer_size=2 * 1024 * 1024)
         try:
             zf = zipfile.ZipFile(reader)
         except zipfile.BadZipFile:
@@ -353,12 +317,25 @@ def handler(event: dict, context) -> dict:
             processed += 1
         done = idx >= total
         if done:
-            try:
-                s3.delete_object(Bucket=bucket, Key=staging_key)
-            except Exception:
-                pass
+            for key in part_keys:
+                try:
+                    s3.delete_object(Bucket=bucket, Key=key)
+                except Exception:
+                    pass
         cur.close(); conn.close()
         return _ok({'done': done, 'nextOffset': idx, 'totalFiles': total, 'processed': processed})
+
+    if action == 'upload_abort':
+        upload_key = body.get('uploadKey')
+        total_parts = body.get('totalParts') or 0
+        if upload_key and re.match(r'^[a-f0-9]{32}$', upload_key):
+            for i in range(1, int(total_parts) + 1):
+                try:
+                    s3.delete_object(Bucket=bucket, Key=f"patches/_staging/{upload_key}/{i:06d}.part")
+                except Exception:
+                    pass
+        cur.close(); conn.close()
+        return _ok({'ok': True})
 
     if action == 'delete':
         server = _safe_server(body.get('server'))
@@ -379,144 +356,6 @@ def handler(event: dict, context) -> dict:
         except Exception:
             pass
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
-        cur.close(); conn.close()
-        return _ok({'ok': True})
-
-    if action == 'zip_all_init':
-        server = _safe_server(qs.get('server') or body.get('server'))
-        if not server:
-            cur.close(); conn.close()
-            return _bad('no_server')
-        cur.execute(
-            f"SELECT path, file_key, size FROM {schema}.patch_files WHERE server = %s ORDER BY path",
-            (server,)
-        )
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        if not rows:
-            return _bad('empty', 404)
-        archive_key = f"patches/_archives/{server}-{uuid.uuid4().hex}.zip"
-        res = s3.create_multipart_upload(
-            Bucket=bucket, Key=archive_key, ContentType='application/zip',
-            ContentDisposition=_content_disposition(f'{server}-patch.zip'),
-        )
-        return _ok({
-            'archiveKey': archive_key,
-            'uploadId': res['UploadId'],
-            'totalFiles': len(rows),
-            'totalSize': sum(r[2] or 0 for r in rows),
-        })
-
-    if action == 'zip_all_batch':
-        server = _safe_server(body.get('server'))
-        archive_key = body.get('archiveKey')
-        upload_id = body.get('uploadId')
-        from_index = int(body.get('fromIndex') or 0)
-        cd_entries = body.get('cdEntries') or []
-        bytes_written = int(body.get('bytesWritten') or 0)
-        part_number = int(body.get('partNumber') or 1)
-        pending_b64 = body.get('pendingChunkB64')
-        if not server or not archive_key or not upload_id:
-            cur.close(); conn.close()
-            return _bad('bad_request')
-        cur.execute(
-            f"SELECT path, file_key, size FROM {schema}.patch_files WHERE server = %s ORDER BY path",
-            (server,)
-        )
-        rows = cur.fetchall()
-        cur.close(); conn.close()
-        total = len(rows)
-        start_ts = time.monotonic()
-        idx = from_index
-        buf = io.BytesIO()
-        if pending_b64:
-            buf.write(base64.b64decode(pending_b64))
-        new_cd_entries = list(cd_entries)
-        while idx < total and (time.monotonic() - start_ts) < BATCH_TIME_BUDGET:
-            path, file_key, _size = rows[idx]
-            obj = s3.get_object(Bucket=bucket, Key=file_key)
-            data = obj['Body'].read()
-            crc = zlib.crc32(data) & 0xFFFFFFFF
-            dos_time, dos_date = _dos_datetime()
-            name_bytes = path.encode('utf-8')
-            entry_offset = bytes_written + buf.tell()
-            buf.write(_local_file_header(name_bytes, crc, len(data), dos_time, dos_date))
-            buf.write(data)
-            new_cd_entries.append({
-                'name': path, 'crc': crc, 'size': len(data),
-                'dosTime': dos_time, 'dosDate': dos_date, 'offset': entry_offset,
-            })
-            idx += 1
-            if buf.tell() >= BATCH_SIZE_TARGET:
-                break
-        done_files = idx >= total
-        chunk = buf.getvalue()
-        result_part = None
-        pending_out = chunk
-        # Часть (кроме самой последней в архиве) обязана быть не меньше 5 МБ (требование хранилища).
-        # Пока файлы не закончились — отправляем накопленный кусок сразу; последний «хвост» (даже
-        # маленький) передаём на шаг zip_all_finalize, который допишет к нему центральный каталог
-        # и отправит одной финальной частью.
-        if chunk and not done_files and len(chunk) >= 5 * 1024 * 1024:
-            res = s3.upload_part(Bucket=bucket, Key=archive_key, UploadId=upload_id, PartNumber=part_number, Body=chunk)
-            result_part = {'partNumber': part_number, 'etag': res['ETag']}
-            bytes_written += len(chunk)
-            part_number += 1
-            pending_out = b''
-        return _ok({
-            'done': done_files,
-            'nextIndex': idx,
-            'totalFiles': total,
-            'cdEntries': new_cd_entries,
-            'bytesWritten': bytes_written,
-            'partNumber': part_number,
-            'part': result_part,
-            'pendingChunkB64': base64.b64encode(pending_out).decode() if pending_out else None,
-        })
-
-    if action == 'zip_all_finalize':
-        archive_key = body.get('archiveKey')
-        upload_id = body.get('uploadId')
-        cd_entries = body.get('cdEntries') or []
-        bytes_written = int(body.get('bytesWritten') or 0)
-        part_number = int(body.get('partNumber') or 1)
-        parts = body.get('parts') or []
-        pending_b64 = body.get('pendingChunkB64')
-        if not archive_key or not upload_id:
-            cur.close(); conn.close()
-            return _bad('bad_request')
-        cd_buf = io.BytesIO()
-        if pending_b64:
-            pending = base64.b64decode(pending_b64)
-        else:
-            pending = b''
-        cd_offset = bytes_written + len(pending)
-        for e in cd_entries:
-            name_bytes = e['name'].encode('utf-8')
-            cd_buf.write(_central_dir_entry(name_bytes, e['crc'], e['size'], e['dosTime'], e['dosDate'], e['offset']))
-        cd_bytes = cd_buf.getvalue()
-        final_chunk = pending + cd_bytes + _eocd(len(cd_entries), len(cd_bytes), cd_offset)
-        res = s3.upload_part(Bucket=bucket, Key=archive_key, UploadId=upload_id, PartNumber=part_number, Body=final_chunk)
-        all_parts = list(parts) + [{'partNumber': part_number, 'etag': res['ETag']}]
-        try:
-            s3.complete_multipart_upload(
-                Bucket=bucket, Key=archive_key, UploadId=upload_id,
-                MultipartUpload={'Parts': [{'ETag': p['etag'], 'PartNumber': int(p['partNumber'])} for p in all_parts]},
-            )
-        except Exception:
-            cur.close(); conn.close()
-            return _bad('complete_failed')
-        cur.close(); conn.close()
-        return _ok({'url': _public_url(archive_key)})
-
-    if action == 'zip_all_abort':
-        archive_key = body.get('archiveKey')
-        upload_id = body.get('uploadId')
-        if archive_key and upload_id:
-            try:
-                s3.abort_multipart_upload(Bucket=bucket, Key=archive_key, UploadId=upload_id)
-            except Exception:
-                pass
         cur.close(); conn.close()
         return _ok({'ok': True})
 

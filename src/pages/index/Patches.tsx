@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import JSZip from 'jszip';
 import Icon from '@/components/ui/icon';
 import { PATCHES_URL, authHeaders, servers, formatMskDateTime } from './shared';
 import type { ServerId } from './shared';
@@ -58,6 +59,12 @@ function blobToBase64(blob: Blob): Promise<string> {
     reader.onerror = () => reject(new Error('read_failed'));
     reader.readAsDataURL(blob);
   });
+}
+
+function randomUploadKey(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 async function postJson(body: Record<string, unknown>, signal?: AbortSignal) {
@@ -176,7 +183,6 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
   const [zipping, setZipping] = useState(false);
   const [zipProgress, setZipProgress] = useState(0);
   const [taskId, setTaskId] = useState<string>('');
-  const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
 
   const load = useCallback(async (server: ServerId) => {
@@ -215,34 +221,23 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
     setStage('uploading');
     setProgress(0);
     cancelledRef.current = false;
-    const controller = new AbortController();
-    abortRef.current = controller;
 
-    let stagingKey = '';
-    let uploadId = '';
+    const uploadKey = randomUploadKey();
+    const totalParts = Math.max(1, Math.ceil(file.size / PART_SIZE));
+
     try {
-      const init = await postJson({ action: 'mpu_init', server: active }, controller.signal);
-      stagingKey = init.stagingKey;
-      uploadId = init.uploadId;
-
-      const totalParts = Math.ceil(file.size / PART_SIZE);
-      const parts: { partNumber: number; etag: string }[] = [];
       for (let i = 0; i < totalParts; i++) {
         if (cancelledRef.current) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
         const slice = file.slice(i * PART_SIZE, Math.min((i + 1) * PART_SIZE, file.size));
         const b64 = await blobToBase64(slice);
-        const res = await postJson({
-          action: 'mpu_part',
-          stagingKey,
-          uploadId,
+        await postJson({
+          action: 'upload_part',
+          uploadKey,
           partNumber: i + 1,
           data: b64,
-        }, controller.signal);
-        parts.push({ partNumber: i + 1, etag: res.etag });
+        });
         setProgress(Math.round(((i + 1) / totalParts) * 100));
       }
-
-      await postJson({ action: 'mpu_complete', stagingKey, uploadId, parts }, controller.signal);
 
       setStage('unpacking');
       setProgress(0);
@@ -253,10 +248,11 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
         const res = await postJson({
           action: 'zip_ingest_batch',
           server: active,
-          stagingKey,
+          uploadKey,
+          totalParts,
           taskId: taskId || null,
           offset,
-        }, controller.signal);
+        });
         offset = res.nextOffset;
         totalFiles = res.totalFiles || 1;
         setProgress(Math.min(100, Math.round((offset / Math.max(totalFiles, 1)) * 100)));
@@ -266,11 +262,9 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       if (code === 'cancelled') {
-        if (stagingKey && uploadId) {
-          postJson({ action: 'mpu_abort', stagingKey, uploadId }).catch(() => {});
-        }
+        postJson({ action: 'upload_abort', uploadKey, totalParts }).catch(() => {});
         setUploadError('Загрузка отменена');
-      } else if (code === 'file_too_large' || code === 'part_too_large') {
+      } else if (code === 'part_too_large') {
         setUploadError('Часть файла оказалась слишком большой — попробуйте другой архив');
       } else if (code === 'bad_zip') {
         setUploadError('Файл повреждён или это не ZIP-архив');
@@ -279,13 +273,11 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
       }
     } finally {
       setStage('idle');
-      abortRef.current = null;
     }
   }
 
   function handleCancelUpload() {
     cancelledRef.current = true;
-    abortRef.current?.abort();
   }
 
   async function handleDelete(path: string) {
@@ -298,52 +290,29 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
   }
 
   async function handleDownloadAll() {
+    if (files.length === 0) return;
     setZipping(true);
     setZipProgress(0);
     try {
-      const init = await postJson({ action: 'zip_all_init', server: active });
-      const { archiveKey, uploadId, totalFiles } = init;
-      let fromIndex = 0;
-      let cdEntries: unknown[] = [];
-      let bytesWritten = 0;
-      let partNumber = 1;
-      let pendingChunkB64: string | null = null;
-      const parts: { partNumber: number; etag: string }[] = [];
-
-      for (;;) {
-        const res = await postJson({
-          action: 'zip_all_batch',
-          server: active,
-          archiveKey,
-          uploadId,
-          fromIndex,
-          cdEntries,
-          bytesWritten,
-          partNumber,
-          pendingChunkB64,
-        });
-        fromIndex = res.nextIndex;
-        cdEntries = res.cdEntries;
-        bytesWritten = res.bytesWritten;
-        partNumber = res.partNumber;
-        pendingChunkB64 = res.pendingChunkB64;
-        if (res.part) parts.push(res.part);
-        setZipProgress(Math.min(99, Math.round((fromIndex / Math.max(totalFiles, 1)) * 100)));
-        if (res.done) break;
+      const zip = new JSZip();
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const res = await fetch(f.url);
+        const blob = await res.blob();
+        zip.file(f.path, blob);
+        setZipProgress(Math.round(((i + 1) / files.length) * 90));
       }
-
-      const final = await postJson({
-        action: 'zip_all_finalize',
-        archiveKey,
-        uploadId,
-        cdEntries,
-        bytesWritten,
-        partNumber,
-        parts,
-        pendingChunkB64,
+      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } }, (meta) => {
+        setZipProgress(90 + Math.round(meta.percent * 0.1));
       });
-      setZipProgress(100);
-      if (final.url) window.open(final.url, '_blank');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${active}-patch.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
     } catch {
       /* ignore */
     } finally {

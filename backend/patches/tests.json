@@ -15,10 +15,10 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "POST mpu_init without token unauthorized",
+      "name": "POST upload_part without token unauthorized",
       "method": "POST",
       "path": "/",
-      "body": {"action": "mpu_init", "server": "c4x1"},
+      "body": {"action": "upload_part", "partNumber": 1, "data": "AA=="},
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
