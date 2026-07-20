@@ -80,6 +80,7 @@ export default function IndexTopbar({
     { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
     { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
     { k: 'patchnotes', label: 'Патчноуты', icon: 'ScrollText' },
+    { k: 'patches', label: 'Патчи', icon: 'FolderTree' },
     { k: 'archive', label: 'Архив', icon: 'Archive' },
   ] as const;
 
@@ -105,6 +106,7 @@ export default function IndexTopbar({
             {view === 'restart' && 'К рестарту'}
             {view === 'ideas' && 'Идеи'}
             {view === 'patchnotes' && 'Патчноуты'}
+            {view === 'patches' && 'Патчи'}
           </span>
         </div>
         <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">

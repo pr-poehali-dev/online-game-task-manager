@@ -4,6 +4,7 @@ import Board from './Board';
 import Restart from './Restart';
 import Ideas from './Ideas';
 import Patchnotes from './Patchnotes';
+import Patches from './Patches';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
 import type { PermissionKey } from '@/lib/auth';
@@ -200,6 +201,12 @@ export default function IndexMain({
           />
         )}
         {view === 'patchnotes' && <Patchnotes />}
+        {view === 'patches' && (
+          <Patches
+            canManage={isAdmin || can('task_edit_own')}
+            tasks={activeTasks.map((t) => ({ id: t.id, title: t.title }))}
+          />
+        )}
       </div>
 
       {selectedTask && (
