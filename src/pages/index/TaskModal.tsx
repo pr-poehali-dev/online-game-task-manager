@@ -252,20 +252,26 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               </div>
             </>
           ) : (
-            <>
+            <div className="col-span-2 md:col-span-4 rounded-xl border border-border bg-secondary/20 p-4 grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-3">
               <div>
-                <label className="block text-[10px] text-muted-foreground mb-1">Категория</label>
+                <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Категория</label>
                 <CategoryBadge id={form.category} />
               </div>
               {task.deadline && (
                 <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Дедлайн</label>
+                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Дедлайн</label>
                   <DeadlineBadge iso={task.deadline} />
                 </div>
               )}
+              {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
+                <div>
+                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Спринт</label>
+                  <span className="text-xs font-medium text-foreground">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
+                </div>
+              )}
               {taskAssigneeIds(form).length > 0 && (
-                <div className="md:col-span-2">
-                  <label className="block text-[10px] text-muted-foreground mb-1">Исполнители</label>
+                <div className="col-span-2 md:col-span-4">
+                  <label className="block text-[10px] uppercase tracking-wide text-muted-foreground mb-1.5">Исполнители</label>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {taskAssigneeIds(form).map((id) => (
                       <span key={id} className="inline-flex items-center gap-1.5 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
@@ -276,13 +282,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                   </div>
                 </div>
               )}
-              {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
-                <div>
-                  <label className="block text-[10px] text-muted-foreground mb-1">Спринт</label>
-                  <span className="text-xs">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
-                </div>
-              )}
-            </>
+            </div>
           )}
         </div>
 
