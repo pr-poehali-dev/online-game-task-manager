@@ -24,6 +24,9 @@ const App = () => (
             <Sonner />
             <Routes>
               <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/task/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/idea/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+              <Route path="/kb/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
               <Route path="/login" element={<Login />} />
               <Route path="/cabinet" element={<ProtectedRoute><Cabinet /></ProtectedRoute>} />
               <Route path="/admin" element={<ProtectedRoute adminOnly><Admin /></ProtectedRoute>} />
