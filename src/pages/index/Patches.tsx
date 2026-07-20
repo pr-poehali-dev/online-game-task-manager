@@ -20,11 +20,14 @@ interface TreeNode {
   file?: PatchFile;
 }
 
+const PART_SIZE = 20 * 1024 * 1024; // 20 МБ на кусок при загрузке
+
 function fmtSize(bytes: number) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`;
 }
 
 function buildTree(files: PatchFile[]): TreeNode {
@@ -46,6 +49,27 @@ function buildTree(files: PatchFile[]): TreeNode {
     }
   }
   return root;
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(',', 2)[1] ?? '');
+    reader.onerror = () => reject(new Error('read_failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function postJson(body: Record<string, unknown>, signal?: AbortSignal) {
+  const res = await fetch(PATCHES_URL, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { code: data.error });
+  return data;
 }
 
 function TreeFolder({
@@ -140,15 +164,20 @@ function TreeFolder({
   );
 }
 
+type UploadStage = 'idle' | 'uploading' | 'unpacking';
+
 export default function Patches({ canManage, tasks }: { canManage: boolean; tasks: { id: string; title: string }[] }) {
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
+  const [stage, setStage] = useState<UploadStage>('idle');
+  const [progress, setProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
+  const [zipProgress, setZipProgress] = useState(0);
   const [taskId, setTaskId] = useState<string>('');
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+  const cancelledRef = useRef(false);
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -183,47 +212,86 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
       return;
     }
     setUploadError('');
-    setUploading(true);
+    setStage('uploading');
+    setProgress(0);
+    cancelledRef.current = false;
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    let stagingKey = '';
+    let uploadId = '';
     try {
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = () => reject(new Error('read_failed'));
-        reader.readAsDataURL(file);
-      });
-      const res = await fetch(PATCHES_URL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          action: 'zip_upload',
+      const init = await postJson({ action: 'mpu_init', server: active }, controller.signal);
+      stagingKey = init.stagingKey;
+      uploadId = init.uploadId;
+
+      const totalParts = Math.ceil(file.size / PART_SIZE);
+      const parts: { partNumber: number; etag: string }[] = [];
+      for (let i = 0; i < totalParts; i++) {
+        if (cancelledRef.current) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
+        const slice = file.slice(i * PART_SIZE, Math.min((i + 1) * PART_SIZE, file.size));
+        const b64 = await blobToBase64(slice);
+        const res = await postJson({
+          action: 'mpu_part',
+          stagingKey,
+          uploadId,
+          partNumber: i + 1,
+          data: b64,
+        }, controller.signal);
+        parts.push({ partNumber: i + 1, etag: res.etag });
+        setProgress(Math.round(((i + 1) / totalParts) * 100));
+      }
+
+      await postJson({ action: 'mpu_complete', stagingKey, uploadId, parts }, controller.signal);
+
+      setStage('unpacking');
+      setProgress(0);
+      let offset = 0;
+      let totalFiles = 1;
+      for (;;) {
+        if (cancelledRef.current) break;
+        const res = await postJson({
+          action: 'zip_ingest_batch',
           server: active,
-          data: dataUrl,
+          stagingKey,
           taskId: taskId || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.error === 'file_too_large') setUploadError('Архив слишком большой (максимум 300 МБ)');
-        else if (data.error === 'bad_zip') setUploadError('Файл повреждён или это не ZIP-архив');
-        else setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
-        return;
+          offset,
+        }, controller.signal);
+        offset = res.nextOffset;
+        totalFiles = res.totalFiles || 1;
+        setProgress(Math.min(100, Math.round((offset / Math.max(totalFiles, 1)) * 100)));
+        if (res.done) break;
       }
       await load(active);
-    } catch {
-      setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'cancelled') {
+        if (stagingKey && uploadId) {
+          postJson({ action: 'mpu_abort', stagingKey, uploadId }).catch(() => {});
+        }
+        setUploadError('Загрузка отменена');
+      } else if (code === 'file_too_large' || code === 'part_too_large') {
+        setUploadError('Часть файла оказалась слишком большой — попробуйте другой архив');
+      } else if (code === 'bad_zip') {
+        setUploadError('Файл повреждён или это не ZIP-архив');
+      } else {
+        setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
+      }
     } finally {
-      setUploading(false);
+      setStage('idle');
+      abortRef.current = null;
     }
+  }
+
+  function handleCancelUpload() {
+    cancelledRef.current = true;
+    abortRef.current?.abort();
   }
 
   async function handleDelete(path: string) {
     try {
-      const res = await fetch(PATCHES_URL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'delete', server: active, path }),
-      });
-      if (res.ok) setFiles((prev) => prev.filter((f) => f.path !== path));
+      await postJson({ action: 'delete', server: active, path });
+      setFiles((prev) => prev.filter((f) => f.path !== path));
     } catch {
       /* ignore */
     }
@@ -231,21 +299,59 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
 
   async function handleDownloadAll() {
     setZipping(true);
+    setZipProgress(0);
     try {
-      const res = await fetch(`${PATCHES_URL}?action=zip_all&server=${encodeURIComponent(active)}`, {
-        method: 'GET',
-        headers: authHeaders(),
-      });
-      const data = await res.json();
-      if (res.ok && data.url) {
-        window.open(data.url, '_blank');
+      const init = await postJson({ action: 'zip_all_init', server: active });
+      const { archiveKey, uploadId, totalFiles } = init;
+      let fromIndex = 0;
+      let cdEntries: unknown[] = [];
+      let bytesWritten = 0;
+      let partNumber = 1;
+      let pendingChunkB64: string | null = null;
+      const parts: { partNumber: number; etag: string }[] = [];
+
+      for (;;) {
+        const res = await postJson({
+          action: 'zip_all_batch',
+          server: active,
+          archiveKey,
+          uploadId,
+          fromIndex,
+          cdEntries,
+          bytesWritten,
+          partNumber,
+          pendingChunkB64,
+        });
+        fromIndex = res.nextIndex;
+        cdEntries = res.cdEntries;
+        bytesWritten = res.bytesWritten;
+        partNumber = res.partNumber;
+        pendingChunkB64 = res.pendingChunkB64;
+        if (res.part) parts.push(res.part);
+        setZipProgress(Math.min(99, Math.round((fromIndex / Math.max(totalFiles, 1)) * 100)));
+        if (res.done) break;
       }
+
+      const final = await postJson({
+        action: 'zip_all_finalize',
+        archiveKey,
+        uploadId,
+        cdEntries,
+        bytesWritten,
+        partNumber,
+        parts,
+        pendingChunkB64,
+      });
+      setZipProgress(100);
+      if (final.url) window.open(final.url, '_blank');
     } catch {
       /* ignore */
     } finally {
       setZipping(false);
     }
   }
+
+  const busy = stage !== 'idle';
 
   return (
     <div className="max-w-4xl animate-fade-in">
@@ -255,7 +361,7 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
       </div>
       <p className="text-sm text-muted-foreground mb-5">
         Дерево файлов клиентского патча по каждому серверу — общее для всех задач. Новая загрузка
-        заменяет файл с тем же путём.
+        заменяет файл с тем же путём. Поддерживаются архивы в несколько гигабайт — загружаются частями.
       </p>
 
       <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg mb-4 w-fit">
@@ -263,7 +369,8 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+            disabled={busy}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-40 ${
               active === s.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -274,44 +381,76 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
       </div>
 
       {canManage && (
-        <div className="flex flex-wrap items-center gap-2 mb-4 p-3 rounded-xl border border-dashed border-border">
-          <select
-            value={taskId}
-            onChange={(e) => setTaskId(e.target.value)}
-            className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-muted-foreground max-w-[220px]"
-          >
-            <option value="">Без привязки к задаче</option>
-            {tasks.map((t) => (
-              <option key={t.id} value={t.id}>{t.title}</option>
-            ))}
-          </select>
-          <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer">
-            <Icon name={uploading ? 'Loader2' : 'Upload'} size={14} className={uploading ? 'animate-spin' : ''} />
-            {uploading ? 'Загрузка...' : 'Загрузить ZIP-патч'}
-            <input ref={fileInputRef} type="file" accept=".zip" className="hidden" onChange={handleUpload} disabled={uploading} />
-          </label>
-          {uploadError && <p className="text-xs text-destructive w-full">{uploadError}</p>}
+        <div className="flex flex-col gap-2 mb-4 p-3 rounded-xl border border-dashed border-border">
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={taskId}
+              onChange={(e) => setTaskId(e.target.value)}
+              disabled={busy}
+              className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-muted-foreground max-w-[220px] disabled:opacity-40"
+            >
+              <option value="">Без привязки к задаче</option>
+              {tasks.map((t) => (
+                <option key={t.id} value={t.id}>{t.title}</option>
+              ))}
+            </select>
+            {!busy && (
+              <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer">
+                <Icon name="Upload" size={14} />
+                Загрузить ZIP-патч
+                <input type="file" accept=".zip" className="hidden" onChange={handleUpload} />
+              </label>
+            )}
+            {busy && (
+              <button
+                onClick={handleCancelUpload}
+                className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-destructive/40 text-destructive text-sm font-medium hover:bg-destructive/10 transition-colors"
+              >
+                <Icon name="X" size={14} />
+                Отменить
+              </button>
+            )}
+          </div>
+          {busy && (
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
+                <div
+                  className="h-full bg-primary transition-all duration-300"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs text-muted-foreground w-32 shrink-0">
+                {stage === 'uploading' ? `Загрузка… ${progress}%` : `Распаковка… ${progress}%`}
+              </span>
+            </div>
+          )}
+          {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
         </div>
       )}
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Icon name="Server" size={14} className="text-muted-foreground" />
-            {activeSrv.label}
-            <span className="text-xs text-muted-foreground font-normal">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30 gap-3">
+          <div className="flex items-center gap-2 text-sm font-medium min-w-0">
+            <Icon name="Server" size={14} className="text-muted-foreground shrink-0" />
+            <span className="truncate">{activeSrv.label}</span>
+            <span className="text-xs text-muted-foreground font-normal shrink-0">
               · {files.length} файлов{files.length > 0 ? ` · ${fmtSize(totalSize)}` : ''}
             </span>
           </div>
-          <button
-            onClick={handleDownloadAll}
-            disabled={files.length === 0 || zipping}
-            title="Скачать весь патч одним архивом"
-            className="h-8 px-3 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30 flex items-center gap-1.5"
-          >
-            <Icon name={zipping ? 'Loader2' : 'FolderArchive'} size={13} className={zipping ? 'animate-spin' : ''} />
-            {zipping ? 'Собираю...' : 'Скачать весь патч'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {zipping && (
+              <span className="text-xs text-muted-foreground">{zipProgress}%</span>
+            )}
+            <button
+              onClick={handleDownloadAll}
+              disabled={files.length === 0 || zipping}
+              title="Скачать весь патч одним архивом"
+              className="h-8 px-3 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30 flex items-center gap-1.5"
+            >
+              <Icon name={zipping ? 'Loader2' : 'FolderArchive'} size={13} className={zipping ? 'animate-spin' : ''} />
+              {zipping ? 'Собираю...' : 'Скачать весь патч'}
+            </button>
+          </div>
         </div>
 
         {loading ? (

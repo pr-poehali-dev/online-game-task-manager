@@ -15,10 +15,10 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "POST zip_ingest without token unauthorized",
+      "name": "POST mpu_init without token unauthorized",
       "method": "POST",
       "path": "/",
-      "body": {"action": "zip_ingest", "server": "c4x1"},
+      "body": {"action": "mpu_init", "server": "c4x1"},
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
