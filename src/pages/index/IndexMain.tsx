@@ -66,6 +66,8 @@ export default function IndexMain({
   handleRestoreSprint,
   handleDeleteSprintPermanently,
   handleMoveTask,
+  patchesTaskId,
+  onOpenPatchesForTask,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -113,6 +115,8 @@ export default function IndexMain({
   handleRestoreSprint: (id: string) => void;
   handleDeleteSprintPermanently: (id: string) => void;
   handleMoveTask: (task: Task, column: ColumnId, deployStatus: DeployStatus) => void;
+  patchesTaskId: string | null;
+  onOpenPatchesForTask: (taskId: string) => void;
 }) {
   return (
     <>
@@ -205,6 +209,7 @@ export default function IndexMain({
           <Patches
             canManage={isAdmin || can('task_edit_own')}
             tasks={activeTasks.map((t) => ({ id: t.id, title: t.title }))}
+            initialTaskId={patchesTaskId}
           />
         )}
       </div>
@@ -224,6 +229,7 @@ export default function IndexMain({
           isAdmin={isAdmin}
           can={can}
           currentUserId={currentUserId}
+          onOpenPatches={() => onOpenPatchesForTask(selectedTask.id)}
         />
       )}
       {createFor && (

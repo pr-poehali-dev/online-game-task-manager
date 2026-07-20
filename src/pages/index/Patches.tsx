@@ -1,8 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import JSZip from 'jszip';
 import Icon from '@/components/ui/icon';
 import { PATCHES_URL, authHeaders, servers, formatMskDateTime } from './shared';
 import type { ServerId } from './shared';
+
+export const PATCH_ROOTS = [
+  'animations', 'data', 'l2text', 'maps', 'staticmeshes',
+  'System', 'System_eng', 'systextures', 'textures',
+];
 
 interface PatchFile {
   id: number;
@@ -10,7 +14,7 @@ interface PatchFile {
   size: number;
   url: string;
   updatedAt: string | null;
-  taskId: string | null;
+  taskIds: string[];
 }
 
 interface TreeNode {
@@ -21,18 +25,18 @@ interface TreeNode {
   file?: PatchFile;
 }
 
-const PART_SIZE = 20 * 1024 * 1024; // 20 МБ на кусок при загрузке
-
 function fmtSize(bytes: number) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
 function buildTree(files: PatchFile[]): TreeNode {
   const root: TreeNode = { name: '', path: '', isFile: false, children: new Map() };
+  for (const rootName of PATCH_ROOTS) {
+    root.children.set(rootName, { name: rootName, path: rootName, isFile: false, children: new Map() });
+  }
   for (const f of files) {
     const parts = f.path.split('/');
     let node = root;
@@ -61,18 +65,61 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-function randomUploadKey(): string {
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+interface DroppedFile {
+  path: string;
+  file: File;
 }
 
-async function postJson(body: Record<string, unknown>, signal?: AbortSignal) {
+function readEntry(entry: FileSystemEntry, prefix: string, out: DroppedFile[]): Promise<void> {
+  return new Promise((resolve) => {
+    if (entry.isFile) {
+      (entry as FileSystemFileEntry).file((file) => {
+        out.push({ path: `${prefix}${entry.name}`, file });
+        resolve();
+      }, () => resolve());
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      const entries: FileSystemEntry[] = [];
+      const readBatch = () => {
+        reader.readEntries(async (batch) => {
+          if (batch.length === 0) {
+            await Promise.all(entries.map((e) => readEntry(e, `${prefix}${entry.name}/`, out)));
+            resolve();
+            return;
+          }
+          entries.push(...batch);
+          readBatch();
+        }, () => resolve());
+      };
+      readBatch();
+    } else {
+      resolve();
+    }
+  });
+}
+
+async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<DroppedFile[]> {
+  const out: DroppedFile[] = [];
+  const items = Array.from(dataTransfer.items || []);
+  const entries = items
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
+    .filter((e): e is FileSystemEntry => !!e);
+  if (entries.length > 0) {
+    await Promise.all(entries.map((e) => readEntry(e, '', out)));
+    return out;
+  }
+  // Фолбэк для браузеров без Entries API — берём файлы плоско
+  Array.from(dataTransfer.files || []).forEach((file) => {
+    out.push({ path: file.name, file });
+  });
+  return out;
+}
+
+async function postJson(body: Record<string, unknown>) {
   const res = await fetch(PATCHES_URL, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(body),
-    signal,
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { code: data.error });
@@ -84,14 +131,23 @@ function TreeFolder({
   depth,
   canManage,
   onDelete,
+  highlightTaskId,
+  onDropFiles,
+  dragActive,
+  setDragActive,
 }: {
   node: TreeNode;
   depth: number;
   canManage: boolean;
   onDelete: (path: string) => void;
+  highlightTaskId: string | null;
+  onDropFiles: (rootFolder: string, files: DroppedFile[]) => void;
+  dragActive: string | null;
+  setDragActive: (path: string | null) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
+  const isRoot = depth === 0;
   const entries = useMemo(() => {
     const arr = Array.from(node.children.values());
     arr.sort((a, b) => {
@@ -103,12 +159,15 @@ function TreeFolder({
 
   if (node.isFile && node.file) {
     const f = node.file;
+    const highlighted = !!highlightTaskId && f.taskIds.includes(highlightTaskId);
     return (
       <div
-        className="flex items-center gap-2 py-1.5 pr-2 hover:bg-secondary/40 rounded-md transition-colors group"
+        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors group ${
+          highlighted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/40'
+        }`}
         style={{ paddingLeft: `${depth * 18 + 24}px` }}
       >
-        <Icon name="FileArchive" size={14} className="text-muted-foreground shrink-0" />
+        <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
         <span className="text-sm truncate flex-1">{node.name}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{fmtSize(f.size)}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">{formatMskDateTime(f.updatedAt)}</span>
@@ -149,21 +208,51 @@ function TreeFolder({
     );
   }
 
+  const rootName = node.path.split('/')[0];
+  const isDragTarget = dragActive === node.path;
+
   return (
     <div>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 py-1.5 pr-2 hover:bg-secondary/40 rounded-md transition-colors w-full text-left"
+        onDragOver={canManage && isRoot ? (e) => { e.preventDefault(); setDragActive(node.path); } : undefined}
+        onDragLeave={canManage && isRoot ? () => setDragActive(null) : undefined}
+        onDrop={canManage && isRoot ? (e) => {
+          e.preventDefault();
+          setDragActive(null);
+          collectDroppedFiles(e.dataTransfer).then((files) => onDropFiles(rootName, files));
+        } : undefined}
+        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full text-left ${
+          isDragTarget ? 'bg-primary/15 ring-1 ring-primary/50' : 'hover:bg-secondary/40'
+        }`}
         style={{ paddingLeft: `${depth * 18 + 4}px` }}
       >
         <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
-        <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="text-primary shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
-        <span className="text-sm font-medium truncate">{node.name || 'root'}</span>
+        <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+        <span className="text-sm font-medium truncate">{node.name}</span>
+        {isRoot && canManage && (
+          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover:opacity-100">перетащите папку сюда</span>
+        )}
       </button>
       {open && (
         <div>
+          {entries.length === 0 && (
+            <div className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${(depth + 1) * 18 + 24}px` }}>
+              пусто
+            </div>
+          )}
           {entries.map((child) => (
-            <TreeFolder key={child.path} node={child} depth={depth + 1} canManage={canManage} onDelete={onDelete} />
+            <TreeFolder
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              canManage={canManage}
+              onDelete={onDelete}
+              highlightTaskId={highlightTaskId}
+              onDropFiles={onDropFiles}
+              dragActive={dragActive}
+              setDragActive={setDragActive}
+            />
           ))}
         </div>
       )}
@@ -171,19 +260,24 @@ function TreeFolder({
   );
 }
 
-type UploadStage = 'idle' | 'uploading' | 'unpacking';
-
-export default function Patches({ canManage, tasks }: { canManage: boolean; tasks: { id: string; title: string }[] }) {
+export default function Patches({
+  canManage,
+  tasks,
+  initialTaskId,
+}: {
+  canManage: boolean;
+  tasks: { id: string; title: string }[];
+  initialTaskId?: string | null;
+}) {
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [stage, setStage] = useState<UploadStage>('idle');
-  const [progress, setProgress] = useState(0);
+  const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
-  const [zipProgress, setZipProgress] = useState(0);
-  const [taskId, setTaskId] = useState<string>('');
-  const cancelledRef = useRef(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string>(initialTaskId || '');
+  const [dragActive, setDragActive] = useState<string | null>(null);
+  const appliedInitial = useRef(false);
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -205,80 +299,47 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
 
   useEffect(() => { load(active); }, [active, load]);
 
+  useEffect(() => {
+    if (initialTaskId && !appliedInitial.current) {
+      setSelectedTaskId(initialTaskId);
+      appliedInitial.current = true;
+    }
+  }, [initialTaskId]);
+
   const tree = useMemo(() => buildTree(files), [files]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
   const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
+  const taskFilesCount = useMemo(
+    () => (selectedTaskId ? files.filter((f) => f.taskIds.includes(selectedTaskId)).length : 0),
+    [files, selectedTaskId]
+  );
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.name.toLowerCase().endsWith('.zip')) {
-      setUploadError('Нужен ZIP-архив');
-      return;
-    }
+  const handleDropFiles = useCallback(async (rootFolder: string, dropped: DroppedFile[]) => {
+    if (dropped.length === 0) return;
     setUploadError('');
-    setStage('uploading');
-    setProgress(0);
-    cancelledRef.current = false;
-
-    const uploadKey = randomUploadKey();
-    const totalParts = Math.max(1, Math.ceil(file.size / PART_SIZE));
-
+    setUploading(true);
     try {
-      for (let i = 0; i < totalParts; i++) {
-        if (cancelledRef.current) throw Object.assign(new Error('cancelled'), { code: 'cancelled' });
-        const slice = file.slice(i * PART_SIZE, Math.min((i + 1) * PART_SIZE, file.size));
-        const b64 = await blobToBase64(slice);
-        await postJson({
-          action: 'upload_part',
-          uploadKey,
-          partNumber: i + 1,
-          data: b64,
-        });
-        setProgress(Math.round(((i + 1) / totalParts) * 100));
+      const filesPayload: { path: string; data: string }[] = [];
+      for (const d of dropped) {
+        const rel = d.path.startsWith(`${rootFolder}/`) ? d.path : `${rootFolder}/${d.path}`;
+        const b64 = await blobToBase64(d.file);
+        filesPayload.push({ path: rel, data: b64 });
       }
-
-      setStage('unpacking');
-      setProgress(0);
-      let offset = 0;
-      let totalFiles = 1;
-      for (;;) {
-        if (cancelledRef.current) break;
-        const res = await postJson({
-          action: 'zip_ingest_batch',
-          server: active,
-          uploadKey,
-          totalParts,
-          taskId: taskId || null,
-          offset,
-        });
-        offset = res.nextOffset;
-        totalFiles = res.totalFiles || 1;
-        setProgress(Math.min(100, Math.round((offset / Math.max(totalFiles, 1)) * 100)));
-        if (res.done) break;
-      }
+      await postJson({
+        action: 'upload_batch',
+        server: active,
+        taskId: selectedTaskId || null,
+        files: filesPayload,
+      });
       await load(active);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
-      if (code === 'cancelled') {
-        postJson({ action: 'upload_abort', uploadKey, totalParts }).catch(() => {});
-        setUploadError('Загрузка отменена');
-      } else if (code === 'part_too_large') {
-        setUploadError('Часть файла оказалась слишком большой — попробуйте другой архив');
-      } else if (code === 'bad_zip') {
-        setUploadError('Файл повреждён или это не ZIP-архив');
-      } else {
-        setUploadError('Не удалось загрузить патч — проверьте архив и соединение');
-      }
+      if (code === 'file_too_large') setUploadError('Суммарный размер загружаемых файлов превышает 300 МБ');
+      else setUploadError('Не удалось загрузить файлы — проверьте соединение и попробуйте ещё раз');
     } finally {
-      setStage('idle');
+      setUploading(false);
     }
-  }
-
-  function handleCancelUpload() {
-    cancelledRef.current = true;
-  }
+  }, [active, selectedTaskId, load]);
 
   async function handleDelete(path: string) {
     try {
@@ -289,38 +350,18 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
     }
   }
 
-  async function handleDownloadAll() {
-    if (files.length === 0) return;
+  async function handleDownloadTaskZip() {
+    if (!selectedTaskId) return;
     setZipping(true);
-    setZipProgress(0);
     try {
-      const zip = new JSZip();
-      for (let i = 0; i < files.length; i++) {
-        const f = files[i];
-        const res = await fetch(f.url);
-        const blob = await res.blob();
-        zip.file(f.path, blob);
-        setZipProgress(Math.round(((i + 1) / files.length) * 90));
-      }
-      const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } }, (meta) => {
-        setZipProgress(90 + Math.round(meta.percent * 0.1));
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${active}-patch.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      const data = await postJson({ action: 'task_zip', server: active, taskId: selectedTaskId });
+      if (data.url) window.open(data.url, '_blank');
     } catch {
       /* ignore */
     } finally {
       setZipping(false);
     }
   }
-
-  const busy = stage !== 'idle';
 
   return (
     <div className="max-w-4xl animate-fade-in">
@@ -329,8 +370,8 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
         <h2 className="font-display tracking-wide text-lg">Патчи</h2>
       </div>
       <p className="text-sm text-muted-foreground mb-5">
-        Дерево файлов клиентского патча по каждому серверу — общее для всех задач. Новая загрузка
-        заменяет файл с тем же путём. Поддерживаются архивы в несколько гигабайт — загружаются частями.
+        Дерево файлов клиентского патча по каждому серверу — общее для всех задач. Перетащите папку
+        (например «System» или «data») прямо на нужную корневую папку ниже — структура внутри сохранится.
       </p>
 
       <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg mb-4 w-fit">
@@ -338,8 +379,7 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
           <button
             key={s.id}
             onClick={() => setActive(s.id)}
-            disabled={busy}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-40 ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               active === s.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -349,53 +389,35 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
         ))}
       </div>
 
-      {canManage && (
-        <div className="flex flex-col gap-2 mb-4 p-3 rounded-xl border border-dashed border-border">
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={taskId}
-              onChange={(e) => setTaskId(e.target.value)}
-              disabled={busy}
-              className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-muted-foreground max-w-[220px] disabled:opacity-40"
-            >
-              <option value="">Без привязки к задаче</option>
-              {tasks.map((t) => (
-                <option key={t.id} value={t.id}>{t.title}</option>
-              ))}
-            </select>
-            {!busy && (
-              <label className="inline-flex items-center gap-2 h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer">
-                <Icon name="Upload" size={14} />
-                Загрузить ZIP-патч
-                <input type="file" accept=".zip" className="hidden" onChange={handleUpload} />
-              </label>
-            )}
-            {busy && (
-              <button
-                onClick={handleCancelUpload}
-                className="inline-flex items-center gap-2 h-9 px-4 rounded-lg border border-destructive/40 text-destructive text-sm font-medium hover:bg-destructive/10 transition-colors"
-              >
-                <Icon name="X" size={14} />
-                Отменить
-              </button>
-            )}
-          </div>
-          {busy && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-300"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <span className="text-xs text-muted-foreground w-32 shrink-0">
-                {stage === 'uploading' ? `Загрузка… ${progress}%` : `Распаковка… ${progress}%`}
-              </span>
-            </div>
-          )}
-          {uploadError && <p className="text-xs text-destructive">{uploadError}</p>}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-2 mb-4 p-3 rounded-xl border border-dashed border-border">
+        <select
+          value={selectedTaskId}
+          onChange={(e) => setSelectedTaskId(e.target.value)}
+          className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-muted-foreground max-w-[260px]"
+        >
+          <option value="">Без выбранной задачи</option>
+          {tasks.map((t) => (
+            <option key={t.id} value={t.id}>{t.title}</option>
+          ))}
+        </select>
+        {selectedTaskId && (
+          <button
+            onClick={handleDownloadTaskZip}
+            disabled={taskFilesCount === 0 || zipping}
+            className="h-9 px-3 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30 flex items-center gap-1.5"
+          >
+            <Icon name={zipping ? 'Loader2' : 'Download'} size={14} className={zipping ? 'animate-spin' : ''} />
+            {zipping ? 'Собираю...' : `Скачать файлы задачи (${taskFilesCount})`}
+          </button>
+        )}
+        {canManage && uploading && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1.5">
+            <Icon name="Loader2" size={13} className="animate-spin" />
+            Загрузка файлов...
+          </span>
+        )}
+        {uploadError && <p className="text-xs text-destructive w-full">{uploadError}</p>}
+      </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-secondary/30 gap-3">
@@ -406,41 +428,28 @@ export default function Patches({ canManage, tasks }: { canManage: boolean; task
               · {files.length} файлов{files.length > 0 ? ` · ${fmtSize(totalSize)}` : ''}
             </span>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {zipping && (
-              <span className="text-xs text-muted-foreground">{zipProgress}%</span>
-            )}
-            <button
-              onClick={handleDownloadAll}
-              disabled={files.length === 0 || zipping}
-              title="Скачать весь патч одним архивом"
-              className="h-8 px-3 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30 flex items-center gap-1.5"
-            >
-              <Icon name={zipping ? 'Loader2' : 'FolderArchive'} size={13} className={zipping ? 'animate-spin' : ''} />
-              {zipping ? 'Собираю...' : 'Скачать весь патч'}
-            </button>
-          </div>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-16">
             <Icon name="Loader2" size={24} className="animate-spin text-primary" />
           </div>
-        ) : files.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            <Icon name="FolderTree" size={36} className="mx-auto mb-3 opacity-40" />
-            <p className="text-sm">Пока нет загруженных файлов для этого сервера</p>
-          </div>
         ) : (
           <div className="p-2 max-h-[60vh] overflow-auto scrollbar-thin">
-            {Array.from(tree.children.values())
-              .sort((a, b) => {
-                if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
-                return a.name.localeCompare(b.name);
-              })
-              .map((node) => (
-                <TreeFolder key={node.path} node={node} depth={0} canManage={canManage} onDelete={handleDelete} />
-              ))}
+            {Array.from(tree.children.values()).map((node) => (
+              <div key={node.path} className="group">
+                <TreeFolder
+                  node={node}
+                  depth={0}
+                  canManage={canManage}
+                  onDelete={handleDelete}
+                  highlightTaskId={selectedTaskId || null}
+                  onDropFiles={handleDropFiles}
+                  dragActive={dragActive}
+                  setDragActive={setDragActive}
+                />
+              </div>
+            ))}
           </div>
         )}
       </div>

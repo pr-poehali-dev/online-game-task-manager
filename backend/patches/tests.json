@@ -15,10 +15,10 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "POST upload_part without token unauthorized",
+      "name": "POST upload_batch without token unauthorized",
       "method": "POST",
       "path": "/",
-      "body": {"action": "upload_part", "partNumber": 1, "data": "AA=="},
+      "body": {"action": "upload_batch", "server": "c4x1", "files": []},
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"

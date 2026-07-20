@@ -3,7 +3,6 @@ import io
 import json
 import os
 import re
-import time
 import urllib.parse
 import uuid
 import zipfile
@@ -12,8 +11,12 @@ import boto3
 import psycopg2
 
 
-PART_MAX = 30 * 1024 * 1024  # защитный предел на один кусок при загрузке (реально шлём по ~20 МБ)
-BATCH_TIME_BUDGET = 90  # секунд — оставляем запас под таймаут функции (рекомендовано 120с)
+MAX_TOTAL_SIZE = 300 * 1024 * 1024  # 300 МБ суммарно на один запрос загрузки
+
+FIXED_ROOTS = [
+    'animations', 'data', 'l2text', 'maps', 'staticmeshes',
+    'System', 'System_eng', 'systextures', 'textures',
+]
 
 
 def _cors_headers():
@@ -98,14 +101,21 @@ def _safe_server(server):
 
 
 def _safe_rel_path(path):
-    '''Нормализует относительный путь внутри архива, отбрасывает служебные записи и защищает от выхода за пределы дерева.'''
+    '''Нормализует относительный путь файла в дереве патча: убирает служебные сегменты, защищает от
+    выхода за пределы дерева и требует, чтобы путь начинался с одной из фиксированных корневых папок.'''
     norm = path.replace('\\', '/').strip('/')
     if not norm or norm.startswith('.') or '..' in norm.split('/'):
         return None
     parts = [p for p in norm.split('/') if p and p != '.']
-    if not parts:
+    if len(parts) < 2 or parts[0] not in FIXED_ROOTS:
         return None
     return '/'.join(parts)
+
+
+def _decode_b64(data_b64):
+    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+        data_b64 = data_b64.split(',', 1)[1]
+    return base64.b64decode(data_b64)
 
 
 def _row_to_file(r):
@@ -115,82 +125,18 @@ def _row_to_file(r):
         'size': r[2],
         'url': _public_url(r[3]),
         'updatedAt': r[4].isoformat() if r[4] else None,
-        'taskId': str(r[5]) if r[5] is not None else None,
+        'taskIds': [str(t) for t in (r[5] or [])],
     }
 
 
-class MultiPartReader(io.RawIOBase):
-    '''Читает набор частей загруженного архива (сохранённых как отдельные объекты в хранилище)
-    как единый последовательный поток — позволяет модулю zipfile распаковывать архивы в
-    несколько гигабайт, не загружая их целиком в память функции (доступно только 256 МБ).
-    Хранилище не поддерживает частичное чтение объекта (Range игнорируется и всегда возвращает
-    объект целиком), поэтому текущая часть докачивается полностью и кэшируется — сами части
-    небольшие (около 20 МБ), поэтому это не создаёт нагрузки на память.'''
-
-    def __init__(self, s3, bucket, part_keys, part_sizes):
-        self.s3 = s3
-        self.bucket = bucket
-        self.part_keys = part_keys
-        self.part_sizes = part_sizes
-        self.offsets = []
-        total = 0
-        for sz in part_sizes:
-            self.offsets.append(total)
-            total += sz
-        self.size = total
-        self.pos = 0
-        self._cache_idx = None
-        self._cache_data = None
-
-    def readable(self):
-        return True
-
-    def seekable(self):
-        return True
-
-    def seek(self, offset, whence=io.SEEK_SET):
-        if whence == io.SEEK_SET:
-            self.pos = offset
-        elif whence == io.SEEK_CUR:
-            self.pos += offset
-        elif whence == io.SEEK_END:
-            self.pos = self.size + offset
-        return self.pos
-
-    def tell(self):
-        return self.pos
-
-    def _locate(self, pos):
-        # Находит индекс части и смещение внутри неё для абсолютной позиции pos
-        for i in range(len(self.offsets) - 1, -1, -1):
-            if pos >= self.offsets[i]:
-                return i, pos - self.offsets[i]
-        return 0, 0
-
-    def readinto(self, b):
-        length = len(b)
-        if self.pos >= self.size or length == 0:
-            return 0
-        part_idx, part_off = self._locate(self.pos)
-        if self._cache_idx != part_idx:
-            resp = self.s3.get_object(Bucket=self.bucket, Key=self.part_keys[part_idx])
-            self._cache_data = resp['Body'].read()
-            self._cache_idx = part_idx
-        chunk = self._cache_data[part_off:part_off + length]
-        n = len(chunk)
-        b[:n] = chunk
-        self.pos += n
-        return n
-
-
 def handler(event: dict, context) -> dict:
-    '''Файловое дерево клиентского патча по серверам: список файлов, потоковая загрузка ZIP-архива
-    небольшими частями (без ограничения на общий размер патча — поддерживает архивы в несколько
-    гигабайт, части хранятся как отдельные объекты и склеиваются при чтении) с последующей пакетной
-    распаковкой в дерево S3, скачивание отдельного файла (прямая ссылка), удаление файла. Сборка
-    полного архива сервера выполняется на стороне браузера. Просмотр и скачивание доступны всем
-    авторизованным участникам, загрузка/удаление — администраторам и участникам с правом полного
-    редактирования задач.'''
+    '''Файловое дерево клиентского патча по фиксированным корневым папкам (animations, data, l2text,
+    maps, staticmeshes, System, System_eng, systextures, textures) в разрезе серверов. Поддерживает
+    пакетную загрузку файлов (в т.ч. перетаскиванием целой папки с сохранением структуры) суммарным
+    объёмом до 300 МБ за запрос, привязку загруженных файлов к задаче (один файл может относиться сразу
+    к нескольким задачам), скачивание отдельного файла и сборку архива файлов конкретной задачи,
+    удаление файла. Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление —
+    администраторам и участникам с правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -223,16 +169,15 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('no_server')
         cur.execute(
-            f"SELECT id, path, size, file_key, updated_at, task_id FROM {schema}.patch_files "
+            f"SELECT id, path, size, file_key, updated_at, task_ids FROM {schema}.patch_files "
             f"WHERE server = %s ORDER BY path",
             (server,)
         )
         files = [_row_to_file(r) for r in cur.fetchall()]
         cur.close(); conn.close()
-        return _ok({'files': files})
+        return _ok({'files': files, 'roots': FIXED_ROOTS})
 
-    # Загрузка и удаление — только для тех, кто может полностью редактировать задачи
-    if action in ('upload_part', 'zip_ingest_batch', 'upload_abort', 'delete'):
+    if action in ('upload_batch', 'delete'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -240,102 +185,64 @@ def handler(event: dict, context) -> dict:
     s3 = _s3_client()
     bucket = _bucket()
 
-    if action == 'upload_part':
-        upload_key = body.get('uploadKey') or uuid.uuid4().hex
-        if not re.match(r'^[a-f0-9]{32}$', upload_key):
-            cur.close(); conn.close()
-            return _bad('bad_request')
-        part_number = body.get('partNumber')
-        data_b64 = body.get('data')
-        if not part_number or not data_b64:
+    if action == 'upload_batch':
+        server = _safe_server(body.get('server'))
+        task_id = body.get('taskId')
+        files_in = body.get('files') or []
+        if not server or not files_in:
             cur.close(); conn.close()
             return _bad('bad_request')
         try:
-            if ',' in data_b64 and data_b64.strip().startswith('data:'):
-                data_b64 = data_b64.split(',', 1)[1]
-            raw = base64.b64decode(data_b64)
-        except Exception:
-            cur.close(); conn.close()
-            return _bad('bad_data')
-        if len(raw) > PART_MAX:
-            cur.close(); conn.close()
-            return _bad('part_too_large')
-        part_key = f"patches/_staging/{upload_key}/{int(part_number):06d}.part"
-        s3.put_object(Bucket=bucket, Key=part_key, Body=raw)
-        cur.close(); conn.close()
-        return _ok({'uploadKey': upload_key, 'partNumber': int(part_number), 'size': len(raw)})
+            task_id_int = int(task_id) if task_id else None
+        except (TypeError, ValueError):
+            task_id_int = None
 
-    if action == 'zip_ingest_batch':
-        server = _safe_server(body.get('server'))
-        upload_key = body.get('uploadKey')
-        task_id = body.get('taskId')
-        total_parts = body.get('totalParts')
-        offset = int(body.get('offset') or 0)
-        if not server or not upload_key or not re.match(r'^[a-f0-9]{32}$', upload_key) or not total_parts:
-            cur.close(); conn.close()
-            return _bad('bad_request')
-        part_keys = []
-        part_sizes = []
-        for i in range(1, int(total_parts) + 1):
-            key = f"patches/_staging/{upload_key}/{i:06d}.part"
+        decoded = []
+        total_size = 0
+        for f in files_in:
+            rel_path = _safe_rel_path(f.get('path') or '')
+            if not rel_path:
+                continue
             try:
-                head = s3.head_object(Bucket=bucket, Key=key)
+                raw = _decode_b64(f.get('data') or '')
             except Exception:
                 cur.close(); conn.close()
-                return _bad('missing_part')
-            part_keys.append(key)
-            part_sizes.append(head['ContentLength'])
-        reader = io.BufferedReader(MultiPartReader(s3, bucket, part_keys, part_sizes), buffer_size=2 * 1024 * 1024)
-        try:
-            zf = zipfile.ZipFile(reader)
-        except zipfile.BadZipFile:
+                return _bad('bad_data')
+            total_size += len(raw)
+            if total_size > MAX_TOTAL_SIZE:
+                cur.close(); conn.close()
+                return _bad('file_too_large')
+            decoded.append((rel_path, raw))
+
+        if not decoded:
             cur.close(); conn.close()
-            return _bad('bad_zip')
-        entries = [info for info in zf.infolist() if not info.is_dir() and _safe_rel_path(info.filename)]
-        total = len(entries)
-        start_ts = time.monotonic()
-        idx = offset
-        processed = 0
-        while idx < total and (time.monotonic() - start_ts) < BATCH_TIME_BUDGET:
-            info = entries[idx]
-            rel_path = _safe_rel_path(info.filename)
+            return _bad('no_valid_files')
+
+        saved = 0
+        for rel_path, raw in decoded:
             file_key = f"patches/{server}/{rel_path}"
-            with zf.open(info) as member:
-                data = member.read()
             s3.put_object(
-                Bucket=bucket, Key=file_key, Body=data,
+                Bucket=bucket, Key=file_key, Body=raw,
                 ContentDisposition=_content_disposition(rel_path.rsplit('/', 1)[-1]),
             )
             cur.execute(
-                f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_id, uploaded_by, updated_at) "
+                f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s",
+                (server, rel_path)
+            )
+            existing = cur.fetchone()
+            task_ids = list(existing[0]) if existing and existing[0] else []
+            if task_id_int is not None and task_id_int not in task_ids:
+                task_ids.append(task_id_int)
+            cur.execute(
+                f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_ids, uploaded_by, updated_at) "
                 f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
                 f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
-                f"size = EXCLUDED.size, task_id = EXCLUDED.task_id, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
-                (server, rel_path, file_key, len(data), int(task_id) if task_id else None, me['id'])
+                f"size = EXCLUDED.size, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
+                (server, rel_path, file_key, len(raw), json.dumps(task_ids), me['id'])
             )
-            idx += 1
-            processed += 1
-        done = idx >= total
-        if done:
-            for key in part_keys:
-                try:
-                    s3.delete_object(Bucket=bucket, Key=key)
-                except Exception:
-                    pass
+            saved += 1
         cur.close(); conn.close()
-        return _ok({'done': done, 'nextOffset': idx, 'totalFiles': total, 'processed': processed})
-
-    if action == 'upload_abort':
-        upload_key = body.get('uploadKey')
-        total_parts = body.get('totalParts') or 0
-        if upload_key and re.match(r'^[a-f0-9]{32}$', upload_key):
-            for i in range(1, int(total_parts) + 1):
-                try:
-                    s3.delete_object(Bucket=bucket, Key=f"patches/_staging/{upload_key}/{i:06d}.part")
-                except Exception:
-                    pass
-        cur.close(); conn.close()
-        return _ok({'ok': True})
+        return _ok({'ok': True, 'savedCount': saved, 'skipped': len(files_in) - len(decoded)})
 
     if action == 'delete':
         server = _safe_server(body.get('server'))
@@ -358,6 +265,39 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'task_zip':
+        server = _safe_server(qs.get('server') or body.get('server'))
+        task_id = qs.get('taskId') or body.get('taskId')
+        if not server or not task_id:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        try:
+            task_id_int = int(task_id)
+        except (TypeError, ValueError):
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT path, file_key FROM {schema}.patch_files "
+            f"WHERE server = %s AND task_ids @> %s ORDER BY path",
+            (server, json.dumps([task_id_int]))
+        )
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        if not rows:
+            return _bad('empty', 404)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for path, file_key in rows:
+                obj = s3.get_object(Bucket=bucket, Key=file_key)
+                zf.writestr(path, obj['Body'].read())
+        buf.seek(0)
+        archive_key = f"patches/_archives/task-{task_id_int}-{uuid.uuid4().hex}.zip"
+        s3.put_object(
+            Bucket=bucket, Key=archive_key, Body=buf.getvalue(), ContentType='application/zip',
+            ContentDisposition=_content_disposition(f'task-{task_id_int}-patch.zip'),
+        )
+        return _ok({'url': _public_url(archive_key)})
 
     cur.close(); conn.close()
     return _bad('unknown_action')

@@ -9,7 +9,7 @@ import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
 
-export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId }: {
+export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId, onOpenPatches }: {
   task: Task;
   team: TeamMember[];
   kbArticles: KbArticleBrief[];
@@ -23,6 +23,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   isAdmin: boolean;
   can: (key: PermissionKey) => boolean;
   currentUserId: number | null;
+  onOpenPatches?: () => void;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
@@ -341,6 +342,17 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               <AttachmentsList attachments={attachments} />
             )}
           </div>
+        )}
+
+        {!isEditing && onOpenPatches && (
+          <button
+            type="button"
+            onClick={onOpenPatches}
+            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
+          >
+            <Icon name="FolderTree" size={14} />
+            Показать файлы патча этой задачи
+          </button>
         )}
 
         {!isEditing && canEditDeploy && (
