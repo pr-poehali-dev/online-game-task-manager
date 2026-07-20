@@ -134,10 +134,11 @@ def handler(event: dict, context) -> dict:
     maps, staticmeshes, System, System_eng, systextures, textures) в разрезе серверов. Каждый файл
     (в т.ч. из перетащенной целиком папки) грузится кусочками по ~1.5 МБ (file_init/file_chunk/
     file_complete/file_abort — одиночный HTTP-запрос физически ограничен ~3 МБ) и собирается на
-    сервере в готовый файл до 200 МБ, с привязкой к задаче (один файл может относиться сразу к
-    нескольким задачам). Поддерживает скачивание отдельного файла и сборку архива файлов конкретной
-    задачи, удаление файла и полную очистку дерева сервера. Просмотр и скачивание доступны всем
-    авторизованным участникам, загрузка/удаление — администраторам и участникам с правом полного
+    сервере в готовый файл до 200 МБ. Действие toggle_task прикрепляет/открепляет уже загруженный
+    файл к выбранной задаче (один файл может относиться сразу к нескольким задачам). Поддерживает
+    скачивание отдельного файла и сборку архива файлов конкретной задачи, удаление файла и полную
+    очистку дерева сервера. Просмотр и скачивание доступны всем авторизованным участникам,
+    загрузка/удаление/привязка к задаче — администраторам и участникам с правом полного
     редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
@@ -179,7 +180,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'files': files, 'roots': FIXED_ROOTS})
 
-    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server', 'toggle_task'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -306,6 +307,39 @@ def handler(event: dict, context) -> dict:
                 pass
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'toggle_task':
+        # Прикрепляет или открепляет уже загруженный файл к выбранной задаче (один файл может
+        # относиться сразу к нескольким задачам).
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        task_id = body.get('taskId')
+        try:
+            task_id_int = int(task_id)
+        except (TypeError, ValueError):
+            task_id_int = None
+        if not server or not path or task_id_int is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s",
+            (server, path)
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        task_ids = list(row[0]) if row[0] else []
+        if task_id_int in task_ids:
+            task_ids.remove(task_id_int)
+        else:
+            task_ids.append(task_id_int)
+        cur.execute(
+            f"UPDATE {schema}.patch_files SET task_ids = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (json.dumps(task_ids), server, path)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'taskIds': [str(t) for t in task_ids]})
 
     if action == 'delete':
         server = _safe_server(body.get('server'))

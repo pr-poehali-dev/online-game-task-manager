@@ -168,6 +168,8 @@ function TreeFolder({
   onDropFiles,
   dragActive,
   setDragActive,
+  onToggleTask,
+  togglingPath,
 }: {
   node: TreeNode;
   depth: number;
@@ -177,6 +179,8 @@ function TreeFolder({
   onDropFiles: (rootFolder: string, files: DroppedFile[]) => void;
   dragActive: string | null;
   setDragActive: (path: string | null) => void;
+  onToggleTask: (path: string) => void;
+  togglingPath: string | null;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
@@ -213,6 +217,20 @@ function TreeFolder({
         >
           <Icon name="Download" size={13} />
         </a>
+        {canManage && highlightTaskId && (
+          <button
+            onClick={() => onToggleTask(f.path)}
+            disabled={togglingPath === f.path}
+            title={highlighted ? 'Открепить от задачи' : 'Прикрепить к задаче'}
+            className={`h-6 w-6 shrink-0 rounded-md flex items-center justify-center transition-colors disabled:opacity-40 ${
+              highlighted
+                ? 'text-primary hover:bg-primary/10'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover:opacity-100'
+            }`}
+          >
+            <Icon name={togglingPath === f.path ? 'Loader2' : 'Paperclip'} size={13} className={togglingPath === f.path ? 'animate-spin' : ''} />
+          </button>
+        )}
         {canManage && (confirmPath === f.path ? (
           <div className="shrink-0 flex items-center gap-1">
             <button
@@ -285,6 +303,8 @@ function TreeFolder({
               onDropFiles={onDropFiles}
               dragActive={dragActive}
               setDragActive={setDragActive}
+              onToggleTask={onToggleTask}
+              togglingPath={togglingPath}
             />
           ))}
         </div>
@@ -312,6 +332,7 @@ export default function Patches({
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[] | null>(null);
   const [uploadIndex, setUploadIndex] = useState(0);
   const [fileProgress, setFileProgress] = useState(0);
+  const [togglingPath, setTogglingPath] = useState<string | null>(null);
   const appliedInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -401,6 +422,19 @@ export default function Patches({
       setFiles((prev) => prev.filter((f) => f.path !== path));
     } catch {
       /* ignore */
+    }
+  }
+
+  async function handleToggleTask(path: string) {
+    if (!selectedTaskId) return;
+    setTogglingPath(path);
+    try {
+      const data = await postJson({ action: 'toggle_task', server: active, path, taskId: selectedTaskId });
+      setFiles((prev) => prev.map((f) => (f.path === path ? { ...f, taskIds: data.taskIds } : f)));
+    } catch {
+      /* ignore */
+    } finally {
+      setTogglingPath(null);
     }
   }
 
@@ -514,6 +548,8 @@ export default function Patches({
                   onDropFiles={handleDropFiles}
                   dragActive={dragActive}
                   setDragActive={setDragActive}
+                  onToggleTask={handleToggleTask}
+                  togglingPath={togglingPath}
                 />
               </div>
             ))}
