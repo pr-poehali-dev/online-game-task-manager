@@ -61,10 +61,11 @@ def _telegram_targets(cur, schema, user_ids):
 
 
 def _task_url(task_id=None):
+    '''Прямая постоянная ссылка на задачу (если известен её id) или просто на приложение.'''
     app_url = (os.environ.get('APP_URL') or '').rstrip('/')
     if not app_url:
         return None
-    return f"{app_url}/?task={task_id}" if task_id else app_url
+    return f"{app_url}/task/{task_id}" if task_id else app_url
 
 
 def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entity_id):

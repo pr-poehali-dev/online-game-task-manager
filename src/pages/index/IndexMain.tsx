@@ -23,7 +23,9 @@ export default function IndexMain({
   filteredTasks,
   team,
   tasksLoading,
-  setSelectedTask,
+  handleOpenTaskById,
+  handleOpenIdeaById,
+  closeOverlay,
   setCreateFor,
   handleArchiveTask,
   sprints,
@@ -40,12 +42,10 @@ export default function IndexMain({
   handleDeleteArchivedTask,
   category,
   openArticleId,
-  setOpenArticleId,
   tasks,
   handleToRestart,
   handleToggleRestartDone,
   openTopicId,
-  setOpenTopicId,
   selectedTask,
   kbArticles,
   handleOpenArticle,
@@ -70,7 +70,9 @@ export default function IndexMain({
   filteredTasks: Task[];
   team: TeamMember[];
   tasksLoading: boolean;
-  setSelectedTask: (t: Task | null) => void;
+  handleOpenTaskById: (id: string) => void;
+  handleOpenIdeaById: (id: string) => void;
+  closeOverlay: () => void;
   setCreateFor: (c: ColumnId | null) => void;
   handleArchiveTask: (id: string, outcome: TaskOutcome) => void;
   sprints: Sprint[];
@@ -87,12 +89,10 @@ export default function IndexMain({
   handleDeleteArchivedTask: (id: string) => void;
   category: CategoryId | 'all';
   openArticleId: string | null;
-  setOpenArticleId: (id: string | null) => void;
   tasks: Task[];
   handleToRestart: (id: string) => void;
   handleToggleRestartDone: (id: string, done: boolean) => void;
   openTopicId: string | null;
-  setOpenTopicId: (id: string | null) => void;
   selectedTask: Task | null;
   kbArticles: KbArticleBrief[];
   handleOpenArticle: (id: string) => void;
@@ -121,7 +121,7 @@ export default function IndexMain({
             tasks={filteredTasks}
             team={team}
             loading={tasksLoading}
-            onCardClick={setSelectedTask}
+            onCardClick={(t) => handleOpenTaskById(t.id)}
             onAddClick={setCreateFor}
             onArchive={handleArchiveTask}
             onMoveTask={handleMoveTask}
@@ -148,7 +148,7 @@ export default function IndexMain({
             team={team}
             outcomeFilter={outcomeFilter}
             onOutcomeFilter={setOutcomeFilter}
-            onCardClick={setSelectedTask}
+            onCardClick={(t) => handleOpenTaskById(t.id)}
             onRestore={handleUnarchiveTask}
             onDelete={handleDeleteArchivedTask}
             isAdmin={isAdmin}
@@ -161,9 +161,10 @@ export default function IndexMain({
           <KnowledgeBase
             category={category as KbCategoryId | 'all'}
             initialArticleId={openArticleId}
-            onConsumeInitial={() => setOpenArticleId(null)}
             can={can}
             isAdmin={isAdmin}
+            onOpenArticleById={handleOpenArticle}
+            onBack={closeOverlay}
             authors={team.map((m) => ({
               id: m.id,
               name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
@@ -176,7 +177,7 @@ export default function IndexMain({
             tasks={tasks}
             team={team}
             loading={tasksLoading}
-            onCardClick={setSelectedTask}
+            onCardClick={(t) => handleOpenTaskById(t.id)}
             onAddClick={() => setCreateFor('restart')}
             onToRestart={handleToRestart}
             onToggleDone={handleToggleRestartDone}
@@ -189,7 +190,8 @@ export default function IndexMain({
         {view === 'ideas' && (
           <Ideas
             initialTopicId={openTopicId}
-            onConsumeInitial={() => setOpenTopicId(null)}
+            onOpenTopicById={handleOpenIdeaById}
+            onBack={closeOverlay}
             authors={team.map((m) => ({
               id: m.id,
               name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
@@ -206,7 +208,7 @@ export default function IndexMain({
           team={team}
           kbArticles={kbArticles}
           onOpenArticle={handleOpenArticle}
-          onClose={() => setSelectedTask(null)}
+          onClose={closeOverlay}
           onSave={handleUpdateTask}
           onDelete={handleDeleteTask}
           onArchive={handleArchiveTask}

@@ -60,11 +60,11 @@ def _telegram_targets(cur, schema, user_ids):
 
 
 def _idea_url(topic_id=None):
-    '''Прямая ссылка на идею (если известен её id) или просто на приложение.'''
+    '''Прямая постоянная ссылка на идею (если известен её id) или просто на приложение.'''
     app_url = (os.environ.get('APP_URL') or '').rstrip('/')
     if not app_url:
         return None
-    return f"{app_url}/?idea={topic_id}" if topic_id else app_url
+    return f"{app_url}/idea/{topic_id}" if topic_id else app_url
 
 
 def _notify_reply_or_mention(cur, schema, user_id, topic_id, topic_title, kind, comment_text=None):

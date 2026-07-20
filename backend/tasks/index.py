@@ -72,11 +72,11 @@ def _telegram_targets(cur, schema, user_ids):
 
 
 def _task_url(task_id=None):
-    '''Прямая ссылка на задачу (если известен её id) или просто на приложение.'''
+    '''Прямая постоянная ссылка на задачу (если известен её id) или просто на приложение.'''
     app_url = (os.environ.get('APP_URL') or '').rstrip('/')
     if not app_url:
         return None
-    return f"{app_url}/?task={task_id}" if task_id else app_url
+    return f"{app_url}/task/{task_id}" if task_id else app_url
 
 
 def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, description=None):

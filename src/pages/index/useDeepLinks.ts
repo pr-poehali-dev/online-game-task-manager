@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import type { useSearchParams } from 'react-router-dom';
 import type { AuthUser } from '@/lib/auth';
 import type { Task, ViewId } from './shared';
@@ -26,56 +27,89 @@ export function useDeepLinks({
   setView: (v: ViewId) => void;
   setAssigneeFilter: (a: number | 'all') => void;
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const params = useParams<{ id?: string }>();
+
+  // Постоянная ссылка на статью базы знаний
   function handleOpenArticle(id: string) {
-    setSelectedTask(null);
-    setOpenArticleId(id);
-    setView('knowledge');
+    navigate(`/kb/${id}`);
   }
 
+  // Постоянная ссылка на задачу — сохраняется в адресной строке, можно скопировать или обновить страницу
   function handleOpenTaskById(taskId: string) {
+    navigate(`/task/${taskId}`);
+  }
+
+  // Постоянная ссылка на идею
+  function handleOpenIdeaById(ideaId: string) {
+    navigate(`/idea/${ideaId}`);
+  }
+
+  // Закрытие карточки/страницы, открытой по постоянной ссылке (/task/:id, /idea/:id, /kb/:id):
+  // возвращаемся назад в истории браузера (тогда кнопка «назад» тоже закрывает элемент),
+  // либо на доску, если истории нет.
+  function closeOverlay() {
+    if (location.key === 'default') navigate('/', { replace: true });
+    else navigate(-1);
+  }
+
+  // Открытие задачи по постоянному адресу /task/:id (и закрытие при уходе с этого адреса,
+  // в т.ч. кнопкой «назад» в браузере)
+  useEffect(() => {
+    if (!location.pathname.startsWith('/task/')) {
+      setSelectedTask(null);
+      return;
+    }
+    const taskId = params.id;
+    if (!taskId || tasks.length === 0) return;
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
       setView(task.archived ? 'archive' : task.column === 'restart' ? 'restart' : 'board');
       setSelectedTask(task);
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, params.id, tasks]);
 
-  function handleOpenIdeaById(ideaId: string) {
+  // Открытие идеи по постоянному адресу /idea/:id (и закрытие при уходе с этого адреса,
+  // в т.ч. кнопкой «назад» в браузере)
+  useEffect(() => {
+    if (!location.pathname.startsWith('/idea/')) {
+      setOpenTopicId(null);
+      return;
+    }
+    const ideaId = params.id;
+    if (!ideaId) return;
     setSelectedTask(null);
     setOpenTopicId(ideaId);
     setView('ideas');
-  }
-
-  // Открытие конкретной задачи по прямой ссылке (например из уведомления в Telegram: /?task=123)
-  useEffect(() => {
-    const taskId = searchParams.get('task');
-    if (!taskId || tasks.length === 0) return;
-    handleOpenTaskById(taskId);
-    const next = new URLSearchParams(searchParams);
-    next.delete('task');
-    setSearchParams(next, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tasks, searchParams]);
+  }, [location.pathname, params.id]);
 
-  // Открытие конкретной статьи базы знаний по прямой ссылке (например из хранилища файлов в админке: /?article=123)
+  // Открытие статьи базы знаний по постоянному адресу /kb/:id (и закрытие при уходе с адреса,
+  // в т.ч. кнопкой «назад» в браузере)
   useEffect(() => {
-    const articleId = searchParams.get('article');
+    if (!location.pathname.startsWith('/kb/')) {
+      setOpenArticleId(null);
+      return;
+    }
+    const articleId = params.id;
     if (!articleId) return;
-    handleOpenArticle(articleId);
-    const next = new URLSearchParams(searchParams);
-    next.delete('article');
-    setSearchParams(next, { replace: true });
+    setSelectedTask(null);
+    setOpenArticleId(articleId);
+    setView('knowledge');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, [location.pathname, params.id]);
 
-  // Открытие конкретной идеи по прямой ссылке (например из хранилища файлов в админке: /?idea=123)
+  // Обратная совместимость со старыми ссылками вида /?task=123 / /?idea=123 / /?article=123
+  // (например уже отправленные в Telegram до перехода на постоянные адреса) — переводим на новый формат
   useEffect(() => {
-    const ideaId = searchParams.get('idea');
-    if (!ideaId) return;
-    handleOpenIdeaById(ideaId);
-    const next = new URLSearchParams(searchParams);
-    next.delete('idea');
-    setSearchParams(next, { replace: true });
+    const legacyTaskId = searchParams.get('task');
+    const legacyIdeaId = searchParams.get('idea');
+    const legacyArticleId = searchParams.get('article');
+    if (legacyTaskId) { navigate(`/task/${legacyTaskId}`, { replace: true }); return; }
+    if (legacyIdeaId) { navigate(`/idea/${legacyIdeaId}`, { replace: true }); return; }
+    if (legacyArticleId) { navigate(`/kb/${legacyArticleId}`, { replace: true }); return; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
@@ -94,5 +128,6 @@ export function useDeepLinks({
     handleOpenArticle,
     handleOpenTaskById,
     handleOpenIdeaById,
+    closeOverlay,
   };
 }

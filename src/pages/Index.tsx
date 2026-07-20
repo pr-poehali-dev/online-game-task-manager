@@ -45,6 +45,18 @@ export default function Index() {
     handleRestoreSprint,
   } = useSprintActions(sprints, setSprints, setCreateSprint, setTasks);
 
+  const { handleOpenArticle, handleOpenTaskById, handleOpenIdeaById, closeOverlay } = useDeepLinks({
+    tasks,
+    user,
+    searchParams,
+    setSearchParams,
+    setSelectedTask,
+    setOpenArticleId,
+    setOpenTopicId,
+    setView,
+    setAssigneeFilter,
+  });
+
   const {
     handleAddTask,
     handleUpdateTask,
@@ -55,7 +67,7 @@ export default function Index() {
     handleToRestart,
     handleToggleRestartDone,
     handleDeleteArchivedTask,
-  } = useTaskActions(tasks, setTasks, setSelectedTask, setCreateFor, setCreatePreset);
+  } = useTaskActions(tasks, setTasks, closeOverlay, setCreateFor, setCreatePreset);
 
   const activeTasks = tasks.filter((t) => !t.archived);
   const archivedTasks = tasks.filter((t) => t.archived);
@@ -72,18 +84,6 @@ export default function Index() {
   const myOpenCount = user
     ? activeTasks.filter((t) => t.column !== 'done' && t.column !== 'restart' && taskAssigneeIds(t).includes(user.id)).length
     : 0;
-
-  const { handleOpenArticle, handleOpenTaskById, handleOpenIdeaById } = useDeepLinks({
-    tasks,
-    user,
-    searchParams,
-    setSearchParams,
-    setSelectedTask,
-    setOpenArticleId,
-    setOpenTopicId,
-    setView,
-    setAssigneeFilter,
-  });
 
   return (
     <div className="h-screen grid-bg text-foreground flex overflow-hidden">
@@ -131,7 +131,9 @@ export default function Index() {
           filteredTasks={filteredTasks}
           team={team}
           tasksLoading={tasksLoading}
-          setSelectedTask={setSelectedTask}
+          handleOpenTaskById={handleOpenTaskById}
+          handleOpenIdeaById={handleOpenIdeaById}
+          closeOverlay={closeOverlay}
           setCreateFor={setCreateFor}
           handleArchiveTask={handleArchiveTask}
           sprints={sprints}
@@ -148,12 +150,10 @@ export default function Index() {
           handleDeleteArchivedTask={handleDeleteArchivedTask}
           category={category}
           openArticleId={openArticleId}
-          setOpenArticleId={setOpenArticleId}
           tasks={tasks}
           handleToRestart={handleToRestart}
           handleToggleRestartDone={handleToggleRestartDone}
           openTopicId={openTopicId}
-          setOpenTopicId={setOpenTopicId}
           selectedTask={selectedTask}
           kbArticles={kbArticles}
           handleOpenArticle={handleOpenArticle}

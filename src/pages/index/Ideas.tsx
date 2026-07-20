@@ -7,10 +7,11 @@ import IdeasList, { CreateTopic } from './ideas/IdeasList';
 import IdeaDetail from './ideas/IdeaDetail';
 import type { Author, TopicListItem, IdeaComment, IdeaStatus } from './ideas/shared';
 
-export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
+export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack }: {
   authors: Author[];
   initialTopicId?: string | null;
-  onConsumeInitial?: () => void;
+  onOpenTopicById: (id: string) => void;
+  onBack: () => void;
 }) {
   const { user, isAdmin, can } = useAuth();
   const [list, setList] = useState<TopicListItem[]>([]);
@@ -68,11 +69,11 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
     }
   }, []);
 
+  // Открытие/закрытие темы синхронизировано с адресом в браузере (initialTopicId приходит из URL
+  // /idea/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую тему.
   useEffect(() => {
-    if (initialTopicId) {
-      openTopic(initialTopicId);
-      onConsumeInitial?.();
-    }
+    if (initialTopicId) openTopic(initialTopicId);
+    else setCurrent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTopicId]);
 
@@ -196,6 +197,7 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
       /* ignore */
     }
     setCurrent(null);
+    onBack();
     loadList();
   }
 
@@ -228,7 +230,7 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
         currentUserId={user?.id}
         isAdmin={isAdmin}
         canManage={canManage(current)}
-        onBack={() => setCurrent(null)}
+        onBack={() => { setCurrent(null); onBack(); }}
         onSetStatus={setStatus}
         onDeleteTopic={deleteTopic}
         editingTopic={editingTopic}
@@ -259,7 +261,7 @@ export default function Ideas({ authors, initialTopicId, onConsumeInitial }: {
       loading={loading}
       can={can}
       onCreateClick={() => setCreating(true)}
-      onOpenTopic={openTopic}
+      onOpenTopic={onOpenTopicById}
       authorName={authorName}
     />
   );

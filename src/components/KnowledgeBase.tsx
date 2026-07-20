@@ -9,13 +9,14 @@ import type { ArticleListItem, Article, KbCategoryId, KbAttachment, KbVisibility
 export { KNOWLEDGE_URL, kbAuthHeaders, kbCategories } from './knowledge-base/shared';
 export type { KbArticleBrief, KbCategoryId, KbAttachment } from './knowledge-base/shared';
 
-export default function KnowledgeBase({ category, authors, initialArticleId, onConsumeInitial, can, isAdmin }: {
+export default function KnowledgeBase({ category, authors, initialArticleId, can, isAdmin, onOpenArticleById, onBack }: {
   category: KbCategoryId | 'all';
   authors: Author[];
   initialArticleId?: string | null;
-  onConsumeInitial?: () => void;
   can: (key: PermissionKey) => boolean;
   isAdmin: boolean;
+  onOpenArticleById: (id: string) => void;
+  onBack: () => void;
 }) {
   const [list, setList] = useState<ArticleListItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,11 +59,11 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
     }
   }, []);
 
+  // Открытие/закрытие статьи синхронизировано с адресом в браузере (initialArticleId приходит из
+  // URL /kb/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую статью.
   useEffect(() => {
-    if (initialArticleId) {
-      openArticle(initialArticleId);
-      onConsumeInitial?.();
-    }
+    if (initialArticleId) openArticle(initialArticleId);
+    else setCurrent(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialArticleId]);
 
@@ -96,6 +97,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
       /* ignore */
     }
     setCurrent(null);
+    onBack();
     setList((prev) => prev.filter((a) => a.id !== id));
   }
 
@@ -139,7 +141,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
       <ArticleView
         article={current}
         authorName={authorName}
-        onBack={() => setCurrent(null)}
+        onBack={() => { setCurrent(null); onBack(); }}
         onEdit={() => setEditing(current)}
         onDelete={() => deleteArticle(current.id)}
         onToggleFavorite={() => toggleFavorite(current.id)}
@@ -160,7 +162,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, onC
       setFavoritesOnly={setFavoritesOnly}
       can={can}
       onCreate={() => setEditing('new')}
-      onOpen={openArticle}
+      onOpen={onOpenArticleById}
       onToggleFavorite={toggleFavorite}
       authorName={authorName}
     />

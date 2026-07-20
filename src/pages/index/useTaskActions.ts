@@ -5,7 +5,7 @@ import type { Task, TaskOutcome, ColumnId } from './shared';
 export function useTaskActions(
   tasks: Task[],
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>,
-  setSelectedTask: (t: Task | null) => void,
+  closeTaskModal: () => void,
   setCreateFor: (c: ColumnId | null) => void,
   setCreatePreset: (p: Partial<Task> | null) => void,
 ) {
@@ -28,7 +28,7 @@ export function useTaskActions(
   }
 
   async function handleUpdateTask(updated: Task) {
-    setSelectedTask(null);
+    closeTaskModal();
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     try {
       await fetch(TASKS_URL, {
@@ -63,7 +63,7 @@ export function useTaskActions(
   async function handleDeleteTask(id: string) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
-    setSelectedTask(null);
+    closeTaskModal();
     setTasks((prev) => prev.filter((t) => t.id !== id));
 
     try {
@@ -95,7 +95,7 @@ export function useTaskActions(
 
   async function handleArchiveTask(id: string, outcome: TaskOutcome) {
     const task = tasks.find((t) => t.id === id);
-    setSelectedTask(null);
+    closeTaskModal();
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: true, outcome } : t)));
     try {
       await fetch(TASKS_URL, {
