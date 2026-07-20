@@ -28,7 +28,8 @@ export function useTaskActions(
   }
 
   async function handleUpdateTask(updated: Task) {
-    closeTaskModal();
+    // Карточка задачи остаётся открытой после сохранения — просто возвращается в режим просмотра
+    // (переключение делает сам TaskModal), закрывать окно здесь не нужно
     setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
     try {
       await fetch(TASKS_URL, {
