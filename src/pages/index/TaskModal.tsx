@@ -36,6 +36,10 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const canFullEdit = isAdmin || (can('task_edit_own') && isCreator);
   // Статус деплоя может менять автор задачи или назначенный исполнитель — даже без полного доступа
   const canEditDeploy = canFullEdit || isCreator || isAssignee;
+  // Режим просмотра по умолчанию: чистое описание + прикреплённая информация, без полей редактирования.
+  // Доступен переход в редактирование только если есть на это право (полное или хотя бы статус деплоя).
+  const [editing, setEditing] = useState(false);
+  const isEditing = editing && (canFullEdit || canEditDeploy);
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
@@ -68,18 +72,29 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
     return d.url || '';
   }
 
+  function cancelEdit() {
+    setForm({ ...task });
+    setLinks(task.links ?? []);
+    setAttachments(task.attachments ?? []);
+    setDeadlineLocal(isoToMskLocal(task.deadline));
+    setEditing(false);
+  }
+
   function handleSave() {
     if (!canFullEdit) {
       if (canEditDeploy) {
         // Без полного доступа автор/исполнитель может менять статус деплоя (и связанную с ним колонку)
         onSave({ ...task, column: form.column, deployStatus: form.deployStatus });
+        setEditing(false);
         return;
       }
       // Без права полного редактирования — можно изменить только колонку (перенос по доске To Do / In Progress / Done)
       onSave({ ...task, column: form.column });
+      setEditing(false);
       return;
     }
     onSave({ ...form, links, attachments, deadline: deadlineLocal ? mskLocalToIso(deadlineLocal) : null });
+    setEditing(false);
   }
 
   return (
@@ -106,6 +121,15 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
         </div>
         <div className="flex items-center gap-2">
+          {!isEditing && (canFullEdit || canEditDeploy) && (
+            <button
+              onClick={() => setEditing(true)}
+              className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+            >
+              <Icon name="Pencil" size={13} />
+              Редактировать
+            </button>
+          )}
           {isAdmin && (task.archived ? (
             <button
               onClick={() => onUnarchive(task.id)}
@@ -162,7 +186,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           <input
             value={form.title}
             onChange={(e) => set('title', e.target.value)}
-            readOnly={!canFullEdit}
+            readOnly={!isEditing || !canFullEdit}
             className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors"
             placeholder="Название задачи"
           />
@@ -188,14 +212,14 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Meta grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-          {!canFullEdit && !canEditDeploy && (
+          {isEditing && !canFullEdit && !canEditDeploy && (
             <Select compact label="Колонка" value={form.column} onChange={(v) => set('column', v)} options={[
               { value: 'todo', label: 'To Do' },
               { value: 'progress', label: 'In Progress' },
               { value: 'done', label: 'Done' },
             ]} />
           )}
-          {canFullEdit ? (
+          {isEditing && canFullEdit ? (
             <>
               <Select compact label="Приоритет" value={form.priority} onChange={(v) => set('priority', v)} options={[
                 { value: 'critical', label: 'Критический' },
@@ -286,7 +310,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         {/* Description */}
         <div>
           <label className="block text-[10px] text-muted-foreground mb-1">Описание</label>
-          {canFullEdit ? (
+          {isEditing && canFullEdit ? (
             <RichEditor
               content={form.description ?? ''}
               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
@@ -301,11 +325,11 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           )}
         </div>
 
-        {(canFullEdit || attachments.length > 0) && (
-          /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе */
+        {((isEditing && canFullEdit) || attachments.length > 0) && (
+          /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе и в режиме редактирования */
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Вложения</label>
-            {canFullEdit ? (
+            {isEditing && canFullEdit ? (
               <AttachmentsField attachments={attachments} onChange={setAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} />
             ) : (
               <AttachmentsList attachments={attachments} />
@@ -313,8 +337,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           </div>
         )}
 
-        {canEditDeploy && (
-          /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу */
+        {isEditing && canEditDeploy && (
+          /* Deploy status — определяет колонку доски автоматически. Доступно автору, исполнителю и админу, только в режиме редактирования */
           <div>
             <button
               type="button"
@@ -361,9 +385,15 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             )}
           </div>
         )}
+        {!isEditing && canEditDeploy && (form.deployStatus ?? 'none') !== 'none' && (
+          <div>
+            <label className="block text-[10px] text-muted-foreground mb-1">Статус деплоя</label>
+            <DeployBadge status={form.deployStatus ?? 'none'} />
+          </div>
+        )}
 
-        {(canFullEdit || links.length > 0) && (
-          /* Links — видно всем, у кого открыта задача; редактирование только при полном доступе */
+        {((isEditing && canFullEdit) || links.length > 0) && (
+          /* Links — видно всем, у кого открыта задача; редактирование только при полном доступе и в режиме редактирования */
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Ссылки</label>
             {links.length > 0 && (
@@ -374,7 +404,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                     <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
                       {l.label}
                     </a>
-                    {canFullEdit && (
+                    {isEditing && canFullEdit && (
                       <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
                         <Icon name="X" size={13} />
                       </button>
@@ -383,7 +413,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
                 ))}
               </div>
             )}
-            {canFullEdit && (
+            {isEditing && canFullEdit && (
               <div className="flex gap-2">
                 <input
                   value={newLink.label}
@@ -413,15 +443,23 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         <TaskComments taskId={task.id} team={team} />
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-end px-6 pb-5">
-        <button
-          onClick={handleSave}
-          className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
-        >
-          Сохранить
-        </button>
-      </div>
+      {/* Footer — кнопки сохранения/отмены видны только в режиме редактирования */}
+      {isEditing && (
+        <div className="flex justify-end gap-2 px-6 pb-5">
+          <button
+            onClick={cancelEdit}
+            className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+          >
+            Отмена
+          </button>
+          <button
+            onClick={handleSave}
+            className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+          >
+            Сохранить
+          </button>
+        </div>
+      )}
     </ModalOverlay>
   );
 }
