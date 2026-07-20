@@ -439,8 +439,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           </div>
         )}
 
-        {/* Comments */}
-        <TaskComments taskId={task.id} team={team} />
+        {/* Comments — только в режиме просмотра, не отвлекают во время редактирования задачи */}
+        {!isEditing && <TaskComments taskId={task.id} team={team} />}
       </div>
 
       {/* Footer — кнопки сохранения/отмены видны только в режиме редактирования */}
