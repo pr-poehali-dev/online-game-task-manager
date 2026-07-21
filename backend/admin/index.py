@@ -5,6 +5,7 @@ import shutil
 from datetime import datetime, timedelta, timezone
 
 import boto3
+from botocore.config import Config
 import psycopg2
 
 
@@ -79,12 +80,16 @@ def _parse_dt(s):
         return None
 
 
+_S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+
+
 def _s3_client():
     return boto3.client(
         's3',
         endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+        config=_S3_CONFIG,
     )
 
 

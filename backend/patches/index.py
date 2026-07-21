@@ -8,10 +8,17 @@ import uuid
 import zipfile
 
 import boto3
+from botocore.config import Config
 import psycopg2
 
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
+
+# Новые версии botocore по умолчанию добавляют контрольную сумму запроса через
+# chunked-кодирование (trailer). Кастомный (не-AWS) S3-эндпоинт не всегда его корректно
+# разбирает — трейлер попадает прямо в тело файла (особенно заметно на 0-байтных файлах).
+# Отключаем эту проверку, чтобы файлы сохранялись байт-в-байт как есть.
+_S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
 
 FIXED_ROOTS = [
     'animations', 'data', 'l2text', 'maps', 'staticmeshes',
@@ -74,6 +81,7 @@ def _s3_client():
         endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+        config=_S3_CONFIG,
     )
 
 
@@ -266,7 +274,9 @@ def handler(event: dict, context) -> dict:
         file_id = body.get('fileId')
         part_number = body.get('partNumber')
         data_b64 = body.get('data')
-        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or part_number is None or not data_b64:
+        # data_b64 может быть пустой строкой для 0-байтных файлов (пустые placeholder-файлы в
+        # клиентском патче — нормальное явление) — проверяем именно на None, а не на пустоту.
+        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or part_number is None or data_b64 is None:
             cur.close(); conn.close()
             return _bad('bad_request')
         try:
