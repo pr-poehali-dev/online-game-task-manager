@@ -156,14 +156,16 @@ export default function TaskComments({ taskId, team }: {
             className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
         </div>
-        <AttachmentsTrigger uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments((prev) => [...prev, a])} onError={setAttachError} />
-        <button
-          onClick={addComment}
-          disabled={!newComment.trim() && !newAttachments.length}
-          className="h-9 self-start px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors shrink-0"
-        >
-          <Icon name="Send" size={15} />
-        </button>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <AttachmentsTrigger uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments((prev) => [...prev, a])} onError={setAttachError} />
+          <button
+            onClick={addComment}
+            disabled={!newComment.trim() && !newAttachments.length}
+            className="h-9 w-9 flex items-center justify-center rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors"
+          >
+            <Icon name="Send" size={15} />
+          </button>
+        </div>
       </div>
       <CompactAttachmentsList attachments={newAttachments} onRemove={(id) => setNewAttachments((prev) => prev.filter((a) => a.id !== id))} />
       {attachError && <p className="text-xs text-destructive mt-1.5">{attachError}</p>}
