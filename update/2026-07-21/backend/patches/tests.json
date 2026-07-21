@@ -22,6 +22,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST add_root without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "add_root", "server": "c4x1", "name": "test_root"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

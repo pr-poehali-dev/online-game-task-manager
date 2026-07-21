@@ -1,317 +1,12 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Icon from '@/components/ui/icon';
-import { PATCHES_URL, authHeaders, servers, formatMskDateTime } from './shared';
+import { authHeaders, servers, PATCHES_URL } from './shared';
 import type { ServerId } from './shared';
-
-export const PATCH_ROOTS = [
-  'animations', 'data', 'l2text', 'maps', 'staticmeshes',
-  'System', 'System_eng', 'systextures', 'textures',
-];
-
-interface PatchFile {
-  id: number;
-  path: string;
-  size: number;
-  url: string;
-  updatedAt: string | null;
-  taskIds: string[];
-}
-
-interface TreeNode {
-  name: string;
-  path: string;
-  isFile: boolean;
-  children: Map<string, TreeNode>;
-  file?: PatchFile;
-}
-
-function fmtSize(bytes: number) {
-  if (!bytes && bytes !== 0) return '';
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
-}
-
-function buildTree(files: PatchFile[]): TreeNode {
-  const root: TreeNode = { name: '', path: '', isFile: false, children: new Map() };
-  for (const rootName of PATCH_ROOTS) {
-    root.children.set(rootName, { name: rootName, path: rootName, isFile: false, children: new Map() });
-  }
-  for (const f of files) {
-    const parts = f.path.split('/');
-    let node = root;
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      const isLast = i === parts.length - 1;
-      const path = parts.slice(0, i + 1).join('/');
-      let child = node.children.get(part);
-      if (!child) {
-        child = { name: part, path, isFile: isLast, children: new Map() };
-        node.children.set(part, child);
-      }
-      if (isLast) child.file = f;
-      node = child;
-    }
-  }
-  return root;
-}
-
-function blobToBase64(blob: Blob): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(',', 2)[1] ?? '');
-    reader.onerror = () => reject(new Error('read_failed'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-interface DroppedFile {
-  path: string;
-  file: File;
-}
-
-function readEntry(entry: FileSystemEntry, prefix: string, out: DroppedFile[]): Promise<void> {
-  return new Promise((resolve) => {
-    if (entry.isFile) {
-      (entry as FileSystemFileEntry).file((file) => {
-        out.push({ path: `${prefix}${entry.name}`, file });
-        resolve();
-      }, () => resolve());
-    } else if (entry.isDirectory) {
-      const reader = (entry as FileSystemDirectoryEntry).createReader();
-      const entries: FileSystemEntry[] = [];
-      const readBatch = () => {
-        reader.readEntries(async (batch) => {
-          if (batch.length === 0) {
-            await Promise.all(entries.map((e) => readEntry(e, `${prefix}${entry.name}/`, out)));
-            resolve();
-            return;
-          }
-          entries.push(...batch);
-          readBatch();
-        }, () => resolve());
-      };
-      readBatch();
-    } else {
-      resolve();
-    }
-  });
-}
-
-async function collectDroppedFiles(dataTransfer: DataTransfer): Promise<DroppedFile[]> {
-  const out: DroppedFile[] = [];
-  const items = Array.from(dataTransfer.items || []);
-  const entries = items
-    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null))
-    .filter((e): e is FileSystemEntry => !!e);
-  if (entries.length > 0) {
-    await Promise.all(entries.map((e) => readEntry(e, '', out)));
-    return out;
-  }
-  // Фолбэк для браузеров без Entries API — берём файлы плоско
-  Array.from(dataTransfer.files || []).forEach((file) => {
-    out.push({ path: file.name, file });
-  });
-  return out;
-}
-
-const CHUNK_SIZE = 1.5 * 1024 * 1024; // 1.5 МБ — одиночный запрос к серверу ограничен ~3 МБ
-
-async function postJson(body: Record<string, unknown>, signal?: AbortSignal) {
-  const res = await fetch(PATCHES_URL, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: JSON.stringify(body),
-    signal,
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error || 'request_failed'), { code: data.error });
-  return data;
-}
-
-interface UploadQueueItem {
-  path: string;
-  file: File;
-}
-
-async function uploadFileInChunks(
-  server: ServerId,
-  path: string,
-  file: File,
-  taskId: string,
-  signal: AbortSignal,
-  onProgress: (fraction: number) => void
-) {
-  const init = await postJson({ action: 'file_init', server, path, taskId: taskId || null }, signal);
-  const fileId = init.fileId as string;
-  const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
-  try {
-    for (let i = 0; i < totalParts; i++) {
-      const slice = file.slice(i * CHUNK_SIZE, Math.min((i + 1) * CHUNK_SIZE, file.size));
-      const b64 = await blobToBase64(slice);
-      await postJson({ action: 'file_chunk', fileId, partNumber: i, data: b64 }, signal);
-      onProgress((i + 1) / totalParts);
-    }
-    await postJson({ action: 'file_complete', fileId, totalParts }, signal);
-  } catch (err) {
-    postJson({ action: 'file_abort', fileId, totalParts }).catch(() => {});
-    throw err;
-  }
-}
-
-function TreeFolder({
-  node,
-  depth,
-  canManage,
-  onDelete,
-  highlightTaskId,
-  onDropFiles,
-  dragActive,
-  setDragActive,
-  onToggleTask,
-  togglingPath,
-}: {
-  node: TreeNode;
-  depth: number;
-  canManage: boolean;
-  onDelete: (path: string) => void;
-  highlightTaskId: string | null;
-  onDropFiles: (rootFolder: string, files: DroppedFile[]) => void;
-  dragActive: string | null;
-  setDragActive: (path: string | null) => void;
-  onToggleTask: (path: string) => void;
-  togglingPath: string | null;
-}) {
-  const [open, setOpen] = useState(depth === 0);
-  const [confirmPath, setConfirmPath] = useState<string | null>(null);
-  const isRoot = depth === 0;
-  const entries = useMemo(() => {
-    const arr = Array.from(node.children.values());
-    arr.sort((a, b) => {
-      if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    });
-    return arr;
-  }, [node]);
-
-  if (node.isFile && node.file) {
-    const f = node.file;
-    const highlighted = !!highlightTaskId && f.taskIds.includes(highlightTaskId);
-    return (
-      <div
-        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors group ${
-          highlighted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/40'
-        }`}
-        style={{ paddingLeft: `${depth * 18 + 24}px` }}
-      >
-        <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
-        <span className="text-sm truncate flex-1">{node.name}</span>
-        <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{fmtSize(f.size)}</span>
-        <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">{formatMskDateTime(f.updatedAt)}</span>
-        <a
-          href={f.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          title="Скачать файл"
-          className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-        >
-          <Icon name="Download" size={13} />
-        </a>
-        {canManage && highlightTaskId && (
-          <button
-            onClick={() => onToggleTask(f.path)}
-            disabled={togglingPath === f.path}
-            title={highlighted ? 'Открепить от задачи' : 'Прикрепить к задаче'}
-            className={`h-6 w-6 shrink-0 rounded-md flex items-center justify-center transition-colors disabled:opacity-40 ${
-              highlighted
-                ? 'text-primary hover:bg-primary/10'
-                : 'text-muted-foreground hover:text-foreground hover:bg-secondary opacity-0 group-hover:opacity-100'
-            }`}
-          >
-            <Icon name={togglingPath === f.path ? 'Loader2' : 'Paperclip'} size={13} className={togglingPath === f.path ? 'animate-spin' : ''} />
-          </button>
-        )}
-        {canManage && (confirmPath === f.path ? (
-          <div className="shrink-0 flex items-center gap-1">
-            <button
-              onClick={() => { setConfirmPath(null); onDelete(f.path); }}
-              className="h-6 px-2 rounded-md bg-destructive/90 text-white text-[11px] hover:bg-destructive transition-colors"
-            >
-              Да
-            </button>
-            <button
-              onClick={() => setConfirmPath(null)}
-              className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-            >
-              Нет
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setConfirmPath(f.path)}
-            title="Удалить файл"
-            className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100"
-          >
-            <Icon name="Trash2" size={13} />
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  const rootName = node.path.split('/')[0];
-  const isDragTarget = dragActive === node.path;
-
-  return (
-    <div>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        onDragOver={canManage && isRoot ? (e) => { e.preventDefault(); setDragActive(node.path); } : undefined}
-        onDragLeave={canManage && isRoot ? () => setDragActive(null) : undefined}
-        onDrop={canManage && isRoot ? (e) => {
-          e.preventDefault();
-          setDragActive(null);
-          collectDroppedFiles(e.dataTransfer).then((files) => onDropFiles(rootName, files));
-        } : undefined}
-        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full text-left ${
-          isDragTarget ? 'bg-primary/15 ring-1 ring-primary/50' : 'hover:bg-secondary/40'
-        }`}
-        style={{ paddingLeft: `${depth * 18 + 4}px` }}
-      >
-        <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
-        <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
-        <span className="text-sm font-medium truncate">{node.name}</span>
-        {isRoot && canManage && (
-          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover:opacity-100">перетащите папку сюда</span>
-        )}
-      </button>
-      {open && (
-        <div>
-          {entries.length === 0 && (
-            <div className="text-xs text-muted-foreground py-1" style={{ paddingLeft: `${(depth + 1) * 18 + 24}px` }}>
-              пусто
-            </div>
-          )}
-          {entries.map((child) => (
-            <TreeFolder
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              canManage={canManage}
-              onDelete={onDelete}
-              highlightTaskId={highlightTaskId}
-              onDropFiles={onDropFiles}
-              dragActive={dragActive}
-              setDragActive={setDragActive}
-              onToggleTask={onToggleTask}
-              togglingPath={togglingPath}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import { fmtSize, buildTree } from './patchesUtils';
+import type { PatchFile, DroppedFile } from './patchesUtils';
+import { postJson, uploadFileInChunks } from './patchesApi';
+import type { UploadQueueItem } from './patchesApi';
+import TreeFolder from './PatchesTreeFolder';
 
 export default function Patches({
   canManage,
@@ -324,6 +19,7 @@ export default function Patches({
 }) {
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
+  const [customRoots, setCustomRoots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
@@ -333,6 +29,10 @@ export default function Patches({
   const [uploadIndex, setUploadIndex] = useState(0);
   const [fileProgress, setFileProgress] = useState(0);
   const [togglingPath, setTogglingPath] = useState<string | null>(null);
+  const [addingRoot, setAddingRoot] = useState(false);
+  const [newRootName, setNewRootName] = useState('');
+  const [rootError, setRootError] = useState('');
+  const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
   const appliedInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -348,6 +48,7 @@ export default function Patches({
       if (res.ok) {
         const data = await res.json();
         setFiles(data.files || []);
+        setCustomRoots(data.customRoots || []);
       }
     } catch {
       /* ignore */
@@ -365,7 +66,8 @@ export default function Patches({
     }
   }, [initialTaskId]);
 
-  const tree = useMemo(() => buildTree(files), [files]);
+  const tree = useMemo(() => buildTree(files, customRoots), [files, customRoots]);
+  const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
   const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
   const taskFilesCount = useMemo(
@@ -451,6 +153,34 @@ export default function Patches({
     }
   }
 
+  async function handleAddRoot() {
+    const name = newRootName.trim();
+    if (!name) return;
+    setRootError('');
+    try {
+      await postJson({ action: 'add_root', server: active, name });
+      setNewRootName('');
+      setAddingRoot(false);
+      await load(active);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'bad_request') setRootError('Недопустимое имя папки — только буквы, цифры, «_» и «-»');
+      else setRootError('Не удалось создать папку');
+    }
+  }
+
+  async function handleDeleteRoot(name: string) {
+    setDeletingRoot(name);
+    try {
+      await postJson({ action: 'delete_root', server: active, name });
+      setCustomRoots((prev) => prev.filter((r) => r !== name));
+    } catch {
+      /* ignore */
+    } finally {
+      setDeletingRoot(null);
+    }
+  }
+
   return (
     <div className="max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
@@ -529,7 +259,43 @@ export default function Patches({
               · {files.length} файлов{files.length > 0 ? ` · ${fmtSize(totalSize)}` : ''}
             </span>
           </div>
+          {canManage && !addingRoot && (
+            <button
+              onClick={() => { setAddingRoot(true); setRootError(''); }}
+              title="Добавить папку"
+              className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="Plus" size={15} />
+            </button>
+          )}
         </div>
+
+        {canManage && addingRoot && (
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-secondary/20">
+            <input
+              autoFocus
+              value={newRootName}
+              onChange={(e) => setNewRootName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddRoot(); if (e.key === 'Escape') { setAddingRoot(false); setNewRootName(''); setRootError(''); } }}
+              placeholder="Название папки (латиница, цифры, _ и -)"
+              className="h-8 flex-1 min-w-0 px-2.5 rounded-lg border border-border bg-background text-sm"
+            />
+            <button
+              onClick={handleAddRoot}
+              disabled={!newRootName.trim()}
+              className="h-8 px-3 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30"
+            >
+              Создать
+            </button>
+            <button
+              onClick={() => { setAddingRoot(false); setNewRootName(''); setRootError(''); }}
+              className="h-8 px-3 rounded-lg text-sm text-muted-foreground hover:text-foreground border border-border transition-colors"
+            >
+              Отмена
+            </button>
+            {rootError && <p className="text-xs text-destructive w-full">{rootError}</p>}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-16">
@@ -550,6 +316,9 @@ export default function Patches({
                   setDragActive={setDragActive}
                   onToggleTask={handleToggleTask}
                   togglingPath={togglingPath}
+                  customRootNames={customRootNames}
+                  onDeleteRoot={handleDeleteRoot}
+                  deletingRoot={deletingRoot}
                 />
               </div>
             ))}

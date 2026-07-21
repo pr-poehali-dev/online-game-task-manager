@@ -96,7 +96,13 @@ export default function IndexTopbar({
           <Icon name="Menu" size={18} />
         </button>
         <div className="flex items-center gap-2 min-w-0">
-          <span className="font-display tracking-widest text-base hidden sm:inline shrink-0" style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
+          <button
+            onClick={() => setView('board')}
+            className="font-display tracking-widest text-base hidden sm:inline shrink-0 hover:opacity-80 transition-opacity"
+            style={{ letterSpacing: '0.12em', color: 'hsl(35 85% 60%)' }}
+          >
+            ЭРА
+          </button>
           <span className="text-muted-foreground/40 text-sm hidden sm:inline">/</span>
           <span className="text-sm text-muted-foreground truncate">
             {view === 'board' && 'Доска задач'}

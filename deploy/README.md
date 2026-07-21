@@ -87,22 +87,17 @@ MINIO_ROOT_USER=era_s3 MINIO_ROOT_PASSWORD=ВАШ_S3_ПАРОЛЬ \
 ```
 Создайте bucket `files` через веб-консоль MinIO (порт 9001).
 
-> ⚠️ **Патч кода под своё хранилище.** В файле `backend/knowledge/index.py`
-> адрес хранилища зашит на облако. Откройте его и замените блок клиента S3:
-> ```python
-> s3 = boto3.client(
->     's3',
->     endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
->     aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
->     aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
-> )
-> s3.put_object(Bucket='files', Key=key, Body=raw, ContentType=content_type)
-> return f"{os.environ.get('S3_PUBLIC_URL', '').rstrip('/')}/{key}"
-> ```
-> И добавьте в `.env` (шаг 6):
+> ⚠️ **Про переменные окружения хранилища.** Код всех функций с файлами
+> (`backend/knowledge/index.py`, `backend/tasks/index.py`,
+> `backend/ideas/index.py`, `backend/patches/index.py`) уже написан так,
+> чтобы читать адрес хранилища из переменных окружения `S3_ENDPOINT` и
+> `S3_PUBLIC_URL` — жёстко зашитый адрес облака `bucket.poehali.dev` /
+> `cdn.poehali.dev` используется только как запасной вариант (fallback),
+> если эти переменные не заданы. Патчить сам код не нужно — достаточно
+> прописать в `.env` (шаг 6):
 > ```
 > S3_ENDPOINT=http://127.0.0.1:9000        # адрес MinIO/S3
-> S3_PUBLIC_URL=https://ВАШ-ДОМЕН.РУ/files # публичный адрес картинок
+> S3_PUBLIC_URL=https://ВАШ-ДОМЕН.РУ/files # публичный адрес файлов
 > ```
 > Для MinIO настройте отдачу bucket `files` наружу (через Nginx или публичную политику bucket).
 
@@ -143,22 +138,34 @@ sudo systemctl status era-backend   # должно быть active (running)
 ## 8. Собираем фронтенд
 Перед сборкой пропишите адрес backend. Откройте `backend/func2url.json` и
 замените все облачные URL на путь через ваш домен (важно перечислить
-**все** функции — по одной на каждую папку внутри `backend/`):
+**все** функции — по одной на каждую папку внутри `backend/`, кроме
+`dev-login` — см. предупреждение ниже):
 ```json
 {
-  "faq":           "https://ВАШ-ДОМЕН.РУ/api/faq",
-  "catalog":       "https://ВАШ-ДОМЕН.РУ/api/catalog",
-  "sprints":       "https://ВАШ-ДОМЕН.РУ/api/sprints",
-  "notifications": "https://ВАШ-ДОМЕН.РУ/api/notifications",
-  "ideas":         "https://ВАШ-ДОМЕН.РУ/api/ideas",
-  "knowledge":     "https://ВАШ-ДОМЕН.РУ/api/knowledge",
-  "tasks":         "https://ВАШ-ДОМЕН.РУ/api/tasks",
-  "login-code":    "https://ВАШ-ДОМЕН.РУ/api/login-code",
-  "tg-webhook":    "https://ВАШ-ДОМЕН.РУ/api/tg-webhook",
-  "admin":         "https://ВАШ-ДОМЕН.РУ/api/admin",
-  "auth":          "https://ВАШ-ДОМЕН.РУ/api/auth"
+  "faq":                "https://ВАШ-ДОМЕН.РУ/api/faq",
+  "catalog":            "https://ВАШ-ДОМЕН.РУ/api/catalog",
+  "sprints":            "https://ВАШ-ДОМЕН.РУ/api/sprints",
+  "notifications":      "https://ВАШ-ДОМЕН.РУ/api/notifications",
+  "ideas":              "https://ВАШ-ДОМЕН.РУ/api/ideas",
+  "knowledge":          "https://ВАШ-ДОМЕН.РУ/api/knowledge",
+  "tasks":              "https://ВАШ-ДОМЕН.РУ/api/tasks",
+  "patches":            "https://ВАШ-ДОМЕН.РУ/api/patches",
+  "patchnotes":         "https://ВАШ-ДОМЕН.РУ/api/patchnotes",
+  "deadline-reminders": "https://ВАШ-ДОМЕН.РУ/api/deadline-reminders",
+  "login-code":         "https://ВАШ-ДОМЕН.РУ/api/login-code",
+  "tg-webhook":         "https://ВАШ-ДОМЕН.РУ/api/tg-webhook",
+  "admin":              "https://ВАШ-ДОМЕН.РУ/api/admin",
+  "auth":               "https://ВАШ-ДОМЕН.РУ/api/auth"
 }
 ```
+
+> ⚠️ **Не переносите папку `backend/dev-login/` на свой сервер.** Это
+> временная функция только для тестового превью в редакторе poehali.dev —
+> выдаёт сессию администратору в обход Telegram-авторизации. На фронтенде
+> кнопка теста уже скрыта проверкой домена (`window.location.hostname`),
+> но сам backend-эндпоинт лучше не разворачивать — просто не копируйте эту
+> папку на сервер и не добавляйте её в `func2url.json`.
+
 Собираем:
 ```bash
 cd /var/www/era
