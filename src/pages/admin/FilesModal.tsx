@@ -4,6 +4,10 @@ import { fileIconFor } from '@/components/AttachmentsField';
 import { fmtFileSize } from './adminShared';
 import type { AdminAttachment, FilesBySection } from './adminShared';
 
+function fmtGb(bytes: number): string {
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} ГБ`;
+}
+
 type SectionKey = 'knowledge' | 'ideas' | 'tasksActive' | 'tasksArchived';
 
 const SECTIONS: { key: SectionKey; label: string; icon: string; section: 'knowledge' | 'ideas' | 'tasks'; urlParam: string }[] = [
@@ -66,6 +70,28 @@ export default function FilesModal({
             <Icon name="X" size={18} />
           </button>
         </div>
+
+        {!loading && files?.diskUsage && (() => {
+          const d = files.diskUsage;
+          const pct = d.total > 0 ? Math.min(100, Math.round((d.used / d.total) * 100)) : 0;
+          const barColor = pct >= 90 ? 'bg-destructive' : pct >= 75 ? 'bg-amber-500' : 'bg-primary';
+          return (
+            <div className="mb-4 p-3 rounded-xl border border-border bg-secondary/20">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  <Icon name="HardDrive" size={13} className="text-muted-foreground" />
+                  Место на сервере
+                </span>
+                <span className="text-muted-foreground">
+                  Занято {fmtGb(d.used)} из {fmtGb(d.total)} · свободно {fmtGb(d.free)}
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })()}
 
         {loading ? (
           <div className="flex justify-center py-10">

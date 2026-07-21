@@ -1,6 +1,7 @@
 import json
 import os
 import secrets
+import shutil
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -107,8 +108,20 @@ SECTION_TABLES = {
 }
 
 
+def _disk_usage():
+    '''Читает реальное занятое/свободное место на диске VPS, где физически работает backend-процесс
+    (DISK_USAGE_PATH — точка монтирования для проверки, по умолчанию корень "/"). Актуально только
+    при развёртывании на собственном VPS — в облачных функциях эта метрика ничего не значит.'''
+    path = os.environ.get('DISK_USAGE_PATH', '/')
+    try:
+        total, used, free = shutil.disk_usage(path)
+        return {'total': total, 'used': used, 'free': free, 'path': path}
+    except Exception:
+        return None
+
+
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи (action=files_list) и их удаление из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -220,6 +233,7 @@ def handler(event: dict, context) -> dict:
                 result[bucket].append({**a, 'entityId': str(r[0]), 'entityTitle': r[1], 'updatedAt': r[4].isoformat() if r[4] else None})
 
         cur.close(); conn.close()
+        result['diskUsage'] = _disk_usage()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps(result)}
 
     if action == 'file_delete':

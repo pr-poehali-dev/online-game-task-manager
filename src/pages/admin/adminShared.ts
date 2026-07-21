@@ -95,11 +95,19 @@ export interface AdminAttachment {
   updatedAt: string | null;
 }
 
+export interface DiskUsage {
+  total: number;
+  used: number;
+  free: number;
+  path: string;
+}
+
 export interface FilesBySection {
   knowledge: AdminAttachment[];
   ideas: AdminAttachment[];
   tasksActive: AdminAttachment[];
   tasksArchived: AdminAttachment[];
+  diskUsage: DiskUsage | null;
 }
 
 export interface ActivityEntry {
