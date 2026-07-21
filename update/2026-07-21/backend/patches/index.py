@@ -14,11 +14,18 @@ import psycopg2
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
 
-# Новые версии botocore по умолчанию добавляют контрольную сумму запроса через
+# Новые версии botocore (>=1.36) по умолчанию добавляют контрольную сумму запроса через
 # chunked-кодирование (trailer). Кастомный (не-AWS) S3-эндпоинт не всегда его корректно
 # разбирает — трейлер попадает прямо в тело файла (особенно заметно на 0-байтных файлах).
 # Отключаем эту проверку, чтобы файлы сохранялись байт-в-байт как есть.
-_S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+# Сами параметры request_checksum_calculation/response_checksum_validation появились в
+# botocore только в версии 1.36 — на более старой версии (например при `boto3>=1.34.0` без
+# принудительного апгрейда) Config(...) с этими аргументами упадёт с TypeError и вообще
+# сломает загрузку файлов, поэтому оборачиваем в try/except с безопасным запасным вариантом.
+try:
+    _S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+except TypeError:
+    _S3_CONFIG = Config()
 
 FIXED_ROOTS = [
     'animations', 'data', 'l2text', 'maps', 'staticmeshes',

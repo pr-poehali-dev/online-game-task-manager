@@ -5,4 +5,8 @@ gunicorn>=21.2.0
 
 # Зависимости самих функций
 psycopg2-binary>=2.9.0
-boto3>=1.34.0
+# boto3>=1.36.0 нужен, чтобы работал параметр отключения checksum-трейлера в backend/*/index.py
+# (Config request_checksum_calculation/response_checksum_validation) — без него старые версии
+# botocore либо ломают загрузку файлов "мусором" в конце, либо (на совсем старых) код всё равно
+# устойчив благодаря try/except в _S3_CONFIG, но лучше сразу ставить актуальную версию.
+boto3>=1.36.0

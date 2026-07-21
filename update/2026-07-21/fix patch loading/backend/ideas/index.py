@@ -158,7 +158,10 @@ def _topic_row(r):
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
 
 
-_S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+try:
+    _S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+except TypeError:
+    _S3_CONFIG = Config()
 
 
 def _s3_client():

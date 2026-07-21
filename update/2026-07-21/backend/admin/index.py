@@ -80,7 +80,10 @@ def _parse_dt(s):
         return None
 
 
-_S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+try:
+    _S3_CONFIG = Config(request_checksum_calculation='when_required', response_checksum_validation='when_required')
+except TypeError:
+    _S3_CONFIG = Config()
 
 
 def _s3_client():

@@ -268,6 +268,19 @@ backend/knowledge/index.py
 backend/admin/index.py
 ```
 
+### ⚠️ Важно: нужна актуальная версия `boto3` на вашем сервере
+Параметры `request_checksum_calculation` / `response_checksum_validation`
+появились в `botocore` только начиная с версии 1.36 (тянется вместе с
+`boto3>=1.36.0`). На более старой версии код по-прежнему устойчив
+(обёрнут в `try/except`), но чтобы реально избавиться от мусора в конце
+файлов — обновите библиотеку:
+```bash
+cd /var/www/era
+./venv/bin/pip install --upgrade "boto3>=1.36.0"
+sudo systemctl restart era-backend
+```
+В `deploy/requirements.txt` требование уже обновлено на `boto3>=1.36.0`.
+
 ### Проверка
 - Загрузите в разделе «Патчи» (или как вложение к задаче/идее/статье)
   пустой файл 0 байт — должен загрузиться без ошибок.
