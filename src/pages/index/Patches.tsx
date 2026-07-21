@@ -74,6 +74,15 @@ export default function Patches({
     () => (selectedTaskId ? files.filter((f) => f.taskIds.includes(selectedTaskId)).length : 0),
     [files, selectedTaskId]
   );
+  const attachedTaskIds = useMemo(() => {
+    const set = new Set<string>();
+    files.forEach((f) => f.taskIds.forEach((id) => set.add(id)));
+    return set;
+  }, [files]);
+  const selectableTasks = useMemo(
+    () => tasks.filter((t) => attachedTaskIds.has(t.id) || t.id === selectedTaskId),
+    [tasks, attachedTaskIds, selectedTaskId]
+  );
 
   const handleDropFiles = useCallback(async (rootFolder: string, dropped: DroppedFile[]) => {
     if (dropped.length === 0) return;
