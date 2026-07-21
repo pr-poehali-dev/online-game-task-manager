@@ -43,7 +43,7 @@ export function SidebarContent({
       {/* Logo — L2 style */}
       {showLogo && (
         <div className="px-5 pt-5 pb-4 border-b border-border">
-          <div className="flex items-center gap-3">
+          <button onClick={() => setView('board')} className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity">
             <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
               style={{ background: 'linear-gradient(135deg, hsl(35 85% 40%), hsl(45 90% 55%))' }}>
               <Icon name="Swords" size={20} className="text-black/80" />
@@ -52,7 +52,7 @@ export function SidebarContent({
               <div className="font-display text-xl leading-none tracking-widest text-foreground" style={{ letterSpacing: '0.18em' }}>ЭРА</div>
               <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Task Command</div>
             </div>
-          </div>
+          </button>
         </div>
       )}
 
