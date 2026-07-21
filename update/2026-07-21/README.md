@@ -256,15 +256,13 @@ cp update/2026-07-21/src/pages/admin/FilesModal.tsx src/pages/admin/FilesModal.t
 cp update/2026-07-21/src/pages/admin/adminShared.ts src/pages/admin/adminShared.ts
 ```
 
-⚠️ Обратите внимание: раздел «Патчи» использует те же жёстко зашитые ссылки
-на облачное S3-хранилище `cdn.poehali.dev` в качестве запасного варианта
-(fallback), что и остальные функции с файлами. Если вы уже применяли патч
-из `update/2026-07-18/README.md` (раздел про своё S3/MinIO) для
-`backend/knowledge/index.py`, `backend/tasks/index.py` и
-`backend/ideas/index.py` — точно так же нужно проверить переменную
-`S3_PUBLIC_URL` и для `backend/patches/index.py`: если она задана в `.env`,
-резервная ссылка на `cdn.poehali.dev` вообще не используется, ничего
-патчить в коде не нужно.
+Файлы `backend/patches/index.py` и `backend/admin/index.py` в этой
+папке уже адаптированы под своё S3/MinIO-хранилище (без облачного адреса
+poehali.dev) — адрес хранилища и публичный адрес файлов берутся из
+переменных `S3_ENDPOINT`, `S3_PUBLIC_URL` (при необходимости `CDN_BASE_URL`),
+с запасным вариантом на локальный MinIO по адресу `http://127.0.0.1:9000`.
+Убедитесь, что в `.env` эти переменные заданы под ваш сервер (см. шаг 3
+инструкции `deploy/README.md`).
 
 ### Шаг 2. Примените миграции базы данных
 
