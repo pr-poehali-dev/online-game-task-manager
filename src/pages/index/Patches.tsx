@@ -19,6 +19,7 @@ export default function Patches({
 }) {
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
+  const [customRoots, setCustomRoots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
@@ -28,6 +29,10 @@ export default function Patches({
   const [uploadIndex, setUploadIndex] = useState(0);
   const [fileProgress, setFileProgress] = useState(0);
   const [togglingPath, setTogglingPath] = useState<string | null>(null);
+  const [addingRoot, setAddingRoot] = useState(false);
+  const [newRootName, setNewRootName] = useState('');
+  const [rootError, setRootError] = useState('');
+  const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
   const appliedInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -43,6 +48,7 @@ export default function Patches({
       if (res.ok) {
         const data = await res.json();
         setFiles(data.files || []);
+        setCustomRoots(data.customRoots || []);
       }
     } catch {
       /* ignore */
@@ -60,7 +66,8 @@ export default function Patches({
     }
   }, [initialTaskId]);
 
-  const tree = useMemo(() => buildTree(files), [files]);
+  const tree = useMemo(() => buildTree(files, customRoots), [files, customRoots]);
+  const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
   const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
   const taskFilesCount = useMemo(
@@ -146,6 +153,34 @@ export default function Patches({
     }
   }
 
+  async function handleAddRoot() {
+    const name = newRootName.trim();
+    if (!name) return;
+    setRootError('');
+    try {
+      await postJson({ action: 'add_root', server: active, name });
+      setNewRootName('');
+      setAddingRoot(false);
+      await load(active);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'bad_request') setRootError('Недопустимое имя папки — только буквы, цифры, «_» и «-»');
+      else setRootError('Не удалось создать папку');
+    }
+  }
+
+  async function handleDeleteRoot(name: string) {
+    setDeletingRoot(name);
+    try {
+      await postJson({ action: 'delete_root', server: active, name });
+      setCustomRoots((prev) => prev.filter((r) => r !== name));
+    } catch {
+      /* ignore */
+    } finally {
+      setDeletingRoot(null);
+    }
+  }
+
   return (
     <div className="max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
@@ -224,7 +259,43 @@ export default function Patches({
               · {files.length} файлов{files.length > 0 ? ` · ${fmtSize(totalSize)}` : ''}
             </span>
           </div>
+          {canManage && !addingRoot && (
+            <button
+              onClick={() => { setAddingRoot(true); setRootError(''); }}
+              title="Добавить папку"
+              className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="Plus" size={15} />
+            </button>
+          )}
         </div>
+
+        {canManage && addingRoot && (
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-secondary/20">
+            <input
+              autoFocus
+              value={newRootName}
+              onChange={(e) => setNewRootName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddRoot(); if (e.key === 'Escape') { setAddingRoot(false); setNewRootName(''); setRootError(''); } }}
+              placeholder="Название папки (латиница, цифры, _ и -)"
+              className="h-8 flex-1 min-w-0 px-2.5 rounded-lg border border-border bg-background text-sm"
+            />
+            <button
+              onClick={handleAddRoot}
+              disabled={!newRootName.trim()}
+              className="h-8 px-3 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-30"
+            >
+              Создать
+            </button>
+            <button
+              onClick={() => { setAddingRoot(false); setNewRootName(''); setRootError(''); }}
+              className="h-8 px-3 rounded-lg text-sm text-muted-foreground hover:text-foreground border border-border transition-colors"
+            >
+              Отмена
+            </button>
+            {rootError && <p className="text-xs text-destructive w-full">{rootError}</p>}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex justify-center py-16">
@@ -245,6 +316,9 @@ export default function Patches({
                   setDragActive={setDragActive}
                   onToggleTask={handleToggleTask}
                   togglingPath={togglingPath}
+                  customRootNames={customRootNames}
+                  onDeleteRoot={handleDeleteRoot}
+                  deletingRoot={deletingRoot}
                 />
               </div>
             ))}

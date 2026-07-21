@@ -27,9 +27,9 @@ export function fmtSize(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-export function buildTree(files: PatchFile[]): TreeNode {
+export function buildTree(files: PatchFile[], customRoots: string[] = []): TreeNode {
   const root: TreeNode = { name: '', path: '', isFile: false, children: new Map() };
-  for (const rootName of PATCH_ROOTS) {
+  for (const rootName of [...PATCH_ROOTS, ...customRoots]) {
     root.children.set(rootName, { name: rootName, path: rootName, isFile: false, children: new Map() });
   }
   for (const f of files) {

@@ -15,6 +15,9 @@ export default function TreeFolder({
   setDragActive,
   onToggleTask,
   togglingPath,
+  customRootNames,
+  onDeleteRoot,
+  deletingRoot,
 }: {
   node: TreeNode;
   depth: number;
@@ -26,9 +29,13 @@ export default function TreeFolder({
   setDragActive: (path: string | null) => void;
   onToggleTask: (path: string) => void;
   togglingPath: string | null;
+  customRootNames?: Set<string>;
+  onDeleteRoot?: (name: string) => void;
+  deletingRoot?: string | null;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
+  const [confirmRoot, setConfirmRoot] = useState(false);
   const isRoot = depth === 0;
   const entries = useMemo(() => {
     const arr = Array.from(node.children.values());
@@ -106,11 +113,12 @@ export default function TreeFolder({
 
   const rootName = node.path.split('/')[0];
   const isDragTarget = dragActive === node.path;
+  const isCustomRoot = isRoot && !!customRootNames?.has(node.name);
+  const canDeleteRoot = isCustomRoot && canManage && entries.length === 0 && !!onDeleteRoot;
 
   return (
-    <div>
-      <button
-        onClick={() => setOpen((o) => !o)}
+    <div className="group/root">
+      <div
         onDragOver={canManage && isRoot ? (e) => { e.preventDefault(); setDragActive(node.path); } : undefined}
         onDragLeave={canManage && isRoot ? () => setDragActive(null) : undefined}
         onDrop={canManage && isRoot ? (e) => {
@@ -118,18 +126,48 @@ export default function TreeFolder({
           setDragActive(null);
           collectDroppedFiles(e.dataTransfer).then((files) => onDropFiles(rootName, files));
         } : undefined}
-        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full text-left ${
+        className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full ${
           isDragTarget ? 'bg-primary/15 ring-1 ring-primary/50' : 'hover:bg-secondary/40'
         }`}
-        style={{ paddingLeft: `${depth * 18 + 4}px` }}
       >
-        <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
-        <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
-        <span className="text-sm font-medium truncate">{node.name}</span>
-        {isRoot && canManage && (
-          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover:opacity-100">перетащите папку сюда</span>
-        )}
-      </button>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+          style={{ paddingLeft: `${depth * 18 + 4}px` }}
+        >
+          <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
+          <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+          <span className="text-sm font-medium truncate">{node.name}</span>
+          {isRoot && canManage && (
+            <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите папку сюда</span>
+          )}
+        </button>
+        {canDeleteRoot && (confirmRoot ? (
+          <div className="shrink-0 flex items-center gap-1 pr-1">
+            <button
+              onClick={() => { setConfirmRoot(false); onDeleteRoot?.(node.name); }}
+              className="h-6 px-2 rounded-md bg-destructive/90 text-white text-[11px] hover:bg-destructive transition-colors"
+            >
+              Да
+            </button>
+            <button
+              onClick={() => setConfirmRoot(false)}
+              className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Нет
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setConfirmRoot(true)}
+            disabled={deletingRoot === node.name}
+            title="Удалить папку"
+            className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover/root:opacity-100 disabled:opacity-40 mr-1"
+          >
+            <Icon name={deletingRoot === node.name ? 'Loader2' : 'Trash2'} size={13} className={deletingRoot === node.name ? 'animate-spin' : ''} />
+          </button>
+        ))}
+      </div>
       {open && (
         <div>
           {entries.length === 0 && (
@@ -150,6 +188,9 @@ export default function TreeFolder({
               setDragActive={setDragActive}
               onToggleTask={onToggleTask}
               togglingPath={togglingPath}
+              customRootNames={customRootNames}
+              onDeleteRoot={onDeleteRoot}
+              deletingRoot={deletingRoot}
             />
           ))}
         </div>

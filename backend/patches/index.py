@@ -100,14 +100,23 @@ def _safe_server(server):
     return server
 
 
-def _safe_rel_path(path):
+def _safe_root_name(name):
+    '''Проверяет имя пользовательской корневой папки — только буквы/цифры/подчёркивание/дефис,
+    без служебных сегментов и не совпадает с уже зафиксированными системными корнями.'''
+    if not name or not re.match(r'^[a-zA-Z0-9_-]+$', name) or name in FIXED_ROOTS:
+        return None
+    return name
+
+
+def _safe_rel_path(path, extra_roots):
     '''Нормализует относительный путь файла в дереве патча: убирает служебные сегменты, защищает от
-    выхода за пределы дерева и требует, чтобы путь начинался с одной из фиксированных корневых папок.'''
+    выхода за пределы дерева и требует, чтобы путь начинался с одной из фиксированных корневых папок
+    либо с одной из пользовательских корневых папок этого сервера.'''
     norm = path.replace('\\', '/').strip('/')
     if not norm or norm.startswith('.') or '..' in norm.split('/'):
         return None
     parts = [p for p in norm.split('/') if p and p != '.']
-    if len(parts) < 2 or parts[0] not in FIXED_ROOTS:
+    if len(parts) < 2 or parts[0] not in FIXED_ROOTS and parts[0] not in extra_roots:
         return None
     return '/'.join(parts)
 
@@ -135,11 +144,12 @@ def handler(event: dict, context) -> dict:
     (в т.ч. из перетащенной целиком папки) грузится кусочками по ~1.5 МБ (file_init/file_chunk/
     file_complete/file_abort — одиночный HTTP-запрос физически ограничен ~3 МБ) и собирается на
     сервере в готовый файл до 200 МБ. Действие toggle_task прикрепляет/открепляет уже загруженный
-    файл к выбранной задаче (один файл может относиться сразу к нескольким задачам). Поддерживает
-    скачивание отдельного файла и сборку архива файлов конкретной задачи, удаление файла и полную
-    очистку дерева сервера. Просмотр и скачивание доступны всем авторизованным участникам,
-    загрузка/удаление/привязка к задаче — администраторам и участникам с правом полного
-    редактирования задач.'''
+    файл к выбранной задаче (один файл может относиться сразу к нескольким задачам). Помимо
+    фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
+    пустая) собственные корневые папки для конкретного сервера. Поддерживает скачивание отдельного
+    файла и сборку архива файлов конкретной задачи, удаление файла и полную очистку дерева сервера.
+    Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
+    задаче/управление папками — администраторам и участникам с правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -177,13 +187,52 @@ def handler(event: dict, context) -> dict:
             (server,)
         )
         files = [_row_to_file(r) for r in cur.fetchall()]
+        cur.execute(
+            f"SELECT name FROM {schema}.patch_custom_roots WHERE server = %s ORDER BY name",
+            (server,)
+        )
+        custom_roots = [r[0] for r in cur.fetchall()]
         cur.close(); conn.close()
-        return _ok({'files': files, 'roots': FIXED_ROOTS})
+        return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots})
 
-    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server', 'toggle_task'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server', 'toggle_task', 'add_root', 'delete_root'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
+
+    if action == 'add_root':
+        server = _safe_server(body.get('server'))
+        name = _safe_root_name((body.get('name') or '').strip())
+        if not server or not name:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"INSERT INTO {schema}.patch_custom_roots (server, name, created_by) VALUES (%s, %s, %s) "
+            f"ON CONFLICT (server, name) DO NOTHING",
+            (server, name, me['id'])
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'name': name})
+
+    if action == 'delete_root':
+        server = _safe_server(body.get('server'))
+        name = (body.get('name') or '').strip()
+        if not server or not name:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT 1 FROM {schema}.patch_files WHERE server = %s AND (path = %s OR path LIKE %s) LIMIT 1",
+            (server, name, f"{name}/%")
+        )
+        if cur.fetchone():
+            cur.close(); conn.close()
+            return _bad('root_not_empty')
+        cur.execute(
+            f"DELETE FROM {schema}.patch_custom_roots WHERE server = %s AND name = %s",
+            (server, name)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True})
 
     s3 = _s3_client()
     bucket = _bucket()
@@ -193,7 +242,12 @@ def handler(event: dict, context) -> dict:
         # кусочками (одиночный HTTP-запрос к функции физически ограничен ~3 МБ), кусочки временно
         # складываются в S3 и склеиваются в file_complete.
         server = _safe_server(body.get('server'))
-        rel_path = _safe_rel_path(body.get('path') or '')
+        cur.execute(
+            f"SELECT name FROM {schema}.patch_custom_roots WHERE server = %s",
+            (server,)
+        )
+        extra_roots = [r[0] for r in cur.fetchall()] if server else []
+        rel_path = _safe_rel_path(body.get('path') or '', extra_roots)
         task_id = body.get('taskId')
         if not server or not rel_path:
             cur.close(); conn.close()
