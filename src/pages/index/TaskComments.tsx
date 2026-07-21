@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
-import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
+import { AttachmentsList, AttachmentsTrigger, CompactAttachmentsList, type Attachment } from '@/components/AttachmentsField';
 import type { TeamMember } from './shared';
 import { resolveAssignee, AssigneeAvatar, TASKS_URL, authHeaders } from './shared';
 import MentionInput, { extractMentions } from './MentionInput';
@@ -16,6 +16,7 @@ export default function TaskComments({ taskId, team }: {
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
+  const [attachError, setAttachError] = useState('');
   const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
 
   const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
@@ -154,8 +155,8 @@ export default function TaskComments({ taskId, team }: {
             placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
             className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
-          <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" compact />
         </div>
+        <AttachmentsTrigger uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments((prev) => [...prev, a])} onError={setAttachError} />
         <button
           onClick={addComment}
           disabled={!newComment.trim() && !newAttachments.length}
@@ -164,6 +165,8 @@ export default function TaskComments({ taskId, team }: {
           <Icon name="Send" size={15} />
         </button>
       </div>
+      <CompactAttachmentsList attachments={newAttachments} onRemove={(id) => setNewAttachments((prev) => prev.filter((a) => a.id !== id))} />
+      {attachError && <p className="text-xs text-destructive mt-1.5">{attachError}</p>}
     </div>
   );
 }

@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import AttachmentsField, { AttachmentsList, type Attachment } from '@/components/AttachmentsField';
+import { AttachmentsList, AttachmentsTrigger, CompactAttachmentsList, type Attachment } from '@/components/AttachmentsField';
 import MentionInput from '../MentionInput';
 import { IDEAS_URL, authHeaders } from '../shared';
 import { initialsFor, renderText, fmtDate } from './shared';
@@ -103,6 +104,7 @@ export default function IdeaComments({
 }) {
   const topLevel = comments.filter((c) => !c.parentId);
   const mentionNames = mentionMembers.map((m) => m.name);
+  const [attachError, setAttachError] = useState('');
 
   return (
     <>
@@ -173,8 +175,8 @@ export default function IdeaComments({
               placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
               className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
-            <AttachmentsField attachments={newAttachments} onChange={setNewAttachments} uploadUrl={IDEAS_URL} authHeaders={authHeaders} action="comment_upload_file" compact />
           </div>
+          <AttachmentsTrigger uploadUrl={IDEAS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments([...newAttachments, a])} onError={setAttachError} />
           <button
             onClick={onSubmit}
             disabled={!newComment.trim() && !newAttachments.length}
@@ -183,6 +185,8 @@ export default function IdeaComments({
             <Icon name="Send" size={15} />
           </button>
         </div>
+        <CompactAttachmentsList attachments={newAttachments} onRemove={(id) => setNewAttachments(newAttachments.filter((a) => a.id !== id))} />
+        {attachError && <p className="text-xs text-destructive mt-1.5">{attachError}</p>}
       </div>
     </>
   );

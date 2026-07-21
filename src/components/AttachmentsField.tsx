@@ -47,6 +47,100 @@ export function AttachmentsList({ attachments }: { attachments: Attachment[] }) 
   );
 }
 
+export function AttachmentsTrigger({
+  uploadUrl,
+  authHeaders,
+  action = 'upload_file',
+  onUploaded,
+  onError,
+}: {
+  uploadUrl: string;
+  authHeaders: () => Record<string, string>;
+  action?: string;
+  onUploaded: (a: Attachment) => void;
+  onError?: (message: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    onError?.('');
+    setUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.readAsDataURL(file);
+      });
+      const res = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action, data: dataUrl, name: file.name, contentType: file.type }),
+      });
+      const d = await res.json();
+      if (!res.ok) {
+        if (d.error === 'file_too_large') onError?.('Файл слишком большой (максимум 300 МБ)');
+        else if (d.error === 'bad_data') onError?.('Файл повреждён при загрузке — проверьте соединение и попробуйте ещё раз');
+        else onError?.('Не удалось загрузить файл');
+        return;
+      }
+      if (d.attachment) onUploaded(d.attachment);
+    } catch {
+      onError?.('Не удалось загрузить файл');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <label
+      title="Прикрепить файл"
+      className="h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+    >
+      <Icon name={uploading ? 'Loader2' : 'Paperclip'} size={15} className={uploading ? 'animate-spin' : ''} />
+      <input type="file" className="hidden" onChange={handleFile} disabled={uploading} />
+    </label>
+  );
+}
+
+export function CompactAttachmentsList({
+  attachments,
+  onRemove,
+}: {
+  attachments: Attachment[];
+  onRemove: (id: string) => void;
+}) {
+  if (!attachments.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+      {attachments.map((a) => (
+        <div key={a.id} className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs bg-secondary/40">
+          <Icon name={fileIconFor(a.name)} size={12} className="text-muted-foreground shrink-0" />
+          <a
+            href={a.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Скачать файл"
+            className="max-w-[140px] truncate hover:text-primary hover:underline transition-colors"
+          >
+            {a.name}
+          </a>
+          <button
+            type="button"
+            onClick={() => onRemove(a.id)}
+            title="Убрать вложение"
+            className="text-muted-foreground hover:text-destructive transition-colors"
+          >
+            <Icon name="X" size={11} />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AttachmentsField({
   attachments,
   onChange,
