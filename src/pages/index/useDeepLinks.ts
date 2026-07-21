@@ -49,8 +49,14 @@ export function useDeepLinks({
   // Закрытие карточки/страницы, открытой по постоянной ссылке (/task/:id, /idea/:id, /kb/:id):
   // возвращаемся назад в истории браузера (тогда кнопка «назад» тоже закрывает элемент),
   // либо на доску, если истории нет.
+  // Проверяем именно позицию в истории (history.state.idx), а не location.key: при заходе по
+  // прямой ссылке без авторизации происходит редирект через /login (ProtectedRoute) и обратно
+  // (Login.tsx) — оба раза с replace, из-за чего location.key перестаёт быть 'default', хотя
+  // реальной записи с доской в истории по-прежнему нет. Позиция (idx) при replace не меняется,
+  // поэтому остаётся 0 и корректно определяет отсутствие истории для возврата.
   function closeOverlay() {
-    if (location.key === 'default') navigate('/', { replace: true });
+    const idx = (window.history.state as { idx?: number } | null)?.idx;
+    if (idx === undefined || idx <= 0) navigate('/', { replace: true });
     else navigate(-1);
   }
 
