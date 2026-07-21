@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import {
   taskAssigneeIds,
@@ -23,7 +23,17 @@ import { useDeepLinks } from './index/useDeepLinks';
 export default function Index() {
   const { user, isAdmin, can } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [view, setView] = useState<ViewId>('board');
+
+  // Переключение раздела через меню/сайдбар — если открыта карточка по постоянной ссылке
+  // (/task/:id, /idea/:id, /kb/:id), сначала возвращаем адрес на корень, иначе при обновлении
+  // страницы (F5) снова откроется та же карточка вместо выбранного раздела.
+  function changeView(v: ViewId) {
+    if (location.pathname !== '/') navigate('/');
+    setView(v);
+  }
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
@@ -97,14 +107,14 @@ export default function Index() {
         team={team}
         assigneeFilter={assigneeFilter}
         setAssigneeFilter={setAssigneeFilter}
-        setView={setView}
+        setView={changeView}
       />
 
       {/* Main */}
       <main className="flex-1 min-w-0 flex flex-col">
         <IndexTopbar
           view={view}
-          setView={setView}
+          setView={changeView}
           category={category}
           setCategory={setCategory}
           user={user}
@@ -142,7 +152,7 @@ export default function Index() {
           handleUpdateSprint={handleUpdateSprint}
           handleDeleteSprint={handleDeleteSprint}
           setSprintFilter={setSprintFilter}
-          setView={setView}
+          setView={changeView}
           filteredArchive={filteredArchive}
           archivedTasks={archivedTasks}
           outcomeFilter={outcomeFilter}
