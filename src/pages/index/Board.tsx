@@ -12,24 +12,46 @@ import {
 } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome, DeployStatus } from './shared';
-import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge } from './shared';
+import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, deadlineState } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
-type SortMode = 'none' | 'priority' | 'date_new' | 'date_old';
+type SortMode = 'smart' | 'priority' | 'date_new' | 'date_old';
 
 const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 const SORT_OPTIONS: { id: SortMode; label: string; icon: string }[] = [
-  { id: 'none', label: 'По умолчанию', icon: 'ArrowUpDown' },
+  { id: 'smart', label: 'Умная сортировка', icon: 'Sparkles' },
   { id: 'priority', label: 'По приоритету', icon: 'Flame' },
   { id: 'date_new', label: 'Сначала новые', icon: 'ArrowDown10' },
   { id: 'date_old', label: 'Сначала старые', icon: 'ArrowUp10' },
 ];
 
+// Умная сортировка по умолчанию: сначала критичные и горящие задачи (высокий приоритет
+// и/или дедлайн истёк или наступает в течение суток), внутри этой группы — по срочности
+// дедлайна (у кого раньше срок — выше); затем остальные задачи по дате создания (старые
+// выше, чтобы не терялись в бэклоге).
+function isUrgent(t: Task): boolean {
+  const highPriority = t.priority === 'critical' || t.priority === 'high';
+  const burningDeadline = !!t.deadline && deadlineState(t.deadline) !== 'normal';
+  return highPriority || burningDeadline;
+}
+
 function sortTasks(list: Task[], mode: SortMode): Task[] {
-  if (mode === 'none') return list;
   const arr = [...list];
-  if (mode === 'priority') {
+  if (mode === 'smart') {
+    arr.sort((a, b) => {
+      const urgentDiff = Number(isUrgent(b)) - Number(isUrgent(a));
+      if (urgentDiff !== 0) return urgentDiff;
+      const aDeadline = a.deadline ? new Date(a.deadline).getTime() : null;
+      const bDeadline = b.deadline ? new Date(b.deadline).getTime() : null;
+      if (aDeadline != null && bDeadline != null && aDeadline !== bDeadline) return aDeadline - bDeadline;
+      if (aDeadline != null && bDeadline == null) return -1;
+      if (aDeadline == null && bDeadline != null) return 1;
+      const priorityDiff = (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9);
+      if (priorityDiff !== 0) return priorityDiff;
+      return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+    });
+  } else if (mode === 'priority') {
     arr.sort((a, b) => (PRIORITY_RANK[a.priority] ?? 9) - (PRIORITY_RANK[b.priority] ?? 9));
   } else if (mode === 'date_new') {
     arr.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
@@ -187,7 +209,7 @@ export default function Board({
   currentUserId: number | null;
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [sortMode, setSortMode] = useState<SortMode>('none');
+  const [sortMode, setSortMode] = useState<SortMode>('smart');
   const [sortOpen, setSortOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [pendingDrop, setPendingDrop] = useState<{ task: Task; targetColumn: ColumnId; options: typeof deployStatuses } | null>(null);
@@ -232,7 +254,7 @@ export default function Board({
           <button
             onClick={() => setSortOpen((v) => !v)}
             className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
-              sortMode !== 'none' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+              sortMode !== 'smart' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
             }`}
           >
             <Icon name={activeSort.icon} size={13} />
