@@ -23,6 +23,7 @@ export default function Patches({
   const [loading, setLoading] = useState(true);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
+  const [zippingAll, setZippingAll] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>(initialTaskId || '');
   const [dragActive, setDragActive] = useState<string | null>(null);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[] | null>(null);
@@ -76,11 +77,14 @@ export default function Patches({
     [files, selectedTaskId]
   );
 
-  const handleDropFiles = useCallback(async (rootFolder: string, dropped: DroppedFile[]) => {
+  const handleDropFiles = useCallback(async (targetFolder: string, dropped: DroppedFile[]) => {
     if (dropped.length === 0) return;
     setUploadError('');
+    // targetFolder — полный путь папки, на которую перетащили (корневая или вложенная).
+    // Одиночный файл (d.path без вложенных сегментов) кладётся прямо в неё; перетащенная
+    // папка (d.path вида "имяПапки/файл") сохраняет свою структуру внутри targetFolder.
     const queue: UploadQueueItem[] = dropped.map((d) => ({
-      path: d.path.startsWith(`${rootFolder}/`) ? d.path : `${rootFolder}/${d.path}`,
+      path: d.path.startsWith(`${targetFolder}/`) ? d.path : `${targetFolder}/${d.path}`,
       file: d.file,
     }));
     setUploadQueue(queue);
@@ -154,6 +158,19 @@ export default function Patches({
     }
   }
 
+  async function handleDownloadAllZip() {
+    if (files.length === 0) return;
+    setZippingAll(true);
+    try {
+      const data = await postJson({ action: 'zip_all', server: active });
+      if (data.url) window.open(data.url, '_blank');
+    } catch {
+      /* ignore */
+    } finally {
+      setZippingAll(false);
+    }
+  }
+
   async function handleAddRoot() {
     const name = newRootName.trim();
     if (!name) return;
@@ -190,7 +207,8 @@ export default function Patches({
       </div>
       <p className="text-sm text-muted-foreground mb-3">
         Дерево файлов клиентского патча по каждому серверу — общее для всех задач. Перетащите папку
-        (например «System» или «data») прямо на нужную корневую папку ниже — структура внутри сохранится.
+        или отдельный файл прямо на нужную папку в дереве ниже (любого уровня вложенности) —
+        структура внутри перетащенной папки сохранится.
       </p>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden mb-4">
@@ -211,7 +229,7 @@ export default function Patches({
               <ol className="list-decimal list-inside space-y-1">
                 <li>Вверху выберите нужный сервер (C4x1, HFx3 old, HF new) — у каждого своё дерево файлов.</li>
                 <li>В выпадающем списке «Без выбранной задачи» выберите задачу, к которой относится патч.</li>
-                <li>Перетащите файл или целую папку (например «System» или «data») прямо на нужную корневую папку в дереве ниже — структура вложенных папок сохранится автоматически, а все загруженные файлы сразу привяжутся к выбранной задаче.</li>
+                <li>Перетащите файл или целую папку прямо на нужную папку в дереве ниже — можно как на корневую (например «System» или «data»), так и на любую вложенную папку внутри неё. Структура вложенных папок сохранится автоматически, а все загруженные файлы сразу привяжутся к выбранной задаче.</li>
               </ol>
               <p className="mt-1.5">
                 Загружать и удалять файлы могут только администраторы и участники с правом полного
@@ -236,7 +254,8 @@ export default function Patches({
               <p>
                 Отдельный файл скачивается иконкой скачивания рядом с ним. Если выбрана задача —
                 кнопка «Скачать файлы задачи» соберёт архив (zip) сразу из всех файлов, привязанных
-                к этой задаче.
+                к этой задаче. Кнопка «Скачать всё» рядом с названием сервера собирает архив
+                вообще из всего дерева файлов этого сервера.
               </p>
             </div>
             <div>
@@ -320,15 +339,28 @@ export default function Patches({
               · {files.length} файлов{files.length > 0 ? ` · ${fmtSize(totalSize)}` : ''}
             </span>
           </div>
-          {canManage && !addingRoot && (
-            <button
-              onClick={() => { setAddingRoot(true); setRootError(''); }}
-              title="Добавить папку"
-              className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            >
-              <Icon name="Plus" size={15} />
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {files.length > 0 && (
+              <button
+                onClick={handleDownloadAllZip}
+                disabled={zippingAll}
+                title="Скачать всё дерево файлов сервера архивом"
+                className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-40"
+              >
+                <Icon name={zippingAll ? 'Loader2' : 'FolderDown'} size={14} className={zippingAll ? 'animate-spin' : ''} />
+                {zippingAll ? 'Собираю...' : 'Скачать всё'}
+              </button>
+            )}
+            {canManage && !addingRoot && (
+              <button
+                onClick={() => { setAddingRoot(true); setRootError(''); }}
+                title="Добавить папку"
+                className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <Icon name="Plus" size={15} />
+              </button>
+            )}
+          </div>
         </div>
 
         {canManage && addingRoot && (

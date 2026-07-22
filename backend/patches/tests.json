@@ -31,6 +31,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST zip_all without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "zip_all", "server": "c4x1"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

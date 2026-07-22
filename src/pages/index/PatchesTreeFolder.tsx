@@ -24,7 +24,7 @@ export default function TreeFolder({
   canManage: boolean;
   onDelete: (path: string) => void;
   highlightTaskId: string | null;
-  onDropFiles: (rootFolder: string, files: DroppedFile[]) => void;
+  onDropFiles: (targetFolder: string, files: DroppedFile[]) => void;
   dragActive: string | null;
   setDragActive: (path: string | null) => void;
   onToggleTask: (path: string) => void;
@@ -111,7 +111,6 @@ export default function TreeFolder({
     );
   }
 
-  const rootName = node.path.split('/')[0];
   const isDragTarget = dragActive === node.path;
   const isCustomRoot = isRoot && !!customRootNames?.has(node.name);
   const canDeleteRoot = isCustomRoot && canManage && entries.length === 0 && !!onDeleteRoot;
@@ -119,12 +118,13 @@ export default function TreeFolder({
   return (
     <div className="group/root">
       <div
-        onDragOver={canManage && isRoot ? (e) => { e.preventDefault(); setDragActive(node.path); } : undefined}
-        onDragLeave={canManage && isRoot ? () => setDragActive(null) : undefined}
-        onDrop={canManage && isRoot ? (e) => {
+        onDragOver={canManage ? (e) => { e.preventDefault(); e.stopPropagation(); setDragActive(node.path); } : undefined}
+        onDragLeave={canManage ? (e) => { e.stopPropagation(); setDragActive(null); } : undefined}
+        onDrop={canManage ? (e) => {
           e.preventDefault();
+          e.stopPropagation();
           setDragActive(null);
-          collectDroppedFiles(e.dataTransfer).then((files) => onDropFiles(rootName, files));
+          collectDroppedFiles(e.dataTransfer).then((files) => onDropFiles(node.path, files));
         } : undefined}
         className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full ${
           isDragTarget ? 'bg-primary/15 ring-1 ring-primary/50' : 'hover:bg-secondary/40'
@@ -138,8 +138,8 @@ export default function TreeFolder({
           <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
           <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
           <span className="text-sm font-medium truncate">{node.name}</span>
-          {isRoot && canManage && (
-            <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите папку сюда</span>
+          {canManage && (
+            <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
           )}
         </button>
         {canDeleteRoot && (confirmRoot ? (

@@ -162,7 +162,8 @@ def handler(event: dict, context) -> dict:
     файл к выбранной задаче (один файл может относиться сразу к нескольким задачам). Помимо
     фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
     пустая) собственные корневые папки для конкретного сервера. Поддерживает скачивание отдельного
-    файла и сборку архива файлов конкретной задачи, удаление файла и полную очистку дерева сервера.
+    файла, сборку архива файлов конкретной задачи (task_zip) или архива всего дерева сервера целиком
+    (zip_all), удаление файла и полную очистку дерева сервера.
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
     задаче/управление папками — администраторам и участникам с правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
@@ -451,6 +452,33 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s", (server,))
         cur.close(); conn.close()
         return _ok({'ok': True, 'deletedCount': len(keys)})
+
+    if action == 'zip_all':
+        # Архив всего дерева файлов сервера целиком (не привязано к конкретной задаче).
+        server = _safe_server(qs.get('server') or body.get('server'))
+        if not server:
+            cur.close(); conn.close()
+            return _bad('no_server')
+        cur.execute(
+            f"SELECT path, file_key FROM {schema}.patch_files WHERE server = %s ORDER BY path",
+            (server,)
+        )
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        if not rows:
+            return _bad('empty', 404)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for path, file_key in rows:
+                obj = s3.get_object(Bucket=bucket, Key=file_key)
+                zf.writestr(path, obj['Body'].read())
+        buf.seek(0)
+        archive_key = f"patches/_archives/{server}-{uuid.uuid4().hex}.zip"
+        s3.put_object(
+            Bucket=bucket, Key=archive_key, Body=buf.getvalue(), ContentType='application/zip',
+            ContentDisposition=_content_disposition(f'{server}-patch.zip'),
+        )
+        return _ok({'url': _public_url(archive_key)})
 
     if action == 'task_zip':
         server = _safe_server(qs.get('server') or body.get('server'))
