@@ -33,6 +33,7 @@ export default function Patches({
   const [newRootName, setNewRootName] = useState('');
   const [rootError, setRootError] = useState('');
   const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
   const appliedInitial = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -187,10 +188,78 @@ export default function Patches({
         <Icon name="FolderTree" size={20} className="text-primary" />
         <h2 className="font-display tracking-wide text-lg">Патчи</h2>
       </div>
-      <p className="text-sm text-muted-foreground mb-5">
+      <p className="text-sm text-muted-foreground mb-3">
         Дерево файлов клиентского патча по каждому серверу — общее для всех задач. Перетащите папку
         (например «System» или «data») прямо на нужную корневую папку ниже — структура внутри сохранится.
       </p>
+
+      <div className="rounded-xl border border-border bg-card overflow-hidden mb-4">
+        <button
+          onClick={() => setShowHelp((v) => !v)}
+          className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-secondary/40 transition-colors"
+        >
+          <Icon name="ChevronRight" size={16} className={`text-muted-foreground shrink-0 transition-transform ${showHelp ? 'rotate-90' : ''}`} />
+          <Icon name="Info" size={15} className="text-primary shrink-0" />
+          <span className="text-sm font-medium flex-1">Как работать с патчами</span>
+        </button>
+        {showHelp && (
+          <div className="px-4 pb-4 pt-1 border-t border-border/60 text-sm text-muted-foreground space-y-3">
+            <div>
+              <p className="text-foreground font-medium mb-1 flex items-center gap-1.5">
+                <Icon name="Server" size={13} /> Серверы
+              </p>
+              <p>
+                Вверху выберите сервер (C4x1, HFx3 old, HF new) — у каждого своё независимое дерево файлов.
+                Файл, загруженный в один сервер, не появится в другом — если патч общий, его нужно
+                загрузить в каждый сервер отдельно.
+              </p>
+            </div>
+            <div>
+              <p className="text-foreground font-medium mb-1 flex items-center gap-1.5">
+                <Icon name="Upload" size={13} /> Загрузка файлов
+              </p>
+              <p>
+                Перетащите файл или целую папку прямо на нужную корневую папку в дереве ниже
+                (например «System» или «data») — структура вложенных папок внутри сохранится
+                автоматически. Загружать и удалять файлы могут только администраторы и участники
+                с правом полного редактирования задач.
+              </p>
+            </div>
+            <div>
+              <p className="text-foreground font-medium mb-1 flex items-center gap-1.5">
+                <Icon name="Paperclip" size={13} /> Привязка файлов к задаче
+              </p>
+              <p>
+                Чтобы отметить, какие файлы относятся к конкретной задаче: выберите задачу в
+                выпадающем списке «Без выбранной задачи» — файлы, уже привязанные к ней, подсветятся
+                в дереве. Наведите курсор на нужный файл и нажмите иконку скрепки, чтобы прикрепить
+                или открепить его от выбранной задачи. Один файл может относиться сразу к нескольким
+                задачам.
+              </p>
+            </div>
+            <div>
+              <p className="text-foreground font-medium mb-1 flex items-center gap-1.5">
+                <Icon name="Download" size={13} /> Скачивание
+              </p>
+              <p>
+                Отдельный файл скачивается иконкой скачивания рядом с ним. Если выбрана задача —
+                кнопка «Скачать файлы задачи» соберёт архив (zip) сразу из всех файлов, привязанных
+                к этой задаче.
+              </p>
+            </div>
+            <div>
+              <p className="text-foreground font-medium mb-1 flex items-center gap-1.5">
+                <Icon name="FolderPlus" size={13} /> Свои папки
+              </p>
+              <p>
+                Кроме стандартных корневых папок (animations, data, l2text, maps, staticmeshes,
+                System, System_eng, systextures, textures) можно создать свою — кнопкой «+» справа
+                от названия сервера. Удалить пользовательскую папку можно только когда она пустая.
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg mb-4 w-fit">
         {servers.map((s) => (
