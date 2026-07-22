@@ -1,0 +1,45 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET tree without token unauthorized",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST file_init without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "file_init", "server": "c4x1", "path": "data/test.txt"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST add_root without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "add_root", "server": "c4x1", "name": "test_root"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST zip_all without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "zip_all", "server": "c4x1"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
