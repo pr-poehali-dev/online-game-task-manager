@@ -42,7 +42,7 @@ export default function Cabinet() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto p-6">
+      <main className="max-w-4xl mx-auto p-6">
         <div className="rounded-2xl border border-border bg-card p-6 flex items-center gap-4">
           {user.photo_url ? (
             <img src={user.photo_url} alt={user.first_name} className="h-16 w-16 rounded-xl object-cover" />

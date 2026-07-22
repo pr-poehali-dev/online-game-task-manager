@@ -19,7 +19,7 @@ export default function Sprints({ sprints, tasks, onUpdate, onDelete, onFilterBo
   const activeSprints = sprints.filter((s) => s.status !== 'done');
 
   return (
-    <div className="max-w-3xl animate-fade-in">
+    <div className="max-w-5xl animate-fade-in">
       <div className="flex items-center gap-3 mb-6">
         <Icon name="Zap" size={20} className="text-primary" />
         <h2 className="font-display tracking-wide text-lg">Спринты</h2>

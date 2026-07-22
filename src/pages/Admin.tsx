@@ -314,7 +314,7 @@ export default function Admin() {
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto p-6">
+      <main className="max-w-6xl mx-auto p-6">
         <div className="flex items-center gap-2 mb-5">
           <button onClick={openActivity} className="flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
             <Icon name="History" size={15} /> Журнал

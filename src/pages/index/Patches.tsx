@@ -183,7 +183,7 @@ export default function Patches({
   }
 
   return (
-    <div className="max-w-4xl animate-fade-in">
+    <div className="max-w-6xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
         <Icon name="FolderTree" size={20} className="text-primary" />
         <h2 className="font-display tracking-wide text-lg">Патчи</h2>

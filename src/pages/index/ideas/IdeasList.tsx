@@ -27,7 +27,7 @@ export function CreateTopic({
   onCreate: () => void;
 }) {
   return (
-    <div className="max-w-2xl animate-fade-in">
+    <div className="max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-5">
         <button onClick={onCancel} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
           <Icon name="ArrowLeft" size={14} />
@@ -81,7 +81,7 @@ export default function IdeasList({
   authorName: (id: number | null) => string;
 }) {
   return (
-    <div className="max-w-3xl animate-fade-in">
+    <div className="max-w-4xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
         <Icon name="Lightbulb" size={20} className="text-primary" />
         <h2 className="font-display tracking-wide text-lg">Идеи</h2>

@@ -432,7 +432,7 @@ export function ModalOverlay({ onClose, children, wide }: { onClose: () => void;
       onClick={onClose}
     >
       <div
-        className={`w-full rounded-2xl border border-border bg-card animate-scale-in mb-8 ${wide ? 'max-w-3xl' : 'max-w-lg'}`}
+        className={`w-full rounded-2xl border border-border bg-card animate-scale-in mb-8 ${wide ? 'max-w-3xl xl:max-w-5xl' : 'max-w-lg'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

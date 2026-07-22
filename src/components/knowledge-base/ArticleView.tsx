@@ -16,7 +16,7 @@ export default function ArticleView({ article, authorName, onBack, onEdit, onDel
 }) {
   const [confirmDel, setConfirmDel] = useState(false);
   return (
-    <div className="max-w-3xl animate-fade-in">
+    <div className="max-w-5xl animate-fade-in">
       <div className="flex items-center gap-3 mb-5">
         <button onClick={onBack} className="h-8 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5">
           <Icon name="ArrowLeft" size={14} />

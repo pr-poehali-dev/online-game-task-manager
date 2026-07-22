@@ -31,7 +31,7 @@ export default function ArticleList({
   authorName: (id: number | null) => string;
 }) {
   return (
-    <div className="max-w-4xl animate-fade-in">
+    <div className="max-w-6xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
         <Icon name="BookOpen" size={20} className="text-primary" />
         <h2 className="font-display tracking-wide text-lg">База знаний</h2>
@@ -80,7 +80,7 @@ export default function ArticleList({
           <p className="text-sm">{search.trim() ? 'Ничего не найдено' : 'Здесь пока нет статей — создайте первую'}</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {filtered.map((a) => (
             <div
               key={a.id}
