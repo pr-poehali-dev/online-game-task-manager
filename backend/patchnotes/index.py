@@ -41,7 +41,8 @@ def _current_user(cur, schema, token):
 def handler(event: dict, context) -> dict:
     '''Журнал патчноутов по серверам: список записей за сервер, сгруппированных для отображения как текстовый файл
     (дата/время — название задачи). Заполняется автоматически при архивации задачи из раздела "К рестарту"
-    (см. backend/tasks). Доступно всем авторизованным участникам команды (только чтение).'''
+    (см. backend/tasks). Просмотр доступен всем авторизованным участникам команды. Действие update
+    (только для администраторов) позволяет вручную отредактировать текст записи.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -57,6 +58,43 @@ def handler(event: dict, context) -> dict:
     if not me:
         cur.close(); conn.close()
         return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unauthorized'})}
+
+    if method == 'POST':
+        body = {}
+        if event.get('body'):
+            try:
+                body = json.loads(event['body'])
+            except Exception:
+                body = {}
+        action = body.get('action')
+        if action == 'update':
+            if me['role'] != 'admin':
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+            entry_id = body.get('id')
+            task_title = (body.get('taskTitle') or '').strip()
+            if not entry_id or not task_title:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+            cur.execute(
+                f"UPDATE {schema}.patchnotes SET task_title = %s WHERE id = %s "
+                f"RETURNING id, server, task_id, task_title, created_at",
+                (task_title, int(entry_id))
+            )
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if not row:
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            entry = {
+                'id': row[0],
+                'server': row[1],
+                'taskId': str(row[2]) if row[2] is not None else None,
+                'taskTitle': row[3],
+                'createdAt': row[4].isoformat() if row[4] else None,
+            }
+            return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'entry': entry})}
+        cur.close(); conn.close()
+        return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unknown_action'})}
 
     qs = event.get('queryStringParameters') or {}
     server = qs.get('server')

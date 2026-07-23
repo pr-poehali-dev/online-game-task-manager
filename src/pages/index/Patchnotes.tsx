@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
+import { useAuth } from '@/lib/auth';
 import { PATCHNOTES_URL, authHeaders, servers, formatMskDateTime } from './shared';
 import type { ServerId } from './shared';
 
@@ -12,9 +13,13 @@ interface PatchnoteEntry {
 }
 
 export default function Patchnotes() {
+  const { isAdmin } = useAuth();
   const [active, setActive] = useState<ServerId>(servers[0].id);
   const [entries, setEntries] = useState<PatchnoteEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -43,6 +48,32 @@ export default function Patchnotes() {
       .map((e) => `${formatMskDateTime(e.createdAt)} — ${e.taskTitle}`)
       .join('\n');
     navigator.clipboard.writeText(text).catch(() => {});
+  }
+
+  function startEdit(e: PatchnoteEntry) {
+    setEditingId(e.id);
+    setEditValue(e.taskTitle);
+  }
+
+  async function saveEdit(id: number) {
+    const taskTitle = editValue.trim();
+    if (!taskTitle) return;
+    setSaving(true);
+    try {
+      const res = await fetch(PATCHNOTES_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'update', id, taskTitle }),
+      });
+      if (res.ok) {
+        setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, taskTitle } : e)));
+        setEditingId(null);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -101,10 +132,58 @@ export default function Patchnotes() {
         ) : (
           <div className="p-4 font-mono text-sm space-y-1.5 max-h-[60vh] overflow-auto scrollbar-thin">
             {entries.map((e) => (
-              <div key={e.id} className="flex gap-2 leading-relaxed">
+              <div key={e.id} className="group flex items-start gap-2 leading-relaxed">
                 <span className="text-muted-foreground shrink-0">{formatMskDateTime(e.createdAt)}</span>
                 <span className="text-muted-foreground/60 shrink-0">—</span>
-                <span className="break-words">{e.taskTitle}</span>
+                {editingId === e.id ? (
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    <input
+                      autoFocus
+                      value={editValue}
+                      onChange={(ev) => setEditValue(ev.target.value)}
+                      onKeyDown={(ev) => {
+                        if (ev.key === 'Enter') saveEdit(e.id);
+                        if (ev.key === 'Escape') setEditingId(null);
+                      }}
+                      className="flex-1 min-w-0 rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-sm font-mono text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <button
+                      onClick={() => saveEdit(e.id)}
+                      disabled={saving}
+                      className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
+                    >
+                      <Icon name={saving ? 'Loader2' : 'Check'} size={13} className={saving ? 'animate-spin' : ''} />
+                    </button>
+                    <button
+                      onClick={() => setEditingId(null)}
+                      className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <Icon name="X" size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <span className="break-words flex-1">{e.taskTitle}</span>
+                    {e.taskId && (
+                      <a
+                        href={`/task/${e.taskId}`}
+                        title="Открыть задачу"
+                        className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Icon name="ExternalLink" size={13} />
+                      </a>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => startEdit(e)}
+                        title="Редактировать запись"
+                        className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors opacity-0 group-hover:opacity-100"
+                      >
+                        <Icon name="Pencil" size={13} />
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             ))}
           </div>

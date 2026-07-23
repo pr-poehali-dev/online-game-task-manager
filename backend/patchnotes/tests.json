@@ -13,6 +13,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST update without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "update", "id": 1, "taskTitle": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }
