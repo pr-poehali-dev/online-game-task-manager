@@ -46,6 +46,7 @@ export default function Index() {
   const [openArticleId, setOpenArticleId] = useState<string | null>(null);
   const [openTopicId, setOpenTopicId] = useState<string | null>(null);
   const [patchesTaskId, setPatchesTaskId] = useState<string | null>(null);
+  const [patchesServerId, setPatchesServerId] = useState<ServerId | null>(null);
 
   const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles } = useBoardData();
 
@@ -185,7 +186,8 @@ export default function Index() {
           handleDeleteSprintPermanently={handleDeleteSprint}
           handleMoveTask={handleMoveTask}
           patchesTaskId={patchesTaskId}
-          onOpenPatchesForTask={(taskId) => { setPatchesTaskId(taskId); closeOverlay(); setView('patches'); }}
+          patchesServerId={patchesServerId}
+          onOpenPatchesForTask={(taskId, serverId) => { setPatchesTaskId(taskId); setPatchesServerId(serverId); closeOverlay(); setView('patches'); }}
         />
       </main>
     </div>

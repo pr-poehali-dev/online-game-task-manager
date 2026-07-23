@@ -17,6 +17,7 @@ import type {
   CategoryId,
   ViewId,
   DeployStatus,
+  ServerId,
 } from './shared';
 
 export default function IndexMain({
@@ -67,6 +68,7 @@ export default function IndexMain({
   handleDeleteSprintPermanently,
   handleMoveTask,
   patchesTaskId,
+  patchesServerId,
   onOpenPatchesForTask,
 }: {
   view: ViewId;
@@ -116,7 +118,8 @@ export default function IndexMain({
   handleDeleteSprintPermanently: (id: string) => void;
   handleMoveTask: (task: Task, column: ColumnId, deployStatus: DeployStatus) => void;
   patchesTaskId: string | null;
-  onOpenPatchesForTask: (taskId: string) => void;
+  patchesServerId: ServerId | null;
+  onOpenPatchesForTask: (taskId: string, serverId: ServerId) => void;
 }) {
   return (
     <>
@@ -210,6 +213,7 @@ export default function IndexMain({
             canManage={isAdmin || can('task_edit_own')}
             tasks={activeTasks.map((t) => ({ id: t.id, title: t.title }))}
             initialTaskId={patchesTaskId}
+            initialServerId={patchesServerId}
           />
         )}
       </div>
@@ -229,7 +233,7 @@ export default function IndexMain({
           isAdmin={isAdmin}
           can={can}
           currentUserId={currentUserId}
-          onOpenPatches={() => onOpenPatchesForTask(selectedTask.id)}
+          onOpenPatches={() => onOpenPatchesForTask(selectedTask.id, selectedTask.server)}
         />
       )}
       {createFor && (

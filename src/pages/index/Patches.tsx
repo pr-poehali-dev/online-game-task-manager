@@ -12,12 +12,14 @@ export default function Patches({
   canManage,
   tasks,
   initialTaskId,
+  initialServerId,
 }: {
   canManage: boolean;
   tasks: { id: string; title: string }[];
   initialTaskId?: string | null;
+  initialServerId?: ServerId | null;
 }) {
-  const [active, setActive] = useState<ServerId>(servers[0].id);
+  const [active, setActive] = useState<ServerId>(initialServerId ?? servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [customRoots, setCustomRoots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +37,7 @@ export default function Patches({
   const [rootError, setRootError] = useState('');
   const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
-  const appliedInitial = useRef(false);
+  const appliedInitial = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const uploading = uploadQueue !== null;
@@ -62,11 +64,12 @@ export default function Patches({
   useEffect(() => { load(active); }, [active, load]);
 
   useEffect(() => {
-    if (initialTaskId && !appliedInitial.current) {
+    if (initialTaskId && appliedInitial.current !== initialTaskId) {
       setSelectedTaskId(initialTaskId);
-      appliedInitial.current = true;
+      if (initialServerId) setActive(initialServerId);
+      appliedInitial.current = initialTaskId;
     }
-  }, [initialTaskId]);
+  }, [initialTaskId, initialServerId]);
 
   const tree = useMemo(() => buildTree(files, customRoots), [files, customRoots]);
   const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
