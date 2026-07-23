@@ -11,6 +11,7 @@ export default function Restart({
   onCardClick,
   onAddClick,
   onToRestart,
+  onFromRestart,
   onToggleDone,
   onArchive,
   isAdmin,
@@ -24,6 +25,7 @@ export default function Restart({
   onCardClick: (t: Task) => void;
   onAddClick: () => void;
   onToRestart: (id: string) => void;
+  onFromRestart: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   isAdmin: boolean;
@@ -137,6 +139,7 @@ export default function Restart({
                       archiveMenu={archiveMenu}
                       setArchiveMenu={setArchiveMenu}
                       onCardClick={onCardClick}
+                      onFromRestart={onFromRestart}
                       onToggleDone={onToggleDone}
                       onArchive={onArchive}
                       hasPatchFiles={tasksWithPatchFiles.has(t.id)}
@@ -158,6 +161,7 @@ function RestartTaskCard({
   archiveMenu,
   setArchiveMenu,
   onCardClick,
+  onFromRestart,
   onToggleDone,
   onArchive,
   hasPatchFiles,
@@ -168,6 +172,7 @@ function RestartTaskCard({
   archiveMenu: string | null;
   setArchiveMenu: (id: string | null) => void;
   onCardClick: (t: Task) => void;
+  onFromRestart: (id: string) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   hasPatchFiles: boolean;
@@ -202,7 +207,7 @@ function RestartTaskCard({
         <ServerBadge id={t.server} />
       </div>
       {isAdmin && (
-        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
           {done ? (
             <>
               <button
@@ -248,6 +253,14 @@ function RestartTaskCard({
               Готово
             </button>
           )}
+          <button
+            onClick={() => onFromRestart(t.id)}
+            title="Вернуть задачу обратно в колонку Done"
+            className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+          >
+            <Icon name="ArrowLeftFromLine" size={13} />
+            В Done
+          </button>
         </div>
       )}
     </div>

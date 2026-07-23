@@ -46,6 +46,7 @@ export default function IndexMain({
   openArticleId,
   tasks,
   handleToRestart,
+  handleFromRestart,
   handleToggleRestartDone,
   openTopicId,
   selectedTask,
@@ -99,6 +100,7 @@ export default function IndexMain({
   openArticleId: string | null;
   tasks: Task[];
   handleToRestart: (id: string) => void;
+  handleFromRestart: (id: string) => void;
   handleToggleRestartDone: (id: string, done: boolean) => void;
   openTopicId: string | null;
   selectedTask: Task | null;
@@ -195,6 +197,7 @@ export default function IndexMain({
             onCardClick={(t) => handleOpenTaskById(t.id)}
             onAddClick={() => setCreateFor('restart')}
             onToRestart={handleToRestart}
+            onFromRestart={handleFromRestart}
             onToggleDone={handleToggleRestartDone}
             onArchive={handleArchiveTask}
             isAdmin={isAdmin}

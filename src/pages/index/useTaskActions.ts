@@ -139,6 +139,19 @@ export function useTaskActions(
     }
   }
 
+  async function handleFromRestart(id: string) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'done' } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'from_restart', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handleToggleRestartDone(id: string, done: boolean) {
     setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, restartDone: done } : t)));
     try {
@@ -196,6 +209,7 @@ export function useTaskActions(
     handleArchiveTask,
     handleUnarchiveTask,
     handleToRestart,
+    handleFromRestart,
     handleToggleRestartDone,
     handleSetLauncherUploaded,
     handleDeleteArchivedTask,

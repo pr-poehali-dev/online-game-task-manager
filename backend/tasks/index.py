@@ -703,6 +703,36 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
+    # Возврат задачи из раздела «К рестарту» обратно в Done — по праву task_restart (только свои задачи для не-админа)
+    if action == 'from_restart':
+        task_id = body.get('id')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        if not me['perms']['task_restart']:
+            cur.close(); conn.close()
+            return _forbidden()
+        if me['role'] != 'admin':
+            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            if not own_row:
+                cur.close(); conn.close()
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+            if me['id'] not in own_ids and own_row[2] != me['id']:
+                cur.close(); conn.close()
+                return _forbidden()
+        cur.execute(
+            f"UPDATE {schema}.tasks SET column_id = 'done', updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (int(task_id),)
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+
     # Отметка задачи «К рестарту» выполненной / снятие отметки — только администратор
     if action == 'set_restart_done':
         if me['role'] != 'admin':

@@ -77,6 +77,7 @@ export default function Index() {
     handleArchiveTask,
     handleUnarchiveTask,
     handleToRestart,
+    handleFromRestart,
     handleToggleRestartDone,
     handleSetLauncherUploaded,
     handleDeleteArchivedTask,
@@ -165,6 +166,7 @@ export default function Index() {
           openArticleId={openArticleId}
           tasks={tasks}
           handleToRestart={handleToRestart}
+          handleFromRestart={handleFromRestart}
           handleToggleRestartDone={handleToggleRestartDone}
           openTopicId={openTopicId}
           selectedTask={selectedTask}
