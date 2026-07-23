@@ -216,11 +216,10 @@ def handler(event: dict, context) -> dict:
     if action == 'tasks_with_files':
         # Список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл патча —
         # используется на доске/в разделе «К рестарту», чтобы подсветить задачи, ожидающие заливки в лаунчер.
-        cur.execute(
-            f"SELECT DISTINCT jsonb_array_elements_text(task_ids) FROM {schema}.patch_files "
-            f"WHERE jsonb_array_length(task_ids) > 0"
-        )
-        task_ids = [r[0] for r in cur.fetchall()]
+        # jsonb_array_elements_text/jsonb_array_length не в белом списке БД — собираем множество id
+        # и отфильтровываем пустые массивы на стороне Python.
+        cur.execute(f"SELECT task_ids FROM {schema}.patch_files")
+        task_ids = sorted({str(tid) for (row,) in cur.fetchall() for tid in (row or [])})
         cur.close(); conn.close()
         return _ok({'taskIds': task_ids})
 
