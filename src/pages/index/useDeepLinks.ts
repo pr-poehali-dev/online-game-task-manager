@@ -55,6 +55,11 @@ export function useDeepLinks({
   // реальной записи с доской в истории по-прежнему нет. Позиция (idx) при replace не меняется,
   // поэтому остаётся 0 и корректно определяет отсутствие истории для возврата.
   function closeOverlay() {
+    // Если карточка/статья не была открыта по прямой ссылке (/task/, /idea/, /kb/) —
+    // делать history back не нужно: это приводит к случайному переходу на произвольную
+    // предыдущую страницу в истории браузера (например ранее открытую статью базы знаний).
+    const isOverlayPath = /^\/(task|idea|kb)\//.test(location.pathname);
+    if (!isOverlayPath) return;
     const idx = (window.history.state as { idx?: number } | null)?.idx;
     if (idx === undefined || idx <= 0) navigate('/', { replace: true });
     else navigate(-1);
