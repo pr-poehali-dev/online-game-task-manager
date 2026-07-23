@@ -693,7 +693,7 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
-            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, launcher_uploaded = false, updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (int(task_id),)
         )
