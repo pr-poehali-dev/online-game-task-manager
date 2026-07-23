@@ -70,6 +70,9 @@ export default function IndexMain({
   patchesTaskId,
   patchesServerId,
   onOpenPatchesForTask,
+  tasksWithPatchFiles,
+  reloadTasksWithPatchFiles,
+  handleSetLauncherUploaded,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -120,6 +123,9 @@ export default function IndexMain({
   patchesTaskId: string | null;
   patchesServerId: ServerId | null;
   onOpenPatchesForTask: (taskId: string, serverId: ServerId) => void;
+  tasksWithPatchFiles: Set<string>;
+  reloadTasksWithPatchFiles: () => void;
+  handleSetLauncherUploaded: (id: string, uploaded: boolean) => void;
 }) {
   return (
     <>
@@ -136,6 +142,7 @@ export default function IndexMain({
             isAdmin={isAdmin}
             can={can}
             currentUserId={currentUserId}
+            tasksWithPatchFiles={tasksWithPatchFiles}
           />
         )}
         {view === 'sprints' && (
@@ -193,6 +200,7 @@ export default function IndexMain({
             isAdmin={isAdmin}
             can={can}
             currentUserId={currentUserId}
+            tasksWithPatchFiles={tasksWithPatchFiles}
           />
         )}
         {view === 'ideas' && (
@@ -214,6 +222,7 @@ export default function IndexMain({
             tasks={activeTasks.map((t) => ({ id: t.id, title: t.title }))}
             initialTaskId={patchesTaskId}
             initialServerId={patchesServerId}
+            onFileTaskLinkChange={reloadTasksWithPatchFiles}
           />
         )}
       </div>
@@ -234,6 +243,8 @@ export default function IndexMain({
           can={can}
           currentUserId={currentUserId}
           onOpenPatches={() => onOpenPatchesForTask(selectedTask.id, selectedTask.server)}
+          hasPatchFiles={tasksWithPatchFiles.has(selectedTask.id)}
+          onSetLauncherUploaded={handleSetLauncherUploaded}
         />
       )}
       {createFor && (

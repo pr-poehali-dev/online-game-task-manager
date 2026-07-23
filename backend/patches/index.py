@@ -163,7 +163,9 @@ def handler(event: dict, context) -> dict:
     фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
     пустая) собственные корневые папки для конкретного сервера. Поддерживает скачивание отдельного
     файла, сборку архива файлов конкретной задачи (task_zip) или архива всего дерева сервера целиком
-    (zip_all), удаление файла и полную очистку дерева сервера.
+    (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
+    список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
+    для подсветки задач, ожидающих заливки в лаунчер.
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
     задаче/управление папками — администраторам и участникам с правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
@@ -210,6 +212,17 @@ def handler(event: dict, context) -> dict:
         custom_roots = [r[0] for r in cur.fetchall()]
         cur.close(); conn.close()
         return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots})
+
+    if action == 'tasks_with_files':
+        # Список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл патча —
+        # используется на доске/в разделе «К рестарту», чтобы подсветить задачи, ожидающие заливки в лаунчер.
+        cur.execute(
+            f"SELECT DISTINCT jsonb_array_elements_text(task_ids) FROM {schema}.patch_files "
+            f"WHERE jsonb_array_length(task_ids) > 0"
+        )
+        task_ids = [r[0] for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return _ok({'taskIds': task_ids})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server', 'toggle_task', 'add_root', 'delete_root'):
         if not me['can_manage']:

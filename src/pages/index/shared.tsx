@@ -249,6 +249,7 @@ export interface Task {
   creatorId?: number | null;
   attachments?: Attachment[];
   deadline?: string | null;
+  launcherUploaded?: boolean;
 }
 
 
@@ -331,6 +332,37 @@ export function DeployBadge({ status }: { status: DeployStatus }) {
     >
       <Icon name={ds.icon} size={10} />
       {ds.label}
+    </span>
+  );
+}
+
+// Задача требует заливки файлов патча в лаунчер, если у неё есть прикреплённые файлы
+// и она находится в состоянии, готовом к раскатке («Можно заливать на лайв» или «К рестарту»),
+// но ещё не отмечена как загруженная.
+export function needsLauncherUpload(task: { column: ColumnId; deployStatus?: DeployStatus; launcherUploaded?: boolean }, hasFiles: boolean): boolean {
+  if (!hasFiles || task.launcherUploaded) return false;
+  return task.column === 'restart' || task.deployStatus === 'ready_live';
+}
+
+export function LauncherBadge({ uploaded }: { uploaded: boolean }) {
+  if (uploaded) {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md border"
+        style={{ background: 'hsl(152 55% 50% / 0.12)', color: 'hsl(152 55% 50%)', borderColor: 'hsl(152 55% 50% / 0.3)' }}
+      >
+        <Icon name="CheckCircle2" size={10} />
+        Загружено в лаунчер
+      </span>
+    );
+  }
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-md border animate-pulse"
+      style={{ background: 'hsl(0 75% 55% / 0.15)', color: 'hsl(0 75% 60%)', borderColor: 'hsl(0 75% 55% / 0.4)' }}
+    >
+      <Icon name="UploadCloud" size={10} />
+      Требует заливки в лаунчер
     </span>
   );
 }

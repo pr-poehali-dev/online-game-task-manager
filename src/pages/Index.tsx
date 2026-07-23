@@ -48,7 +48,7 @@ export default function Index() {
   const [patchesTaskId, setPatchesTaskId] = useState<string | null>(null);
   const [patchesServerId, setPatchesServerId] = useState<ServerId | null>(null);
 
-  const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles } = useBoardData();
+  const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles, tasksWithPatchFiles, reloadTasksWithPatchFiles } = useBoardData();
 
   const {
     handleCreateSprint,
@@ -78,6 +78,7 @@ export default function Index() {
     handleUnarchiveTask,
     handleToRestart,
     handleToggleRestartDone,
+    handleSetLauncherUploaded,
     handleDeleteArchivedTask,
   } = useTaskActions(tasks, setTasks, closeOverlay, setCreateFor, setCreatePreset);
 
@@ -188,6 +189,9 @@ export default function Index() {
           patchesTaskId={patchesTaskId}
           patchesServerId={patchesServerId}
           onOpenPatchesForTask={(taskId, serverId) => { setPatchesTaskId(taskId); setPatchesServerId(serverId); closeOverlay(); setView('patches'); }}
+          tasksWithPatchFiles={tasksWithPatchFiles}
+          reloadTasksWithPatchFiles={reloadTasksWithPatchFiles}
+          handleSetLauncherUploaded={handleSetLauncherUploaded}
         />
       </main>
     </div>

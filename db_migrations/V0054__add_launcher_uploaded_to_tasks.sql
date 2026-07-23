@@ -1,0 +1,1 @@
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS launcher_uploaded BOOLEAN NOT NULL DEFAULT false;

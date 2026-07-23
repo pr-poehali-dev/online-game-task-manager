@@ -13,11 +13,13 @@ export default function Patches({
   tasks,
   initialTaskId,
   initialServerId,
+  onFileTaskLinkChange,
 }: {
   canManage: boolean;
   tasks: { id: string; title: string }[];
   initialTaskId?: string | null;
   initialServerId?: ServerId | null;
+  onFileTaskLinkChange?: () => void;
 }) {
   const [active, setActive] = useState<ServerId>(initialServerId ?? servers[0].id);
   const [files, setFiles] = useState<PatchFile[]>([]);
@@ -105,6 +107,7 @@ export default function Patches({
         await uploadFileInChunks(active, queue[i].path, queue[i].file, selectedTaskId, controller.signal, setFileProgress);
       }
       await load(active);
+      if (selectedTaskId) onFileTaskLinkChange?.();
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code;
       if (code === 'cancelled' || (err as Error)?.name === 'AbortError') {
@@ -130,6 +133,7 @@ export default function Patches({
     try {
       await postJson({ action: 'delete', server: active, path });
       setFiles((prev) => prev.filter((f) => f.path !== path));
+      onFileTaskLinkChange?.();
     } catch {
       /* ignore */
     }
@@ -141,6 +145,7 @@ export default function Patches({
     try {
       const data = await postJson({ action: 'toggle_task', server: active, path, taskId: selectedTaskId });
       setFiles((prev) => prev.map((f) => (f.path === path ? { ...f, taskIds: data.taskIds } : f)));
+      onFileTaskLinkChange?.();
     } catch {
       /* ignore */
     } finally {

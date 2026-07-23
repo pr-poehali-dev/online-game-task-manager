@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, TaskOutcome } from './shared';
-import { taskAssigneeIds, outcomes, servers, serverMeta, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge } from './shared';
+import { taskAssigneeIds, outcomes, servers, serverMeta, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, needsLauncherUpload, LauncherBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 export default function Restart({
@@ -16,6 +16,7 @@ export default function Restart({
   isAdmin,
   can,
   currentUserId,
+  tasksWithPatchFiles,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -28,6 +29,7 @@ export default function Restart({
   isAdmin: boolean;
   can: (key: PermissionKey) => boolean;
   currentUserId: number | null;
+  tasksWithPatchFiles: Set<string>;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [archiveMenu, setArchiveMenu] = useState<string | null>(null);
@@ -137,6 +139,7 @@ export default function Restart({
                       onCardClick={onCardClick}
                       onToggleDone={onToggleDone}
                       onArchive={onArchive}
+                      hasPatchFiles={tasksWithPatchFiles.has(t.id)}
                     />
                   ))}
                 </div>
@@ -157,6 +160,7 @@ function RestartTaskCard({
   onCardClick,
   onToggleDone,
   onArchive,
+  hasPatchFiles,
 }: {
   task: Task;
   team: TeamMember[];
@@ -166,9 +170,11 @@ function RestartTaskCard({
   onCardClick: (t: Task) => void;
   onToggleDone: (id: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
+  hasPatchFiles: boolean;
 }) {
   const assignees = taskAssigneeIds(t);
   const done = !!t.restartDone;
+  const showLauncherBadge = needsLauncherUpload(t, hasPatchFiles);
   return (
     <div
       onClick={() => onCardClick(t)}
@@ -185,9 +191,12 @@ function RestartTaskCard({
         </div>
       </div>
       <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
-      {t.deployStatus && t.deployStatus !== 'none' && (
-        <div className="mb-2"><DeployBadge status={t.deployStatus} /></div>
-      )}
+      {(t.deployStatus && t.deployStatus !== 'none') || showLauncherBadge ? (
+        <div className="flex items-center flex-wrap gap-1.5 mb-2">
+          {t.deployStatus && t.deployStatus !== 'none' && <DeployBadge status={t.deployStatus} />}
+          {showLauncherBadge && <LauncherBadge uploaded={false} />}
+        </div>
+      ) : null}
       <div className="flex items-center gap-2 mb-3">
         <AssigneeStack ids={assignees} team={team} size={24} />
         <ServerBadge id={t.server} />

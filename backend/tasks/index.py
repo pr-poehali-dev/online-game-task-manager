@@ -276,12 +276,13 @@ def _row_to_task(r):
         'creatorId': r[18],
         'attachments': r[19] if r[19] is not None else [],
         'deadline': r[20].isoformat() if r[20] else None,
+        'launcherUploaded': bool(r[21]),
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded"
 )
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -559,12 +560,17 @@ def handler(event: dict, context) -> dict:
                 if requested_column not in ('todo', 'progress', 'done'):
                     cur.close(); conn.close()
                     return _forbidden()
+                deploy_changed = requested_deploy != own_row[4]
+                # Смена статуса деплоя означает новую сборку — сбрасываем отметку «Загружено в лаунчер»,
+                # чтобы сотрудник заново залил актуальные файлы патча
                 cur.execute(
-                    f"UPDATE {schema}.tasks SET deploy_status = %s, column_id = %s, updated_at = NOW() WHERE id = %s RETURNING {TASK_COLUMNS}",
-                    (requested_deploy, requested_column, int(task_id))
+                    f"UPDATE {schema}.tasks SET deploy_status = %s, column_id = %s, "
+                    f"launcher_uploaded = CASE WHEN %s THEN false ELSE launcher_uploaded END, updated_at = NOW() "
+                    f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+                    (requested_deploy, requested_column, deploy_changed, int(task_id))
                 )
                 row = cur.fetchone()
-                if requested_deploy != own_row[4]:
+                if deploy_changed:
                     _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids)
                     _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], DEPLOY_STATUS_LABELS.get(requested_deploy, requested_deploy))
                 cur.close(); conn.close()
@@ -597,10 +603,14 @@ def handler(event: dict, context) -> dict:
         kb_ids = json.dumps(_norm_kb(body)) if 'kbArticleIds' in body else json.dumps(existing['kbArticleIds'] or [])
         attachments = json.dumps(body.get('attachments')) if 'attachments' in body else json.dumps(existing['attachments'] or [])
         prev_ids = existing['assigneeIds'] or []
+        new_deploy_status_val = body.get('deployStatus', existing['deployStatus']) or 'none'
+        deploy_changed_full = new_deploy_status_val != own_row[4]
+        # Смена статуса деплоя означает новую сборку — сбрасываем отметку «Загружено в лаунчер»
+        launcher_uploaded = False if deploy_changed_full else bool(existing['launcherUploaded'])
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, updated_at = NOW() "
+            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, launcher_uploaded = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') if 'title' in body else existing['title'] or '').strip(),
@@ -612,13 +622,14 @@ def handler(event: dict, context) -> dict:
                 body.get('server', existing['server']),
                 body.get('category', existing['category']) or 'other',
                 body.get('sprintId', existing['sprintId']),
-                body.get('deployStatus', existing['deployStatus']) or 'none',
+                new_deploy_status_val,
                 body.get('description', existing['description']),
                 links,
                 kb_ids,
                 bool(body.get('restartDone', existing['restartDone'])),
                 attachments,
                 body.get('deadline', existing['deadline']),
+                launcher_uploaded,
                 int(task_id),
             )
         )
@@ -630,11 +641,10 @@ def handler(event: dict, context) -> dict:
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
         task_title_full = (body.get('title') if 'title' in body else existing['title'] or '').strip()
         _notify_assignees(cur, schema, new_ids, task_title_full, me['id'], task_id, body.get('description', existing['description']))
-        new_deploy_status = body.get('deployStatus', existing['deployStatus']) or 'none'
         task_title = task_title_full
-        if new_deploy_status != own_row[4]:
-            _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status, me['id'], own_row[2], assignee_ids)
-            _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status, new_deploy_status))
+        if deploy_changed_full:
+            _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status_val, me['id'], own_row[2], assignee_ids)
+            _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status_val, new_deploy_status_val))
         _log_activity(cur, schema, me['id'], 'task_update', 'task', task_id, task_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
@@ -683,7 +693,7 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
-            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, launcher_uploaded = false, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (int(task_id),)
         )
@@ -707,6 +717,37 @@ def handler(event: dict, context) -> dict:
             f"UPDATE {schema}.tasks SET restart_done = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (done, int(task_id))
+        )
+        row = cur.fetchone()
+        cur.close(); conn.close()
+        if not row:
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
+
+    # Отметка «Загружено в лаунчер» / снятие отметки — доступно администратору, автору и исполнителям
+    # задачи (тем же, кто может менять статус деплоя)
+    if action == 'set_launcher_uploaded':
+        task_id = body.get('id')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        if not own_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
+        is_creator = own_row[2] == me['id']
+        is_assignee = me['id'] in own_ids
+        can_edit_deploy = me['role'] == 'admin' or is_creator or is_assignee
+        if not can_edit_deploy:
+            cur.close(); conn.close()
+            return _forbidden()
+        uploaded = bool(body.get('uploaded', True))
+        cur.execute(
+            f"UPDATE {schema}.tasks SET launcher_uploaded = %s, updated_at = NOW() "
+            f"WHERE id = %s RETURNING {TASK_COLUMNS}",
+            (uploaded, int(task_id))
         )
         row = cur.fetchone()
         cur.close(); conn.close()

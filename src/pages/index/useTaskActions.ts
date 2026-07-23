@@ -152,6 +152,19 @@ export function useTaskActions(
     }
   }
 
+  async function handleSetLauncherUploaded(id: string, uploaded: boolean) {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, launcherUploaded: uploaded } : t)));
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'set_launcher_uploaded', id, uploaded }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   async function handleDeleteArchivedTask(id: string) {
     const task = tasks.find((t) => t.id === id);
     if (!task) return;
@@ -184,6 +197,7 @@ export function useTaskActions(
     handleUnarchiveTask,
     handleToRestart,
     handleToggleRestartDone,
+    handleSetLauncherUploaded,
     handleDeleteArchivedTask,
   };
 }

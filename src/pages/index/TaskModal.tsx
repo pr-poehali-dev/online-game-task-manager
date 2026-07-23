@@ -4,12 +4,12 @@ import RichEditor from '@/components/RichEditor';
 import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
-import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, DeployBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
+import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, DeployBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 import TaskComments from './TaskComments';
 import type { PermissionKey } from '@/lib/auth';
 
-export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId, onOpenPatches }: {
+export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId, onOpenPatches, hasPatchFiles, onSetLauncherUploaded }: {
   task: Task;
   team: TeamMember[];
   kbArticles: KbArticleBrief[];
@@ -24,6 +24,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   can: (key: PermissionKey) => boolean;
   currentUserId: number | null;
   onOpenPatches?: () => void;
+  hasPatchFiles?: boolean;
+  onSetLauncherUploaded?: (id: string, uploaded: boolean) => void;
 }) {
   const [form, setForm] = useState<Task>({ ...task });
   const [links, setLinks] = useState<{ url: string; label: string }[]>(task.links ?? []);
@@ -345,14 +347,28 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         )}
 
         {!isEditing && onOpenPatches && (
-          <button
-            type="button"
-            onClick={onOpenPatches}
-            className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
-          >
-            <Icon name="FolderTree" size={14} />
-            Показать файлы патча этой задачи
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onOpenPatches}
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
+            >
+              <Icon name="FolderTree" size={14} />
+              Показать файлы патча этой задачи
+            </button>
+            {needsLauncherUpload(task, !!hasPatchFiles) && <LauncherBadge uploaded={false} />}
+            {hasPatchFiles && task.launcherUploaded && <LauncherBadge uploaded />}
+            {hasPatchFiles && canEditDeploy && onSetLauncherUploaded && (
+              <button
+                type="button"
+                onClick={() => onSetLauncherUploaded(task.id, !task.launcherUploaded)}
+                className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
+              >
+                <Icon name={task.launcherUploaded ? 'RotateCcw' : 'CheckCircle2'} size={14} />
+                {task.launcherUploaded ? 'Снять отметку загрузки' : 'Отметить как загружено в лаунчер'}
+              </button>
+            )}
+          </div>
         )}
 
         {!isEditing && canEditDeploy && (

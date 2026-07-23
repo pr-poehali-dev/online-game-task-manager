@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome, DeployStatus } from './shared';
-import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, deadlineState } from './shared';
+import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, deadlineState, needsLauncherUpload, LauncherBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 type SortMode = 'smart' | 'priority' | 'date_new' | 'date_old';
@@ -79,6 +79,7 @@ function TaskCard({
   setMenuFor,
   onCardClick,
   onArchive,
+  hasPatchFiles,
 }: {
   task: Task;
   index: number;
@@ -89,9 +90,11 @@ function TaskCard({
   setMenuFor: (id: string | null) => void;
   onCardClick: (t: Task) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
+  hasPatchFiles: boolean;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: t.id, disabled: !canDrag });
   const assignees = taskAssigneeIds(t);
+  const showLauncherBadge = needsLauncherUpload(t, hasPatchFiles);
   return (
     <div
       ref={setNodeRef}
@@ -140,10 +143,11 @@ function TaskCard({
         <PriorityBadge p={t.priority} />
       </div>
       <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
-      {(t.deployStatus && t.deployStatus !== 'none') || t.deadline ? (
+      {(t.deployStatus && t.deployStatus !== 'none') || t.deadline || showLauncherBadge ? (
         <div className="flex items-center flex-wrap gap-1.5 mb-2">
           {t.deployStatus && t.deployStatus !== 'none' && <DeployBadge status={t.deployStatus} />}
           {t.deadline && <DeadlineBadge iso={t.deadline} />}
+          {showLauncherBadge && <LauncherBadge uploaded={false} />}
         </div>
       ) : null}
       <div className="flex items-center gap-2">
@@ -196,6 +200,7 @@ export default function Board({
   isAdmin,
   can,
   currentUserId,
+  tasksWithPatchFiles,
 }: {
   tasks: Task[];
   team: TeamMember[];
@@ -207,6 +212,7 @@ export default function Board({
   isAdmin: boolean;
   can: (key: PermissionKey) => boolean;
   currentUserId: number | null;
+  tasksWithPatchFiles: Set<string>;
 }) {
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('smart');
@@ -303,6 +309,7 @@ export default function Board({
                       setMenuFor={setMenuFor}
                       onCardClick={onCardClick}
                       onArchive={onArchive}
+                      hasPatchFiles={tasksWithPatchFiles.has(t.id)}
                     />
                   ))}
                   {can('task_create') && (
