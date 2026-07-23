@@ -22,6 +22,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST delete without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete", "id": 1},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

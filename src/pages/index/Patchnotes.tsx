@@ -20,6 +20,7 @@ export default function Patchnotes() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -73,6 +74,25 @@ export default function Patchnotes() {
       /* ignore */
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function deleteEntry(id: number) {
+    if (!window.confirm('Удалить эту запись из патчноута?')) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(PATCHNOTES_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'delete', id }),
+      });
+      if (res.ok) {
+        setEntries((prev) => prev.filter((e) => e.id !== id));
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -168,7 +188,7 @@ export default function Patchnotes() {
                       <a
                         href={`/task/${e.taskId}`}
                         title="Открыть задачу"
-                        className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors opacity-0 group-hover:opacity-100"
+                        className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
                       >
                         <Icon name="ExternalLink" size={13} />
                       </a>
@@ -180,6 +200,16 @@ export default function Patchnotes() {
                         className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors opacity-0 group-hover:opacity-100"
                       >
                         <Icon name="Pencil" size={13} />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button
+                        onClick={() => deleteEntry(e.id)}
+                        disabled={deletingId === e.id}
+                        title="Удалить запись"
+                        className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-40"
+                      >
+                        <Icon name={deletingId === e.id ? 'Loader2' : 'Trash2'} size={13} className={deletingId === e.id ? 'animate-spin' : ''} />
                       </button>
                     )}
                   </>

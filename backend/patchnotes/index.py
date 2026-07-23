@@ -41,8 +41,8 @@ def _current_user(cur, schema, token):
 def handler(event: dict, context) -> dict:
     '''Журнал патчноутов по серверам: список записей за сервер, сгруппированных для отображения как текстовый файл
     (дата/время — название задачи). Заполняется автоматически при архивации задачи из раздела "К рестарту"
-    (см. backend/tasks). Просмотр доступен всем авторизованным участникам команды. Действие update
-    (только для администраторов) позволяет вручную отредактировать текст записи.'''
+    (см. backend/tasks). Просмотр доступен всем авторизованным участникам команды. Действия update
+    и delete (только для администраторов) позволяют вручную отредактировать или удалить запись.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -93,6 +93,20 @@ def handler(event: dict, context) -> dict:
                 'createdAt': row[4].isoformat() if row[4] else None,
             }
             return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'entry': entry})}
+        if action == 'delete':
+            if me['role'] != 'admin':
+                cur.close(); conn.close()
+                return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+            entry_id = body.get('id')
+            if not entry_id:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+            cur.execute(f"DELETE FROM {schema}.patchnotes WHERE id = %s RETURNING id", (int(entry_id),))
+            row = cur.fetchone()
+            cur.close(); conn.close()
+            if not row:
+                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+            return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
         cur.close(); conn.close()
         return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'unknown_action'})}
 
