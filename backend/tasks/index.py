@@ -413,7 +413,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -961,6 +961,82 @@ def handler(event: dict, context) -> dict:
         # переносим ответы на верхний уровень, затем удаляем
         cur.execute(f"UPDATE {schema}.task_comments SET parent_id = NULL WHERE parent_id = %s", (int(cid),))
         cur.execute(f"DELETE FROM {schema}.task_comments WHERE id = %s", (int(cid),))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Приватные заметки: видны только автору, выбранному адресату и админам.
+    # Прикрепляются либо к задаче целиком (commentId = null), либо к конкретному комментарию.
+    if action == 'private_notes':
+        task_id = body.get('taskId') or (event.get('queryStringParameters') or {}).get('taskId')
+        if not task_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_task_id'})}
+        if me['role'] == 'admin':
+            cur.execute(
+                f"SELECT id, task_id, comment_id, author_id, target_user_id, text, created_at "
+                f"FROM {schema}.private_notes WHERE task_id = %s ORDER BY created_at ASC",
+                (int(task_id),)
+            )
+        else:
+            cur.execute(
+                f"SELECT id, task_id, comment_id, author_id, target_user_id, text, created_at "
+                f"FROM {schema}.private_notes WHERE task_id = %s AND (author_id = %s OR target_user_id = %s) "
+                f"ORDER BY created_at ASC",
+                (int(task_id), me['id'], me['id'])
+            )
+        notes = [{
+            'id': str(r[0]), 'taskId': str(r[1]), 'commentId': str(r[2]) if r[2] else None,
+            'authorId': r[3], 'targetUserId': r[4], 'text': r[5],
+            'createdAt': r[6].isoformat() if r[6] else None,
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'notes': notes})}
+
+    if action == 'private_note_add':
+        task_id = body.get('taskId')
+        target_user_id = body.get('targetUserId')
+        text = (body.get('text') or '').strip()
+        comment_id = body.get('commentId')
+        if not task_id or not target_user_id or not text:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        try:
+            target_user_id = int(target_user_id)
+        except (TypeError, ValueError):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_target'})}
+        if target_user_id == me['id']:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'cannot_target_self'})}
+        cur.execute(
+            f"INSERT INTO {schema}.private_notes (task_id, comment_id, author_id, target_user_id, text) "
+            f"VALUES (%s, %s, %s, %s, %s) RETURNING id, created_at",
+            (int(task_id), int(comment_id) if comment_id else None, me['id'], target_user_id, text)
+        )
+        new = cur.fetchone()
+        _add_notif(cur, schema, target_user_id, 'private_note', 'Вам оставили приватную заметку в задаче', _snippet(text), 'task', task_id, me['id'])
+        note = {
+            'id': str(new[0]), 'taskId': str(task_id), 'commentId': str(comment_id) if comment_id else None,
+            'authorId': me['id'], 'targetUserId': target_user_id, 'text': text,
+            'createdAt': new[1].isoformat() if new[1] else None,
+        }
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'note': note})}
+
+    if action == 'private_note_delete':
+        nid = body.get('id')
+        if not nid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT author_id FROM {schema}.private_notes WHERE id = %s", (int(nid),))
+        nrow = cur.fetchone()
+        if not nrow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if nrow[0] != me['id'] and me['role'] != 'admin':
+            cur.close(); conn.close()
+            return _forbidden()
+        cur.execute(f"DELETE FROM {schema}.private_notes WHERE id = %s", (int(nid),))
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 

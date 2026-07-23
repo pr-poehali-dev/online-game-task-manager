@@ -6,7 +6,8 @@ import type { TeamMember } from './shared';
 import { resolveAssignee, AssigneeAvatar, TASKS_URL, authHeaders } from './shared';
 import MentionInput, { extractMentions } from './MentionInput';
 import type { TaskComment } from './TaskModalShared';
-import { renderMentionText } from './TaskModalShared';
+import { renderMentionText, PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
+import usePrivateNotes from './usePrivateNotes';
 
 export default function TaskComments({ taskId, team }: {
   taskId: string;
@@ -18,6 +19,7 @@ export default function TaskComments({ taskId, team }: {
   const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
   const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
+  const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(taskId);
 
   const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
   const mentionNames = mentionMembers.map((m) => m.name);
@@ -108,6 +110,10 @@ export default function TaskComments({ taskId, team }: {
               <AttachmentsList attachments={c.attachments} />
             </div>
           )}
+          <div className="mt-1.5 flex flex-col gap-1.5">
+            <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
+            <PrivateNoteComposer compact team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />
+          </div>
         </div>
       </div>
     );

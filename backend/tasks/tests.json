@@ -22,6 +22,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST private_note_add without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "private_note_add", "taskId": 1, "targetUserId": 2, "text": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

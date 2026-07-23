@@ -5,8 +5,9 @@ import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
 import { taskAssigneeIds, resolveAssignee, servers, categories, outcomes, outcomeMeta, deployStatuses, columns, PriorityBadge, ServerBadge, CategoryBadge, DeadlineBadge, DeployBadge, AssigneeAvatar, Select, ModalOverlay, inputCls, formatMskDateTime, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge } from './shared';
-import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
+import { AssigneeMultiSelect, KbMultiSelect, PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
 import TaskComments from './TaskComments';
+import usePrivateNotes from './usePrivateNotes';
 import type { PermissionKey } from '@/lib/auth';
 
 export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClose, onSave, onDelete, onArchive, onUnarchive, sprints, isAdmin, can, currentUserId, onOpenPatches, hasPatchFiles, onSetLauncherUploaded }: {
@@ -46,6 +47,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+  const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(task.id);
 
   function addLink() {
     if (!newLink.url.trim()) return;
@@ -333,6 +335,13 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             />
           )}
         </div>
+
+        {!isEditing && (
+          <div className="flex flex-col gap-2">
+            <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} />
+            <PrivateNoteComposer team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />
+          </div>
+        )}
 
         {((isEditing && canFullEdit) || attachments.length > 0) && (
           /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе и в режиме редактирования */
