@@ -1,8 +1,17 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { formatMskDateTime } from './shared';
 import { fmtSize, collectDroppedFiles } from './patchesUtils';
 import type { TreeNode, DroppedFile } from './patchesUtils';
+
+// Проверяет, есть ли внутри папки (в т.ч. вложенных) файл, прикреплённый к задаче
+function containsTask(node: TreeNode, taskId: string): boolean {
+  if (node.isFile) return !!node.file?.taskIds.includes(taskId);
+  for (const child of node.children.values()) {
+    if (containsTask(child, taskId)) return true;
+  }
+  return false;
+}
 
 export default function TreeFolder({
   node,
@@ -45,6 +54,14 @@ export default function TreeFolder({
     });
     return arr;
   }, [node]);
+
+  // Автораскрытие папки, если внутри неё (в т.ч. во вложенных подпапках) есть файл нужной задачи
+  useEffect(() => {
+    if (highlightTaskId && !node.isFile && containsTask(node, highlightTaskId)) {
+      setOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightTaskId, node]);
 
   if (node.isFile && node.file) {
     const f = node.file;
