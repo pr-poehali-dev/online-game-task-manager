@@ -16,7 +16,6 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   onCreate: (t: Task) => void;
   sprints: Sprint[];
 }) {
-  const activeSprint = sprints.find((s) => s.status === 'active');
   const initialDeployStatus = (deployStatuses.find((ds) => ds.column === column)?.id ?? 'none') as DeployStatus;
   const [form, setForm] = useState({
     title: preset?.title ?? '',
@@ -28,7 +27,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     priority: (preset?.priority ?? 'medium') as Priority,
     server: (preset?.server ?? 'hfnew') as ServerId,
     category: (preset?.category ?? 'other') as CategoryId,
-    sprintId: activeSprint?.id ?? '',
+    sprintId: '',
     description: '',
     deadline: '',
   });
