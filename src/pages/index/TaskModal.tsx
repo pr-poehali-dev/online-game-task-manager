@@ -351,7 +351,11 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
             <button
               type="button"
               onClick={onOpenPatches}
-              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
+              className={`inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm transition-colors w-fit ${
+                hasPatchFiles
+                  ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
+                  : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+              }`}
             >
               <Icon name="FolderTree" size={14} />
               Показать файлы патча этой задачи
