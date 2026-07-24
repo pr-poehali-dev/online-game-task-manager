@@ -93,6 +93,7 @@ export default function TaskComments({ taskId, team }: {
             <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
               <Icon name="CornerDownRight" size={11} /> Ответить
             </button>
+            <PrivateNoteComposer variant="button" team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />
             {canDel && (
               <button
                 onClick={() => removeComment(c.id)}
@@ -110,10 +111,7 @@ export default function TaskComments({ taskId, team }: {
               <AttachmentsList attachments={c.attachments} />
             </div>
           )}
-          <div className="mt-1.5 flex flex-col gap-1.5">
-            <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
-            <PrivateNoteComposer compact team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />
-          </div>
+          <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
         </div>
       </div>
     );

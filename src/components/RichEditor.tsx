@@ -17,6 +17,7 @@ interface Props {
   placeholder?: string;
   onImageUpload?: (file: File) => Promise<string>;
   large?: boolean;
+  toolbarExtra?: React.ReactNode;
 }
 
 function ToolBtn({
@@ -50,7 +51,7 @@ function Divider() {
   return <div className="w-px h-5 bg-border mx-0.5 shrink-0" />;
 }
 
-export default function RichEditor({ content, onChange, placeholder, onImageUpload, large }: Props) {
+export default function RichEditor({ content, onChange, placeholder, onImageUpload, large, toolbarExtra }: Props) {
   const [linkDialogOpen, setLinkDialogOpen] = useState(false);
   const [linkUrl, setLinkUrl] = useState('');
   const [linkText, setLinkText] = useState('');
@@ -196,7 +197,13 @@ export default function RichEditor({ content, onChange, placeholder, onImageUplo
           </>
         )}
 
-        <div className="ml-auto flex gap-0.5">
+        <div className="ml-auto flex items-center gap-0.5">
+          {toolbarExtra && (
+            <>
+              {toolbarExtra}
+              <Divider />
+            </>
+          )}
           <ToolBtn title="Отменить" active={false} onClick={() => editor.chain().focus().undo().run()}>
             <Icon name="Undo2" size={13} />
           </ToolBtn>

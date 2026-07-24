@@ -320,13 +320,19 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
         {/* Description */}
         <div>
-          <label className="block text-[10px] text-muted-foreground mb-1">Описание</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-[10px] text-muted-foreground">Описание</label>
+            {!(isEditing && canFullEdit) && (
+              <PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />
+            )}
+          </div>
           {isEditing && canFullEdit ? (
             <RichEditor
               content={form.description ?? ''}
               onChange={(html) => setForm((p) => ({ ...p, description: html }))}
               onImageUpload={uploadImage}
               large
+              toolbarExtra={<PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />}
             />
           ) : (
             <div
@@ -334,14 +340,12 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
             />
           )}
+          {privateNotes.some((n) => !n.commentId) && (
+            <div className="mt-2">
+              <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} />
+            </div>
+          )}
         </div>
-
-        {!isEditing && (
-          <div className="flex flex-col gap-2">
-            <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} />
-            <PrivateNoteComposer team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />
-          </div>
-        )}
 
         {((isEditing && canFullEdit) || attachments.length > 0) && (
           /* Attachments — видно всем, у кого открыта задача; редактирование только при полном доступе и в режиме редактирования */

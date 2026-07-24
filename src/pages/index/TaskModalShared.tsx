@@ -107,11 +107,12 @@ export function AssigneeMultiSelect({ team, value, onChange, compact }: {
   );
 }
 
-export function PrivateNoteComposer({ team, currentUserId, onAdd, compact }: {
+export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'button', align = 'left' }: {
   team: TeamMember[];
   currentUserId: number | null;
   onAdd: (targetUserId: number, text: string) => Promise<boolean>;
-  compact?: boolean;
+  variant?: 'button' | 'icon';
+  align?: 'left' | 'right';
 }) {
   const [open, setOpen] = useState(false);
   const [targetId, setTargetId] = useState<number | null>(null);
@@ -133,16 +134,29 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, compact }: {
 
   return (
     <div className="relative inline-block">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-primary hover:border-primary/50 transition-colors ${compact ? 'h-7 px-2 text-xs' : 'h-8 px-2.5 text-xs'}`}
-      >
-        <Icon name="EyeOff" size={12} />
-        Приватная заметка
-      </button>
+      {variant === 'icon' ? (
+        <button
+          type="button"
+          title="Приватная заметка"
+          onClick={() => setOpen((v) => !v)}
+          className={`h-7 w-7 flex items-center justify-center rounded-md text-sm transition-colors ${
+            open ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+          }`}
+        >
+          <Icon name="EyeOff" size={14} />
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+        >
+          <Icon name="EyeOff" size={11} />
+          Приватная заметка
+        </button>
+      )}
       {open && (
-        <div className="absolute left-0 top-full mt-1.5 z-30 w-72 rounded-lg border border-border bg-card shadow-xl p-2.5 animate-scale-in">
+        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1.5 z-30 w-72 rounded-lg border border-border bg-card shadow-xl p-2.5 animate-scale-in`}>
           <label className="block text-[10px] text-muted-foreground mb-1">Видно только адресату и админам</label>
           <select
             value={targetId ?? ''}
@@ -227,7 +241,7 @@ export function PrivateNotesList({ notes, team, currentUserId, isAdmin, onRemove
   const filtered = notes.filter((n) => n.commentId === commentId);
   if (filtered.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="mt-1.5 flex flex-col gap-1.5">
       {filtered.map((n) => (
         <PrivateNoteItem key={n.id} note={n} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={onRemove} />
       ))}
