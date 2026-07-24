@@ -215,6 +215,7 @@ ALL_PERMISSIONS = [
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
+    'launcher_notify',
 ]
 
 
@@ -394,6 +395,60 @@ def _forbidden():
     return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
 
+def _needs_launcher_upload(column, deploy_status, launcher_uploaded, has_files):
+    '''Та же логика, что и needsLauncherUpload на фронтенде (src/pages/index/shared.tsx) —
+    задача требует заливки в лаунчер, если есть прикреплённые файлы патча, задача в состоянии,
+    готовом к раскатке (колонка «К рестарту» или статус «Можно заливать на лайв»), и ещё не отмечена загруженной.'''
+    if not has_files or launcher_uploaded:
+        return False
+    return column == 'restart' or deploy_status == 'ready_live'
+
+
+def _task_has_patch_files(cur, schema, task_id):
+    cur.execute(
+        f"SELECT EXISTS(SELECT 1 FROM {schema}.patch_files WHERE task_ids @> %s)",
+        (json.dumps([int(task_id)]),)
+    )
+    return bool(cur.fetchone()[0])
+
+
+def _notify_launcher_required(cur, schema, task_id, task_title, actor_id, creator_id, assignee_ids):
+    '''Уведомляет всех пользователей с правом launcher_notify (кроме того, чьё действие вызвало появление
+    бейджа) о том, что у задачи появился бейдж «Требуется залить в лаунчер» — запись в БД + Telegram.'''
+    cur.execute(
+        f"SELECT id, role, permissions, telegram_id, is_active, tg_notify_muted FROM {schema}.users WHERE is_active = true"
+    )
+    targets = []
+    for uid, role, perms_raw, tg_id, is_active, tg_muted in cur.fetchall():
+        if uid == actor_id:
+            continue
+        perms = perms_raw if isinstance(perms_raw, dict) else {}
+        allowed = perms.get('launcher_notify')
+        allowed = (role == 'admin') if allowed is None else bool(allowed)
+        if allowed:
+            targets.append((uid, tg_id, tg_muted))
+    if not targets:
+        return
+    for uid, _, _ in targets:
+        _add_notif(cur, schema, uid, 'launcher_required', 'Требуется залить в лаунчер', f'«{task_title}»', 'task', task_id, actor_id)
+    button_url = _task_url(task_id)
+    text = f"📦 Требуется залить в лаунчер:\n\n«{task_title}»"
+    tg_ids = [tg_id for uid, tg_id, tg_muted in targets if tg_id and tg_id > 0 and not tg_muted]
+    for tg_id in tg_ids:
+        _tg_send(tg_id, text, button_url)
+
+
+def _check_launcher_badge_appeared(cur, schema, task_id, task_title, actor_id, creator_id, assignee_ids,
+                                    was_column, was_deploy, was_uploaded, new_column, new_deploy, new_uploaded):
+    '''Сравнивает состояние бейджа «Требуется залить в лаунчер» до и после изменения задачи —
+    если бейдж появился (не было → стало), рассылает уведомление тем, у кого есть право launcher_notify.'''
+    has_files = _task_has_patch_files(cur, schema, task_id)
+    was = _needs_launcher_upload(was_column, was_deploy, was_uploaded, has_files)
+    now = _needs_launcher_upload(new_column, new_deploy, new_uploaded, has_files)
+    if now and not was:
+        _notify_launcher_required(cur, schema, task_id, task_title, actor_id, creator_id, assignee_ids)
+
+
 def _norm_assignees(body):
     raw = body.get('assigneeIds')
     if raw is None:
@@ -413,7 +468,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. При появлении у задачи бейджа «Требуется залить в лаунчер» (смена статуса деплоя/колонки, снятие отметки «Загружено») уведомляются (в приложении и Telegram) все пользователи с правом launcher_notify. Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -541,7 +596,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
 
-        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status, column_id, launcher_uploaded FROM {schema}.tasks WHERE id = %s", (int(task_id),))
         own_row = cur.fetchone()
         if not own_row:
             cur.close(); conn.close()
@@ -573,6 +628,11 @@ def handler(event: dict, context) -> dict:
                 if deploy_changed:
                     _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids)
                     _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], DEPLOY_STATUS_LABELS.get(requested_deploy, requested_deploy))
+                new_launcher_uploaded = False if deploy_changed else bool(own_row[6])
+                _check_launcher_badge_appeared(
+                    cur, schema, task_id, own_row[3], me['id'], own_row[2], own_ids,
+                    own_row[5], own_row[4], bool(own_row[6]), requested_column, requested_deploy, new_launcher_uploaded
+                )
                 cur.close(); conn.close()
                 return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
             # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
@@ -645,6 +705,11 @@ def handler(event: dict, context) -> dict:
         if deploy_changed_full:
             _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status_val, me['id'], own_row[2], assignee_ids)
             _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status_val, new_deploy_status_val))
+        new_column_val = body.get('column', existing['column']) or 'todo'
+        _check_launcher_badge_appeared(
+            cur, schema, task_id, task_title, me['id'], own_row[2], assignee_ids,
+            own_row[5], own_row[4], bool(own_row[6]), new_column_val, new_deploy_status_val, launcher_uploaded
+        )
         _log_activity(cur, schema, me['id'], 'task_update', 'task', task_id, task_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
@@ -656,19 +721,23 @@ def handler(event: dict, context) -> dict:
         if not task_id or not column:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status, column_id, launcher_uploaded FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        if not own_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
         if me['role'] != 'admin':
-            cur.execute(f"SELECT assignee_id, assignee_ids FROM {schema}.tasks WHERE id = %s", (int(task_id),))
-            own_row = cur.fetchone()
-            if not own_row:
-                cur.close(); conn.close()
-                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
             if me['id'] not in own_ids or column not in ('todo', 'progress', 'done'):
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
             f"UPDATE {schema}.tasks SET column_id = %s, updated_at = NOW() WHERE id = %s",
             (column, int(task_id))
+        )
+        _check_launcher_badge_appeared(
+            cur, schema, task_id, own_row[3], me['id'], own_row[2], own_ids,
+            own_row[5], own_row[4], bool(own_row[6]), column, own_row[4], bool(own_row[6])
         )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
@@ -682,13 +751,13 @@ def handler(event: dict, context) -> dict:
         if not me['perms']['task_restart']:
             cur.close(); conn.close()
             return _forbidden()
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status, column_id, launcher_uploaded FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        if not own_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
         if me['role'] != 'admin':
-            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
-            own_row = cur.fetchone()
-            if not own_row:
-                cur.close(); conn.close()
-                return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
-            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
             if me['id'] not in own_ids and own_row[2] != me['id']:
                 cur.close(); conn.close()
                 return _forbidden()
@@ -698,9 +767,14 @@ def handler(event: dict, context) -> dict:
             (int(task_id),)
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        _check_launcher_badge_appeared(
+            cur, schema, task_id, own_row[3], me['id'], own_row[2], own_ids,
+            own_row[5], own_row[4], bool(own_row[6]), 'restart', own_row[4], bool(own_row[6])
+        )
+        cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
     # Возврат задачи из раздела «К рестарту» обратно в Done — по праву task_restart (только свои задачи для не-админа)
@@ -761,7 +835,7 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
-        cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by, title, deploy_status, column_id, launcher_uploaded FROM {schema}.tasks WHERE id = %s", (int(task_id),))
         own_row = cur.fetchone()
         if not own_row:
             cur.close(); conn.close()
@@ -780,9 +854,15 @@ def handler(event: dict, context) -> dict:
             (uploaded, int(task_id))
         )
         row = cur.fetchone()
-        cur.close(); conn.close()
         if not row:
+            cur.close(); conn.close()
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        # Снятие отметки «Загружено» при уже подходящем статусе/колонке вновь делает задачу требующей заливки
+        _check_launcher_badge_appeared(
+            cur, schema, task_id, own_row[3], me['id'], own_row[2], own_ids,
+            own_row[5], own_row[4], bool(own_row[6]), own_row[5], own_row[4], uploaded
+        )
+        cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
     # Архивация задачи с исходом — только администратор

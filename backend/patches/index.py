@@ -3,7 +3,9 @@ import io
 import json
 import os
 import re
+import urllib.error
 import urllib.parse
+import urllib.request
 import uuid
 import zipfile
 
@@ -68,6 +70,77 @@ def _current_user(cur, schema, token):
     task_edit_own = perms.get('task_edit_own')
     can_manage = row[1] == 'admin' if task_edit_own is None else bool(task_edit_own)
     return {'id': row[0], 'role': row[1], 'can_manage': can_manage}
+
+
+def _tg_send(chat_id, text, button_url=None):
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {'chat_id': chat_id, 'text': text}
+    if button_url:
+        payload['reply_markup'] = {
+            'inline_keyboard': [[{'text': '🔗 Открыть задачу', 'url': button_url}]]
+        }
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            resp.read()
+    except urllib.error.HTTPError as e:
+        print(f"[patches] tg send HTTP {e.code}: {e.read().decode('utf-8', 'ignore')}")
+    except Exception as e:
+        print(f"[patches] tg send error: {e}")
+
+
+def _task_url(task_id=None):
+    app_url = (os.environ.get('APP_URL') or '').rstrip('/')
+    if not app_url:
+        return None
+    return f"{app_url}/task/{task_id}" if task_id else app_url
+
+
+def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entity_id, actor_id):
+    if not user_id or user_id == actor_id:
+        return
+    cur.execute(
+        f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
+        f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id)
+    )
+
+
+def _needs_launcher_upload(column, deploy_status, launcher_uploaded, has_files):
+    '''Та же логика, что и needsLauncherUpload на фронтенде (src/pages/index/shared.tsx) и в backend/tasks.'''
+    if not has_files or launcher_uploaded:
+        return False
+    return column == 'restart' or deploy_status == 'ready_live'
+
+
+def _notify_launcher_required(cur, schema, task_id, task_title, actor_id):
+    '''Уведомляет всех пользователей с правом launcher_notify (кроме того, чьё действие вызвало появление
+    бейджа) о том, что у задачи появился бейдж «Требуется залить в лаунчер» — запись в БД + Telegram.'''
+    cur.execute(
+        f"SELECT id, role, permissions, telegram_id, is_active, tg_notify_muted FROM {schema}.users WHERE is_active = true"
+    )
+    targets = []
+    for uid, role, perms_raw, tg_id, is_active, tg_muted in cur.fetchall():
+        if uid == actor_id:
+            continue
+        perms = perms_raw if isinstance(perms_raw, dict) else {}
+        allowed = perms.get('launcher_notify')
+        allowed = (role == 'admin') if allowed is None else bool(allowed)
+        if allowed:
+            targets.append((uid, tg_id, tg_muted))
+    if not targets:
+        return
+    for uid, _, _ in targets:
+        _add_notif(cur, schema, uid, 'launcher_required', 'Требуется залить в лаунчер', f'«{task_title}»', 'task', task_id, actor_id)
+    button_url = _task_url(task_id)
+    text = f"📦 Требуется залить в лаунчер:\n\n«{task_title}»"
+    for uid, tg_id, tg_muted in targets:
+        if tg_id and tg_id > 0 and not tg_muted:
+            _tg_send(tg_id, text, button_url)
 
 
 def _forbidden():
@@ -159,8 +232,10 @@ def handler(event: dict, context) -> dict:
     (в т.ч. из перетащенной целиком папки) грузится кусочками по ~1.5 МБ (file_init/file_chunk/
     file_complete/file_abort — одиночный HTTP-запрос физически ограничен ~3 МБ) и собирается на
     сервере в готовый файл до 200 МБ. Действие toggle_task прикрепляет/открепляет уже загруженный
-    файл к выбранной задаче (один файл может относиться сразу к нескольким задачам). Помимо
-    фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
+    файл к выбранной задаче (один файл может относиться сразу к нескольким задачам); если прикрепление
+    сразу делает задачу требующей заливки в лаунчер (колонка «К рестарту» или статус деплоя «Можно
+    заливать на лайв»), уведомляются (в приложении и Telegram) пользователи с правом launcher_notify.
+    Помимо фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
     пустая) собственные корневые папки для конкретного сервера. Поддерживает скачивание отдельного
     файла, сборку архива файлов конкретной задачи (task_zip) или архива всего дерева сервера целиком
     (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
@@ -414,14 +489,26 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('not_found', 404)
         task_ids = list(row[0]) if row[0] else []
-        if task_id_int in task_ids:
-            task_ids.remove(task_id_int)
-        else:
+        attached = task_id_int not in task_ids
+        if attached:
             task_ids.append(task_id_int)
+        else:
+            task_ids.remove(task_id_int)
         cur.execute(
             f"UPDATE {schema}.patch_files SET task_ids = %s, updated_at = now() WHERE server = %s AND path = %s",
             (json.dumps(task_ids), server, path)
         )
+        # Если файл только что прикреплён и задача уже находится в состоянии, готовом к раскатке
+        # (колонка «К рестарту» или статус деплоя «Можно заливать на лайв»), у неё появляется бейдж
+        # «Требуется залить в лаунчер» — уведомляем пользователей с правом launcher_notify.
+        if attached:
+            cur.execute(
+                f"SELECT column_id, deploy_status, launcher_uploaded, title FROM {schema}.tasks WHERE id = %s",
+                (task_id_int,)
+            )
+            trow = cur.fetchone()
+            if trow and _needs_launcher_upload(trow[0], trow[1], bool(trow[2]), True):
+                _notify_launcher_required(cur, schema, task_id_int, trow[3], me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'taskIds': [str(t) for t in task_ids]})
 

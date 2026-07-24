@@ -24,6 +24,7 @@ const typeMeta: Record<string, { icon: string; color: string }> = {
   idea_reply:         { icon: 'CornerDownRight', color: '152 55% 50%' },
   idea_mention:       { icon: 'AtSign', color: '35 90% 60%' },
   idea_status:        { icon: 'Lightbulb', color: '45 90% 55%' },
+  launcher_required:  { icon: 'UploadCloud', color: '0 75% 60%' },
 };
 
 function metaFor(type: string) {

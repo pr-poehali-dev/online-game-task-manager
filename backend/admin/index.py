@@ -57,6 +57,7 @@ ALL_PERMISSIONS = [
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
+    'launcher_notify',
 ]
 
 

@@ -47,6 +47,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'sprint_edit', label: 'Редактирование спринтов' },
     ],
   },
+  {
+    title: 'Лаунчер',
+    icon: 'UploadCloud',
+    items: [
+      { key: 'launcher_notify', label: 'Уведомление о лаунчере (в ТГ и на сайте, когда у задачи появляется бейдж «Требуется залить в лаунчер»)' },
+    ],
+  },
 ];
 
 export interface TeamUser {
