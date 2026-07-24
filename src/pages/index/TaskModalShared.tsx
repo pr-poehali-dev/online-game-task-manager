@@ -198,17 +198,20 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
 // у кого есть право просмотра чужих приватных сообщений (см. backend/tasks/index.py action private_notes),
 // поэтому визуальное «раскрытие» здесь ничего не рассекречивает — скрытый текст просто ещё не существует
 // в браузерах остальных пользователей.
-function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove }: {
+// Крестик удаления показывается только когда список отрендерен в контексте редактора (editable=true) —
+// на главной странице задачи (в режиме просмотра) заметку можно только прочитать, не удалить.
+function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove, editable }: {
   note: PrivateNote;
   team: TeamMember[];
   currentUserId: number | null;
   isAdmin: boolean;
   onRemove: (id: string) => void;
+  editable: boolean;
 }) {
   const [revealed, setRevealed] = useState(false);
   const author = resolveAssignee(team, note.authorId);
   const target = resolveAssignee(team, note.targetUserId);
-  const canDel = currentUserId === note.authorId || isAdmin;
+  const canDel = editable && (currentUserId === note.authorId || isAdmin);
   return (
     <div className="group/note flex items-start gap-1.5">
       <Icon name="EyeOff" size={12} className="text-primary shrink-0 mt-0.5" />
@@ -237,20 +240,21 @@ function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove }: {
   );
 }
 
-export function PrivateNotesList({ notes, team, currentUserId, isAdmin, onRemove, commentId = null }: {
+export function PrivateNotesList({ notes, team, currentUserId, isAdmin, onRemove, commentId = null, editable = true }: {
   notes: PrivateNote[];
   team: TeamMember[];
   currentUserId: number | null;
   isAdmin: boolean;
   onRemove: (id: string) => void;
   commentId?: string | null;
+  editable?: boolean;
 }) {
   const filtered = notes.filter((n) => n.commentId === commentId);
   if (filtered.length === 0) return null;
   return (
     <div className="flex flex-col gap-1">
       {filtered.map((n) => (
-        <PrivateNoteItem key={n.id} note={n} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={onRemove} />
+        <PrivateNoteItem key={n.id} note={n} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={onRemove} editable={editable} />
       ))}
     </div>
   );

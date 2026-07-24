@@ -65,27 +65,27 @@ export default function TaskModalDetails({
     <>
       {/* Description */}
       <div>
-        <div className="flex items-center justify-between mb-1">
-          <label className="block text-[10px] text-muted-foreground">Описание</label>
-          {!(isEditing && canFullEdit) && (
-            <PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />
-          )}
-        </div>
+        <label className="block text-[10px] text-muted-foreground mb-1">Описание</label>
         {isEditing && canFullEdit ? (
-          <RichEditor
-            content={form.description ?? ''}
-            onChange={(html) => setForm((p) => ({ ...p, description: html }))}
-            onImageUpload={uploadImage}
-            large
-            toolbarExtra={<PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />}
-          />
+          <>
+            <RichEditor
+              content={form.description ?? ''}
+              onChange={(html) => setForm((p) => ({ ...p, description: html }))}
+              onImageUpload={uploadImage}
+              large
+              toolbarExtra={<PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />}
+            />
+            <div className="mt-2">
+              <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} editable />
+            </div>
+          </>
         ) : (
           <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 max-h-[32rem] overflow-y-auto scrollbar-thin space-y-2">
             <div
               className="kb-content"
               dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
             />
-            <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} />
+            <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} editable={false} />
           </div>
         )}
       </div>
