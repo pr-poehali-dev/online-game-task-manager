@@ -19,6 +19,7 @@ export default function TaskComments({ taskId, team }: {
   const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
   const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
+  const [pendingNote, setPendingNote] = useState<{ targetUserId: number; text: string } | null>(null);
   const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(taskId);
 
   const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
@@ -43,7 +44,15 @@ export default function TaskComments({ taskId, team }: {
   useEffect(() => { loadComments(); }, [loadComments]);
 
   async function addComment() {
-    if (!newComment.trim() && newAttachments.length === 0) return;
+    if (!newComment.trim() && newAttachments.length === 0) {
+      // Нет текста/вложений для обычного комментария — если приложена приватная заметка,
+      // отправляем только её (как заметку к задаче в целом, без привязки к комментарию).
+      if (pendingNote) {
+        await addPrivateNote(pendingNote.targetUserId, pendingNote.text, null);
+        setPendingNote(null);
+      }
+      return;
+    }
     const mentions = extractMentions(newComment, mentionMembers);
     try {
       const res = await fetch(TASKS_URL, {
@@ -54,6 +63,10 @@ export default function TaskComments({ taskId, team }: {
       if (res.ok) {
         const data = await res.json();
         setComments((prev) => [...prev, data.comment]);
+        if (pendingNote) {
+          await addPrivateNote(pendingNote.targetUserId, pendingNote.text, data.comment.id);
+          setPendingNote(null);
+        }
         setNewComment('');
         setNewAttachments([]);
         setReplyTo(null);
@@ -149,6 +162,15 @@ export default function TaskComments({ taskId, team }: {
           </button>
         </div>
       )}
+      {pendingNote && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-dashed border-primary/30 rounded-lg px-3 py-1.5 mb-2">
+          <Icon name="EyeOff" size={12} className="text-primary" />
+          Приватная заметка для <span className="font-medium text-foreground">{resolveAssignee(team, pendingNote.targetUserId).name}</span> будет добавлена вместе с комментарием
+          <button onClick={() => setPendingNote(null)} className="ml-auto hover:text-foreground">
+            <Icon name="X" size={13} />
+          </button>
+        </div>
+      )}
       <div className="flex gap-2">
         <div className="flex-1 min-w-0 rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
           <MentionInput
@@ -162,9 +184,16 @@ export default function TaskComments({ taskId, team }: {
         </div>
         <div className="flex flex-col gap-1.5 shrink-0">
           <AttachmentsTrigger uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments((prev) => [...prev, a])} onError={setAttachError} />
+          <PrivateNoteComposer
+            variant="icon"
+            align="right"
+            team={team}
+            currentUserId={user?.id ?? null}
+            onAdd={async (uid, text) => { setPendingNote({ targetUserId: uid, text }); return true; }}
+          />
           <button
             onClick={addComment}
-            disabled={!newComment.trim() && !newAttachments.length}
+            disabled={!newComment.trim() && !newAttachments.length && !pendingNote}
             className="h-9 w-9 flex items-center justify-center rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors"
           >
             <Icon name="Send" size={15} />
