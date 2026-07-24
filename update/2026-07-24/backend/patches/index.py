@@ -158,7 +158,7 @@ def _ok(payload):
 def _s3_client():
     return boto3.client(
         's3',
-        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
         config=_S3_CONFIG,
@@ -169,11 +169,22 @@ def _bucket():
     return os.environ.get('S3_BUCKET', 'files')
 
 
-def _public_url(key):
-    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
-    if public_url:
-        return f"{public_url}/{key}"
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+def _public_url(key: str) -> str:
+    # приоритет: S3_PUBLIC_URL, потом CDN_BASE_URL
+    base_url = (
+        os.environ.get('S3_PUBLIC_URL')
+        or os.environ.get('CDN_BASE_URL', '')
+    ).rstrip('/')
+
+    if base_url:
+        # https://ВАШ-ДОМЕН.РУ/files/<key>
+        return f"{base_url}/{key}"
+
+    # если ни одна переменная не задана — как запасной вариант
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    endpoint = os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000').rstrip('/')
+    # http://127.0.0.1:9000/files/<key>
+    return f"{endpoint}/{bucket}/{key}"
 
 
 def _content_disposition(name):

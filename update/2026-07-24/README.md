@@ -273,6 +273,14 @@ db_migrations/V0057__update_faq_permissions_list_with_new_rights.sql
 
 ---
 
+Файлы `backend/admin/index.py`, `backend/patches/index.py` и
+`backend/tasks/index.py` в этой папке уже адаптированы под своё S3/MinIO-хранилище
+(без облачного адреса poehali.dev) — адрес хранилища и публичный адрес файлов
+берутся из переменных `S3_ENDPOINT`, `S3_PUBLIC_URL` (при необходимости
+`CDN_BASE_URL`), с запасным вариантом на локальный MinIO по адресу
+`http://127.0.0.1:9000`. Убедитесь, что в `.env` эти переменные заданы под ваш
+сервер (см. шаг 3 инструкции `deploy/README.md`).
+
 ## Как перенести
 
 ```bash
