@@ -58,6 +58,7 @@ ALL_PERMISSIONS = [
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
     'launcher_notify',
+    'private_notes_view_others',
 ]
 
 

@@ -15,7 +15,8 @@ export type PermissionKey =
   | 'kb_edit'
   | 'sprint_create'
   | 'sprint_edit'
-  | 'launcher_notify';
+  | 'launcher_notify'
+  | 'private_notes_view_others';
 
 export interface AuthUser {
   id: number;

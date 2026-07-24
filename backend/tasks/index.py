@@ -216,6 +216,7 @@ ALL_PERMISSIONS = [
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
     'launcher_notify',
+    'private_notes_view_others',
 ]
 
 
@@ -1044,14 +1045,18 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
-    # Приватные заметки: видны только автору, выбранному адресату и админам.
-    # Прикрепляются либо к задаче целиком (commentId = null), либо к конкретному комментарию.
+    # Приватные заметки: текст виден только автору, выбранному адресату и тем, кому явно выдано
+    # право private_notes_view_others. Прикрепляются либо к задаче целиком (commentId = null),
+    # либо к конкретному комментарию.
     if action == 'private_notes':
         task_id = body.get('taskId') or (event.get('queryStringParameters') or {}).get('taskId')
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_task_id'})}
-        if me['role'] == 'admin':
+        # Текст приватной заметки доступен только автору и адресату. Видеть чужие приватные заметки
+        # может только тот, кому явно выдано право private_notes_view_others (в т.ч. администратор,
+        # если это право у него не отозвано отдельно).
+        if me['perms']['private_notes_view_others']:
             cur.execute(
                 f"SELECT id, task_id, comment_id, author_id, target_user_id, text, created_at "
                 f"FROM {schema}.private_notes WHERE task_id = %s ORDER BY created_at ASC",

@@ -54,6 +54,13 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'launcher_notify', label: 'Уведомление о лаунчере (в ТГ и на сайте, когда у задачи появляется бейдж «Требуется залить в лаунчер»)' },
     ],
   },
+  {
+    title: 'Приватные сообщения',
+    icon: 'EyeOff',
+    items: [
+      { key: 'private_notes_view_others', label: 'Просмотр чужих приватных сообщений (без этого права виден только текст своих сообщений — отправленных или адресованных лично)' },
+    ],
+  },
 ];
 
 export interface TeamUser {

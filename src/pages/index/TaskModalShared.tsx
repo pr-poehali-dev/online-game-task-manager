@@ -157,7 +157,7 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
       )}
       {open && (
         <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1.5 z-30 w-72 rounded-lg border border-border bg-card shadow-xl p-2.5 animate-scale-in`}>
-          <label className="block text-[10px] text-muted-foreground mb-1">Видно только адресату и админам</label>
+          <label className="block text-[10px] text-muted-foreground mb-1">Видно только адресату (и тем, кому выдано право просмотра чужих приватных сообщений)</label>
           <select
             value={targetId ?? ''}
             onChange={(e) => setTargetId(e.target.value ? Number(e.target.value) : null)}
