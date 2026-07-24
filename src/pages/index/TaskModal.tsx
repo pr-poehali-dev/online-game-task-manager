@@ -335,13 +335,11 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
               toolbarExtra={<PrivateNoteComposer variant="icon" align="right" team={team} currentUserId={currentUserId} onAdd={(uid, text) => addPrivateNote(uid, text)} />}
             />
           ) : (
-            <div
-              className="kb-content rounded-xl border border-border bg-secondary/20 px-4 py-3 max-h-[32rem] overflow-y-auto scrollbar-thin"
-              dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
-            />
-          )}
-          {privateNotes.some((n) => !n.commentId) && (
-            <div className="mt-2">
+            <div className="rounded-xl border border-border bg-secondary/20 px-4 py-3 max-h-[32rem] overflow-y-auto scrollbar-thin space-y-2">
+              <div
+                className="kb-content"
+                dangerouslySetInnerHTML={{ __html: form.description || '<p class="text-muted-foreground">Без описания</p>' }}
+              />
               <PrivateNotesList notes={privateNotes} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={removePrivateNote} />
             </div>
           )}

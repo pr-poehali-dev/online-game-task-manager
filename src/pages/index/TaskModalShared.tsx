@@ -193,6 +193,11 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
   );
 }
 
+// Приватная заметка отображается как встроенный в тело комментария/описания спойлер —
+// текст на сервере по-прежнему хранится и передаётся в браузер только автору, адресату и тем,
+// у кого есть право просмотра чужих приватных сообщений (см. backend/tasks/index.py action private_notes),
+// поэтому визуальное «раскрытие» здесь ничего не рассекречивает — скрытый текст просто ещё не существует
+// в браузерах остальных пользователей.
 function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove }: {
   note: PrivateNote;
   team: TeamMember[];
@@ -205,27 +210,29 @@ function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove }: {
   const target = resolveAssignee(team, note.targetUserId);
   const canDel = currentUserId === note.authorId || isAdmin;
   return (
-    <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 px-2.5 py-1.5">
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <Icon name="EyeOff" size={11} className="text-primary shrink-0" />
-        <span>
-          Приватно для <span className="font-medium text-foreground">{target.name}</span> · от {author.name}
-        </span>
-        <button
-          onClick={() => setRevealed((v) => !v)}
-          className="ml-auto text-primary hover:opacity-80 shrink-0"
-        >
-          {revealed ? 'Скрыть' : 'Показать'}
-        </button>
+    <div className="group/note flex items-start gap-1.5">
+      <Icon name="EyeOff" size={12} className="text-primary shrink-0 mt-0.5" />
+      <button
+        type="button"
+        onClick={() => setRevealed((v) => !v)}
+        className="flex-1 min-w-0 text-left"
+      >
+        {revealed ? (
+          <span className="text-sm whitespace-pre-wrap break-words text-foreground">{note.text}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground italic hover:text-primary transition-colors">
+            Приватно для {target.name} — нажмите, чтобы показать
+          </span>
+        )}
+      </button>
+      <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/note:opacity-100 transition-opacity">
+        {revealed && <span className="text-[10px] text-muted-foreground whitespace-nowrap">от {author.name}</span>}
         {canDel && (
-          <button onClick={() => onRemove(note.id)} className="text-muted-foreground hover:text-destructive shrink-0">
-            <Icon name="X" size={12} />
+          <button onClick={() => onRemove(note.id)} className="text-muted-foreground hover:text-destructive">
+            <Icon name="X" size={11} />
           </button>
         )}
       </div>
-      {revealed && (
-        <div className="mt-1.5 text-xs whitespace-pre-wrap break-words text-foreground">{note.text}</div>
-      )}
     </div>
   );
 }
@@ -241,7 +248,7 @@ export function PrivateNotesList({ notes, team, currentUserId, isAdmin, onRemove
   const filtered = notes.filter((n) => n.commentId === commentId);
   if (filtered.length === 0) return null;
   return (
-    <div className="mt-1.5 flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1">
       {filtered.map((n) => (
         <PrivateNoteItem key={n.id} note={n} team={team} currentUserId={currentUserId} isAdmin={isAdmin} onRemove={onRemove} />
       ))}

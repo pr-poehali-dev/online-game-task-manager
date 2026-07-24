@@ -116,15 +116,17 @@ export default function TaskComments({ taskId, team }: {
               </button>
             )}
           </div>
-          {c.text && (
-            <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>
+          {(c.text || privateNotes.some((n) => n.commentId === c.id)) && (
+            <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 space-y-1.5">
+              {c.text && <div className="whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>}
+              <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
+            </div>
           )}
           {!!c.attachments?.length && (
             <div className={c.text ? 'mt-1.5' : ''}>
               <AttachmentsList attachments={c.attachments} />
             </div>
           )}
-          <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
         </div>
       </div>
     );
