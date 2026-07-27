@@ -80,8 +80,10 @@ def _task_url(task_id=None):
     return f"{app_url}/task/{task_id}" if task_id else app_url
 
 
-def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, description=None):
-    '''Уведомляет назначенных исполнителей (кроме назначившего) о новой задаче: запись в БД + сообщение в Telegram.'''
+def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, description=None, column=None):
+    '''Уведомляет назначенных исполнителей (кроме назначившего) о новой задаче: запись в БД + сообщение в Telegram.
+    Для задач, отложенных «На удержании» (column='hold'), Telegram-сообщение не отправляется — только
+    внутреннее уведомление в приложении, чтобы не дёргать команду по задачам, временно поставленным на паузу.'''
     targets = [uid for uid in user_ids if uid and uid != actor_id]
     if not targets:
         return
@@ -94,6 +96,8 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, desc
             f"VALUES (%s, 'task_assigned', %s, %s, 'task', %s, %s)",
             (uid, 'Вам назначена задача', notif_body, str(task_id) if task_id else None, actor_id)
         )
+    if column == 'hold':
+        return
     # Telegram — только тем, кто вошёл через бота
     button_url = _task_url(task_id)
     text = f"📌 Вам назначена задача:\n\n«{title}»" + (f'\n{snippet}' if snippet else '') + "\n\nОткройте таск-менеджер, чтобы посмотреть детали."
@@ -112,9 +116,12 @@ def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entit
     )
 
 
-def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id, creator_id, assignee_ids):
+def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id, creator_id, assignee_ids, column=None):
     '''Уведомляет автора и исполнителей задачи об изменении статуса деплоя (кроме того, кто его изменил).
-    Одному пользователю — только одно уведомление, даже если он и автор, и исполнитель.'''
+    Одному пользователю — только одно уведомление, даже если он и автор, и исполнитель.
+    Если задача при этом ставится «На удержании» (column='hold') — Telegram-сообщение не отправляется,
+    только запись в приложении; при перемещении задачи ИЗ «На удержании» в другую колонку уведомление
+    отправляется как обычно, т.к. итоговая column уже не 'hold'.'''
     targets = set()
     if creator_id:
         targets.add(creator_id)
@@ -127,6 +134,8 @@ def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id
     status_label = DEPLOY_STATUS_LABELS.get(new_status, new_status)
     for uid in targets:
         _add_notif(cur, schema, uid, 'task_deploy_status', f'Статус деплоя изменён: {status_label}', task_title, 'task', task_id, actor_id)
+    if column == 'hold':
+        return
     button_url = _task_url(task_id)
     text = f"🚀 Статус деплоя задачи изменён:\n\n«{task_title}»\n→ {status_label}"
     for tg_id in _telegram_targets(cur, schema, list(targets)):
@@ -585,7 +594,7 @@ def handler(event: dict, context) -> dict:
         )
         task = _row_to_task(cur.fetchone())
         _record_assignments(cur, schema, task['id'], assignee_ids, me['id'])
-        _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'], body.get('description'))
+        _notify_assignees(cur, schema, assignee_ids, title, me['id'], task['id'], body.get('description'), column=task['column'])
         _log_activity(cur, schema, me['id'], 'task_create', 'task', task['id'], title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
@@ -627,7 +636,7 @@ def handler(event: dict, context) -> dict:
                 )
                 row = cur.fetchone()
                 if deploy_changed:
-                    _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids)
+                    _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids, column=requested_column)
                     _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], DEPLOY_STATUS_LABELS.get(requested_deploy, requested_deploy))
                 new_launcher_uploaded = False if deploy_changed else bool(own_row[6])
                 _check_launcher_badge_appeared(
@@ -702,12 +711,12 @@ def handler(event: dict, context) -> dict:
         new_ids = [uid for uid in assignee_ids if uid not in prev_ids]
         _record_assignments(cur, schema, task_id, new_ids, me['id'])
         task_title_full = (body.get('title') if 'title' in body else existing['title'] or '').strip()
-        _notify_assignees(cur, schema, new_ids, task_title_full, me['id'], task_id, body.get('description', existing['description']))
+        new_column_val = body.get('column', existing['column']) or 'todo'
+        _notify_assignees(cur, schema, new_ids, task_title_full, me['id'], task_id, body.get('description', existing['description']), column=new_column_val)
         task_title = task_title_full
         if deploy_changed_full:
-            _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status_val, me['id'], own_row[2], assignee_ids)
+            _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status_val, me['id'], own_row[2], assignee_ids, column=new_column_val)
             _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status_val, new_deploy_status_val))
-        new_column_val = body.get('column', existing['column']) or 'todo'
         _check_launcher_badge_appeared(
             cur, schema, task_id, task_title, me['id'], own_row[2], assignee_ids,
             own_row[5], own_row[4], bool(own_row[6]), new_column_val, new_deploy_status_val, launcher_uploaded

@@ -243,7 +243,7 @@ function HoldSection({
           className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1"
           style={{ writingMode: 'vertical-rl' }}
         >
-          {holdColumn.title}
+          HOLD
         </span>
       </button>
     );
