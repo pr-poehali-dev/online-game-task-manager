@@ -73,6 +73,7 @@ export default function TaskModalMeta({
             { value: 'todo', label: 'To Do' },
             { value: 'progress', label: 'In Progress' },
             { value: 'done', label: 'Done' },
+            { value: 'hold', label: 'На удержании' },
           ]} />
         )}
         {isEditing && canFullEdit ? (

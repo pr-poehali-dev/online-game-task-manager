@@ -613,7 +613,7 @@ def handler(event: dict, context) -> dict:
             requested_column = body.get('column')
             requested_deploy = body.get('deployStatus')
             if can_edit_deploy and requested_deploy is not None:
-                if requested_column not in ('todo', 'progress', 'done'):
+                if requested_column not in ('todo', 'progress', 'done', 'hold'):
                     cur.close(); conn.close()
                     return _forbidden()
                 deploy_changed = requested_deploy != own_row[4]
@@ -636,8 +636,9 @@ def handler(event: dict, context) -> dict:
                 )
                 cur.close(); conn.close()
                 return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
-            # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками To Do / In Progress / Done
-            if not is_assignee or requested_column not in ('todo', 'progress', 'done'):
+            # Без права полного редактирования — можно только переносить СВОЮ задачу между колонками
+            # To Do / In Progress / Done и откладывать/возвращать с «На удержании»
+            if not is_assignee or requested_column not in ('todo', 'progress', 'done', 'hold'):
                 cur.close(); conn.close()
                 return _forbidden()
             cur.execute(
@@ -729,7 +730,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]})
         if me['role'] != 'admin':
-            if me['id'] not in own_ids or column not in ('todo', 'progress', 'done'):
+            if me['id'] not in own_ids or column not in ('todo', 'progress', 'done', 'hold'):
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(

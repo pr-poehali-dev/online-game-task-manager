@@ -12,7 +12,7 @@ import {
 } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome, DeployStatus } from './shared';
-import { taskAssigneeIds, columns, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, deadlineState, needsLauncherUpload, LauncherBadge } from './shared';
+import { taskAssigneeIds, columns, holdColumn, outcomes, deployStatuses, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, deadlineState, needsLauncherUpload, LauncherBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 type SortMode = 'smart' | 'priority' | 'date_new' | 'date_old';
@@ -189,6 +189,108 @@ function Column({ id, children }: { id: ColumnId; children: React.ReactNode }) {
   );
 }
 
+// Свёрнутая по умолчанию колонка «На удержании» слева от To Do — сюда откладывают задачи
+// любого статуса деплоя, не меняя сам статус. В свёрнутом виде — узкая полоса со счётчиком,
+// остаётся зоной для сброса карточки перетаскиванием даже без разворачивания. В развёрнутом
+// виде выглядит как обычная колонка доски.
+function HoldSection({
+  tasks,
+  open,
+  setOpen,
+  team,
+  isAdmin,
+  can,
+  currentUserId,
+  menuFor,
+  setMenuFor,
+  onCardClick,
+  onArchive,
+  onAddClick,
+  tasksWithPatchFiles,
+}: {
+  tasks: Task[];
+  open: boolean;
+  setOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
+  team: TeamMember[];
+  isAdmin: boolean;
+  can: (key: PermissionKey) => boolean;
+  currentUserId: number | null;
+  menuFor: string | null;
+  setMenuFor: (id: string | null) => void;
+  onCardClick: (t: Task) => void;
+  onArchive: (id: string, outcome: TaskOutcome) => void;
+  onAddClick: (col: ColumnId) => void;
+  tasksWithPatchFiles: Set<string>;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: 'hold' });
+
+  if (!open) {
+    return (
+      <button
+        ref={setNodeRef}
+        onClick={() => setOpen(true)}
+        className={`flex flex-col items-center gap-2 rounded-xl border border-dashed py-4 px-1.5 w-11 shrink-0 transition-colors ${
+          isOver ? 'border-primary/50 bg-primary/5' : 'border-border hover:border-primary/40 hover:bg-secondary/40'
+        }`}
+        title="Развернуть «На удержании»"
+      >
+        <Icon name="ChevronRight" size={14} className="text-muted-foreground" />
+        <Icon name={holdColumn.icon} size={15} className="text-muted-foreground" />
+        <span className="text-xs font-mono text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded-md">
+          {tasks.length}
+        </span>
+        <span
+          className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1"
+          style={{ writingMode: 'vertical-rl' }}
+        >
+          {holdColumn.title}
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-col w-full md:w-64 shrink-0">
+      <div className="flex items-center gap-2 mb-4 px-1">
+        <button onClick={() => setOpen(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+          <Icon name="ChevronLeft" size={15} />
+        </button>
+        <Icon name={holdColumn.icon} size={17} className="text-muted-foreground" />
+        <h2 className="font-display tracking-wide text-sm uppercase">{holdColumn.title}</h2>
+        <span className="ml-auto text-xs font-mono text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">
+          {tasks.length}
+        </span>
+      </div>
+      <div ref={setNodeRef} className={`space-y-3 rounded-xl transition-colors ${isOver ? 'bg-primary/5 ring-2 ring-primary/30' : ''}`} style={{ minHeight: 40 }}>
+        {tasks.map((t, i) => (
+          <TaskCard
+            key={t.id}
+            task={t}
+            index={i}
+            team={team}
+            isAdmin={isAdmin}
+            canDrag={canDragTask(t, currentUserId, isAdmin)}
+            menuFor={menuFor}
+            setMenuFor={setMenuFor}
+            onCardClick={onCardClick}
+            onArchive={onArchive}
+            hasPatchFiles={tasksWithPatchFiles.has(t.id)}
+          />
+        ))}
+        {can('task_create') && (
+          <button
+            onClick={() => onAddClick('hold')}
+            className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"
+          >
+            <Icon name="Plus" size={15} />
+            Добавить
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Board({
   tasks,
   team,
@@ -219,6 +321,7 @@ export default function Board({
   const [sortOpen, setSortOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [pendingDrop, setPendingDrop] = useState<{ task: Task; targetColumn: ColumnId; options: typeof deployStatuses } | null>(null);
+  const [holdOpen, setHoldOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -235,6 +338,16 @@ export default function Board({
     const task = tasks.find((t) => t.id === taskId);
     if (!task || task.column === targetColumn) return;
     if (!canDragTask(task, currentUserId, isAdmin)) return;
+    // «На удержании» не привязана к статусу деплоя: перенос сюда не меняет статус,
+    // а при снятии с удержания пользователь всегда сам выбирает целевую колонку.
+    if (targetColumn === 'hold') {
+      onMoveTask(task, 'hold', task.deployStatus ?? 'none');
+      return;
+    }
+    if (task.column === 'hold') {
+      setPendingDrop({ task, targetColumn, options: deployStatuses.filter((d) => d.column === targetColumn) });
+      return;
+    }
     const options = deployStatuses.filter((d) => d.column === targetColumn);
     if (options.length <= 1) {
       onMoveTask(task, targetColumn, options[0]?.id ?? 'none');
@@ -284,47 +397,64 @@ export default function Board({
             </div>
           )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {columns.map((col) => {
-            const colTasks = sortTasks(tasks.filter((t) => t.column === col.id), sortMode);
-            return (
-              <div key={col.id} className="flex flex-col">
-                <div className="flex items-center gap-2 mb-4 px-1">
-                  <Icon name={col.icon} size={17} className="text-muted-foreground" />
-                  <h2 className="font-display tracking-wide text-sm uppercase">{col.title}</h2>
-                  <span className="ml-auto text-xs font-mono text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">
-                    {colTasks.length}
-                  </span>
+        <div className="flex items-start gap-5">
+          <HoldSection
+            tasks={sortTasks(tasks.filter((t) => t.column === 'hold'), sortMode)}
+            open={holdOpen}
+            setOpen={setHoldOpen}
+            team={team}
+            isAdmin={isAdmin}
+            can={can}
+            currentUserId={currentUserId}
+            menuFor={menuFor}
+            setMenuFor={setMenuFor}
+            onCardClick={onCardClick}
+            onArchive={onArchive}
+            onAddClick={onAddClick}
+            tasksWithPatchFiles={tasksWithPatchFiles}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5 flex-1 min-w-0">
+            {columns.map((col) => {
+              const colTasks = sortTasks(tasks.filter((t) => t.column === col.id), sortMode);
+              return (
+                <div key={col.id} className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-4 px-1">
+                    <Icon name={col.icon} size={17} className="text-muted-foreground" />
+                    <h2 className="font-display tracking-wide text-sm uppercase">{col.title}</h2>
+                    <span className="ml-auto text-xs font-mono text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">
+                      {colTasks.length}
+                    </span>
+                  </div>
+                  <Column id={col.id}>
+                    {colTasks.map((t, i) => (
+                      <TaskCard
+                        key={t.id}
+                        task={t}
+                        index={i}
+                        team={team}
+                        isAdmin={isAdmin}
+                        canDrag={canDragTask(t, currentUserId, isAdmin)}
+                        menuFor={menuFor}
+                        setMenuFor={setMenuFor}
+                        onCardClick={onCardClick}
+                        onArchive={onArchive}
+                        hasPatchFiles={tasksWithPatchFiles.has(t.id)}
+                      />
+                    ))}
+                    {can('task_create') && (
+                      <button
+                        onClick={() => onAddClick(col.id)}
+                        className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"
+                      >
+                        <Icon name="Plus" size={15} />
+                        Добавить
+                      </button>
+                    )}
+                  </Column>
                 </div>
-                <Column id={col.id}>
-                  {colTasks.map((t, i) => (
-                    <TaskCard
-                      key={t.id}
-                      task={t}
-                      index={i}
-                      team={team}
-                      isAdmin={isAdmin}
-                      canDrag={canDragTask(t, currentUserId, isAdmin)}
-                      menuFor={menuFor}
-                      setMenuFor={setMenuFor}
-                      onCardClick={onCardClick}
-                      onArchive={onArchive}
-                      hasPatchFiles={tasksWithPatchFiles.has(t.id)}
-                    />
-                  ))}
-                  {can('task_create') && (
-                    <button
-                      onClick={() => onAddClick(col.id)}
-                      className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"
-                    >
-                      <Icon name="Plus" size={15} />
-                      Добавить
-                    </button>
-                  )}
-                </Column>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 

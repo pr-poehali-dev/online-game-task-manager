@@ -137,7 +137,7 @@ export function taskAge(iso: string | null | undefined): string {
 }
 
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
-export type ColumnId = 'todo' | 'progress' | 'done' | 'restart';
+export type ColumnId = 'todo' | 'progress' | 'done' | 'restart' | 'hold';
 export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
 export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
@@ -268,6 +268,16 @@ export const columns: { id: ColumnId; title: string; icon: string }[] = [
   { id: 'progress', title: 'In Progress', icon: 'Timer' },
   { id: 'done', title: 'Done', icon: 'CheckCircle2' },
 ];
+
+// «На удержании» — отдельная свёрнутая по умолчанию колонка слева от To Do. Не входит в основную
+// сетку колонок (не привязана к статусам деплоя): задача любого статуса может быть временно
+// отложена сюда, а при снятии с удержания пользователь сам выбирает, в какую колонку её вернуть.
+export const holdColumn: { id: ColumnId; title: string; icon: string } = { id: 'hold', title: 'На удержании', icon: 'PauseCircle' };
+
+export function columnMeta(id: ColumnId): { id: ColumnId; title: string; icon: string } {
+  if (id === 'hold') return holdColumn;
+  return columns.find((c) => c.id === id) ?? { id, title: id, icon: 'Circle' };
+}
 
 
 

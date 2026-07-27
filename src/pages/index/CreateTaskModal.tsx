@@ -95,6 +95,11 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             <Icon name="RotateCcw" size={12} />
             К рестарту
           </div>
+        ) : form.column === 'hold' ? (
+          <div className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
+            <Icon name="PauseCircle" size={12} />
+            На удержании
+          </div>
         ) : (
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Статус деплоя (определяет колонку)</label>
