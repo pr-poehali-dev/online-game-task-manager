@@ -239,11 +239,10 @@ function HoldSection({
         <span className="text-xs font-mono text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded-md">
           {tasks.length}
         </span>
-        <span
-          className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1"
-          style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}
-        >
-          HOLD
+        <span className="flex flex-col items-center leading-tight text-[10px] font-semibold uppercase text-muted-foreground mt-1">
+          {'HOLD'.split('').map((ch, i) => (
+            <span key={i}>{ch}</span>
+          ))}
         </span>
       </button>
     );
