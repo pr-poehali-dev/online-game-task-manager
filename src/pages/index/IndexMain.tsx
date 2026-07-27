@@ -222,7 +222,7 @@ export default function IndexMain({
         {view === 'patches' && (
           <Patches
             canManage={isAdmin || can('task_edit_own')}
-            tasks={activeTasks.map((t) => ({ id: t.id, title: t.title }))}
+            tasks={activeTasks.map((t) => ({ id: t.id, title: t.title, server: t.server }))}
             initialTaskId={patchesTaskId}
             initialServerId={patchesServerId}
             onFileTaskLinkChange={reloadTasksWithPatchFiles}

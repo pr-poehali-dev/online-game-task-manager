@@ -16,7 +16,7 @@ export default function Patches({
   onFileTaskLinkChange,
 }: {
   canManage: boolean;
-  tasks: { id: string; title: string }[];
+  tasks: { id: string; title: string; server: ServerId }[];
   initialTaskId?: string | null;
   initialServerId?: ServerId | null;
   onFileTaskLinkChange?: () => void;
@@ -77,6 +77,15 @@ export default function Patches({
   const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
   const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
+  const tasksForServer = useMemo(() => tasks.filter((t) => t.server === active), [tasks, active]);
+
+  // При смене сервера сбрасываем выбранную задачу, если она относится к другому серверу
+  useEffect(() => {
+    if (selectedTaskId && !tasksForServer.some((t) => t.id === selectedTaskId)) {
+      setSelectedTaskId('');
+    }
+  }, [active, tasksForServer, selectedTaskId]);
+
   const taskFilesCount = useMemo(
     () => (selectedTaskId ? files.filter((f) => f.taskIds.includes(selectedTaskId)).length : 0),
     [files, selectedTaskId]
@@ -302,7 +311,7 @@ export default function Patches({
           className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm text-muted-foreground max-w-[260px]"
         >
           <option value="">Без выбранной задачи</option>
-          {tasks.map((t) => (
+          {tasksForServer.map((t) => (
             <option key={t.id} value={t.id}>{t.title}</option>
           ))}
         </select>
