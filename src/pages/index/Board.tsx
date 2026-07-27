@@ -241,7 +241,7 @@ function HoldSection({
         </span>
         <span
           className="text-[10px] uppercase tracking-wide text-muted-foreground mt-1"
-          style={{ writingMode: 'vertical-rl' }}
+          style={{ writingMode: 'vertical-rl', textOrientation: 'upright' }}
         >
           HOLD
         </span>
