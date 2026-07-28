@@ -984,7 +984,10 @@ def handler(event: dict, context) -> dict:
         task_id = body.get('taskId')
         text = (body.get('text') or '').strip()
         attachments = body.get('attachments') or []
-        if not task_id or (not text and not attachments):
+        # withPrivateNote: комментарий без текста/вложений допускается, если к нему сразу
+        # прикрепляется приватная заметка (иначе заметке не к чему привязаться, кроме описания задачи).
+        with_private_note = bool(body.get('withPrivateNote'))
+        if not task_id or (not text and not attachments and not with_private_note):
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
         if me['role'] != 'admin' and not me['perms']['task_view_others']:

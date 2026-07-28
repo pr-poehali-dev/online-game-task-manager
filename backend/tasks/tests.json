@@ -31,6 +31,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST comment without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "comment", "taskId": 1, "withPrivateNote": true},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

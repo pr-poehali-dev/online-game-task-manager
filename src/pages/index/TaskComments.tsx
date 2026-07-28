@@ -44,21 +44,13 @@ export default function TaskComments({ taskId, team }: {
   useEffect(() => { loadComments(); }, [loadComments]);
 
   async function addComment() {
-    if (!newComment.trim() && newAttachments.length === 0) {
-      // Нет текста/вложений для обычного комментария — если приложена приватная заметка,
-      // отправляем только её (как заметку к задаче в целом, без привязки к комментарию).
-      if (pendingNote) {
-        await addPrivateNote(pendingNote.targetUserId, pendingNote.text, null);
-        setPendingNote(null);
-      }
-      return;
-    }
+    if (!newComment.trim() && newAttachments.length === 0 && !pendingNote) return;
     const mentions = extractMentions(newComment, mentionMembers);
     try {
       const res = await fetch(TASKS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'comment', taskId, text: newComment.trim(), parentId: (replyTo?.parentId ?? replyTo?.id) ?? null, mentions, attachments: newAttachments }),
+        body: JSON.stringify({ action: 'comment', taskId, text: newComment.trim(), parentId: (replyTo?.parentId ?? replyTo?.id) ?? null, mentions, attachments: newAttachments, withPrivateNote: !!pendingNote }),
       });
       if (res.ok) {
         const data = await res.json();
