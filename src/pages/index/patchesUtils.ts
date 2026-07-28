@@ -10,6 +10,7 @@ export interface PatchFile {
   url: string;
   updatedAt: string | null;
   taskIds: string[];
+  ddfSupported?: boolean;
 }
 
 export interface TreeNode {

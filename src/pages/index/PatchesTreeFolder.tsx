@@ -27,6 +27,7 @@ export default function TreeFolder({
   customRootNames,
   onDeleteRoot,
   deletingRoot,
+  onEditDdf,
 }: {
   node: TreeNode;
   depth: number;
@@ -41,6 +42,7 @@ export default function TreeFolder({
   customRootNames?: Set<string>;
   onDeleteRoot?: (name: string) => void;
   deletingRoot?: string | null;
+  onEditDdf?: (path: string) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
@@ -86,6 +88,15 @@ export default function TreeFolder({
         >
           <Icon name="Download" size={13} />
         </a>
+        {f.ddfSupported && onEditDdf && (
+          <button
+            onClick={() => onEditDdf(f.path)}
+            title="Редактировать текст (названия, описания)"
+            className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+          >
+            <Icon name="FileText" size={13} />
+          </button>
+        )}
         {canManage && highlightTaskId && (
           <button
             onClick={() => onToggleTask(f.path)}
@@ -208,6 +219,7 @@ export default function TreeFolder({
               customRootNames={customRootNames}
               onDeleteRoot={onDeleteRoot}
               deletingRoot={deletingRoot}
+              onEditDdf={onEditDdf}
             />
           ))}
         </div>

@@ -7,6 +7,7 @@ import type { PatchFile, DroppedFile } from './patchesUtils';
 import { postJson, uploadFileInChunks } from './patchesApi';
 import type { UploadQueueItem } from './patchesApi';
 import TreeFolder from './PatchesTreeFolder';
+import PatchesDdfEditor from './PatchesDdfEditor';
 
 export default function Patches({
   canManage,
@@ -39,6 +40,7 @@ export default function Patches({
   const [rootError, setRootError] = useState('');
   const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [editingDdfPath, setEditingDdfPath] = useState<string | null>(null);
   const appliedInitial = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -429,12 +431,22 @@ export default function Patches({
                   customRootNames={customRootNames}
                   onDeleteRoot={handleDeleteRoot}
                   deletingRoot={deletingRoot}
+                  onEditDdf={setEditingDdfPath}
                 />
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {editingDdfPath && (
+        <PatchesDdfEditor
+          server={active}
+          path={editingDdfPath}
+          canManage={canManage}
+          onClose={() => setEditingDdfPath(null)}
+        />
+      )}
     </div>
   );
 }
