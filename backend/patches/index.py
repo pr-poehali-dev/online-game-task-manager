@@ -14,6 +14,7 @@ from botocore.config import Config
 import psycopg2
 
 import ddf_parser
+import ddf_raw
 import ddf_registry
 import ddf_registry_c4
 import l2encdec
@@ -387,13 +388,17 @@ def handler(event: dict, context) -> dict:
     список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
     для подсветки задач, ожидающих заливки в лаунчер.
     Для текстовых .dat файлов клиента (названия/описания предметов, скиллов, нпс и т.п. — список
-    поддерживаемых схем в ddf_registry.py) доступны действия: ddf_search (поиск записи по подстроке
-    в текстовых полях, возвращает короткий список совпадений), ddf_get (полная запись по индексу
-    для редактирования), ddf_save (сохранение правок текстовых полей одной записи — файл на лету
-    расшифровывается, запись обновляется, файл пересобирается и зашифровывается обратно в S3),
-    ddf_new (пустой шаблон записи с значениями по умолчанию — для формы "создать новую запись") и
-    ddf_create (добавляет одну или несколько новых записей в конец файла — для пакетного добавления
-    из вставленного списка).
+    поддерживаемых схем в ddf_registry.py/ddf_registry_c4.py) доступны действия: ddf_search (поиск
+    записи по подстроке в текстовых полях, возвращает короткий список совпадений), ddf_get (полная
+    запись по индексу для редактирования), ddf_save (сохранение правок текстовых полей одной
+    записи — файл на лету расшифровывается, запись обновляется, файл пересобирается и
+    зашифровывается обратно в S3), ddf_new (пустой шаблон записи с значениями по умолчанию — для
+    формы "создать новую запись") и ddf_create (добавляет одну или несколько новых записей в конец
+    файла — для пакетного добавления из вставленного списка). Для схем без осмысленных отдельных
+    текстовых полей (armorgrp/etcitemgrp/recipe — там основная ценность записи в MTX/MAT-таблицах
+    путей к моделям/текстурам/звукам или списках материалов рецепта, см. ddf_raw.py) вместо
+    ddf_get/ddf_save используются ddf_get_raw/ddf_save_raw — запись показывается и редактируется
+    целиком одной таб-разделённой строкой, как в декомпилированном TSV-экспорте l2disasm.
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
     задаче/управление папками/сохранение правок и добавление новых записей в DDF-файлах —
     администраторам и участникам с правом полного редактирования задач.'''
@@ -453,7 +458,8 @@ def handler(event: dict, context) -> dict:
         return _ok({'taskIds': task_ids})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
-                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete'):
+                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete',
+                  'ddf_save_raw'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -503,6 +509,7 @@ def handler(event: dict, context) -> dict:
             'totalRows': total_rows,
             'matched': len(results),
             'results': results,
+            'isRawOnly': is_raw_only,
         })
 
     if action == 'ddf_get':
@@ -545,6 +552,50 @@ def handler(event: dict, context) -> dict:
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
             'isRawOnly': is_raw_only,
+        })
+
+    if action == 'ddf_get_raw':
+        # Возвращает одну запись целиком в виде ОДНОЙ таб-разделённой строки (см. ddf_raw.py)
+        # — как в декомпилированном TSV-экспорте l2disasm. Используется для схем без
+        # осмысленных отдельных текстовых полей (armorgrp/etcitemgrp/recipe — там основная
+        # ценность записи в MTX/MAT-таблицах путей к моделям/звукам или списках материалов
+        # рецепта), где обычная форма "один инпут на editable-поле" неудобна.
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        index = body.get('index')
+        if not server or not path or index is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = _ddf_match(server, path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, _editable, has_reccnt_prefix, fixed_record_count, _is_raw_only = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, _ddf_quirk_bytes(server, key))
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        cur.close(); conn.close()
+        if not loaded:
+            return _bad('not_found', 404)
+        _file_key, protocol, plain = loaded
+        idx = int(index)
+        try:
+            total_rows = ddf_parser.get_record_count(plain, has_reccnt_prefix, fixed_record_count)
+            row = ddf_parser.get_record_by_index(
+                plain, fields, idx, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
+            line = ddf_raw.row_to_raw_line(row, fields)
+        except ddf_parser.DdfError as e:
+            return _bad(f'ddf_parse_error_{e}', 404 if 'index_out_of_range' in str(e) else 400)
+        return _ok({
+            'schema': key,
+            'index': idx,
+            'totalRows': total_rows,
+            'line': line,
         })
 
     if action == 'ddf_save':
@@ -620,6 +671,67 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
 
+    if action == 'ddf_save_raw':
+        # Сохраняет ОДНУ запись, отредактированную ЦЕЛИКОМ как единая таб-разделённая строка
+        # (см. ddf_raw.py) — обратная операция для ddf_get_raw. Строка разбирается обратно
+        # в набор полей строго по схеме (тот же порядок, что при сериализации); если число
+        # значений в строке не совпадает со схемой (пользователь случайно стёр/добавил
+        # табуляцию) — возвращается ошибка ddf_parse_error, файл не трогается.
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        index = body.get('index')
+        line = body.get('line')
+        if not server or not path or index is None or not isinstance(line, str):
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = _ddf_match(server, path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, _editable, has_reccnt_prefix, fixed_record_count, _is_raw_only = match
+        quirk_bytes = _ddf_quirk_bytes(server, key)
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, quirk_bytes)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        if not loaded:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        file_key, protocol, plain = loaded
+        idx = int(index)
+
+        def _apply_raw_line(row):
+            return ddf_raw.raw_line_to_row(line, fields, base_row=row)
+
+        try:
+            tail_bytes = None if has_reccnt_prefix else ddf_parser.get_tail_bytes(
+                plain, fields, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
+            new_plain = ddf_parser.transform_single_row(
+                plain, fields, idx, _apply_raw_line,
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
+            )
+            new_raw = l2encdec.encode(new_plain, protocol)
+            if quirk_bytes:
+                new_raw += bytes(quirk_bytes)
+        except (ddf_parser.DdfError, ValueError) as e:
+            cur.close(); conn.close()
+            status = 404 if 'index_out_of_range' in str(e) else 400
+            return _bad(f'ddf_parse_error_{e}', status)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'encode_error_{e}')
+        s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        cur.execute(
+            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), server, path)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
+
     if action == 'ddf_new':
         # Возвращает "пустой шаблон" записи (все поля — значения по умолчанию: 0 для чисел,
         # пустая строка для текста) для формы "создать новую запись с нуля". В отличие от
@@ -670,6 +782,13 @@ def handler(event: dict, context) -> dict:
             # добавление новых строк — это сломало бы предполагаемую клиентом структуру.
             cur.close(); conn.close()
             return _bad('fixed_schema_no_append')
+        if is_raw_only:
+            # Схемы с MTX/MAT-полями (armorgrp/etcitemgrp/recipe) не поддерживают создание
+            # через обычную форму "одно поле — один инпут" — она не умеет собирать сложные
+            # табличные значения. Для них создание/пакетное добавление недоступно вовсе —
+            # только просмотр/редактирование существующих записей через ddf_get_raw/ddf_save_raw.
+            cur.close(); conn.close()
+            return _bad('raw_only_schema_no_create')
         quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()

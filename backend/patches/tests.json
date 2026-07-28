@@ -85,6 +85,24 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_get_raw without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_get_raw", "server": "c4x1", "path": "System/armorgrp.dat", "index": 0},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_save_raw without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_save_raw", "server": "c4x1", "path": "System/armorgrp.dat", "index": 0, "line": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

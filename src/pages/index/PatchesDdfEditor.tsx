@@ -9,6 +9,7 @@ import PatchesDdfSearchPanel from './PatchesDdfSearchPanel';
 import PatchesDdfViewPanel from './PatchesDdfViewPanel';
 import PatchesDdfCreatePanel from './PatchesDdfCreatePanel';
 import PatchesDdfBulkPanel from './PatchesDdfBulkPanel';
+import PatchesDdfRawPanel from './PatchesDdfRawPanel';
 
 export default function PatchesDdfEditor({
   server,
@@ -28,11 +29,14 @@ export default function PatchesDdfEditor({
   const [totalRows, setTotalRows] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
+  const [isRawOnlySchema, setIsRawOnlySchema] = useState(false);
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [row, setRow] = useState<Record<string, RowValue> | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [isRawMode, setIsRawMode] = useState(false);
+  const [rawLine, setRawLine] = useState<string | null>(null);
   const [loadingRow, setLoadingRow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -62,6 +66,7 @@ export default function PatchesDdfEditor({
       const data = await postJson({ action: 'ddf_search', server, path, query: q, limit: 50 });
       setResults(data.results || []);
       setTotalRows(data.totalRows || 0);
+      setIsRawOnlySchema(!!data.isRawOnly);
     } catch {
       setSearchError('Не удалось выполнить поиск');
     } finally {
@@ -82,7 +87,6 @@ export default function PatchesDdfEditor({
   }, [query, runSearch, mode]);
 
   async function openRow(index: number) {
-    setMode('view');
     setSelectedIndex(index);
     setLoadingRow(true);
     setSaveError('');
@@ -90,13 +94,22 @@ export default function PatchesDdfEditor({
     setConfirmDelete(false);
     try {
       const data = await postJson({ action: 'ddf_get', server, path, index });
-      setFields(data.fields || []);
-      setRow(data.row || {});
-      const initialEdits: Record<string, string> = {};
-      for (const f of data.fields || []) {
-        if (f.editable) initialEdits[f.name] = cleanText(data.row?.[f.name]);
+      if (data.isRawOnly) {
+        setIsRawMode(true);
+        setMode('raw');
+        const rawData = await postJson({ action: 'ddf_get_raw', server, path, index });
+        setRawLine(rawData.line ?? '');
+      } else {
+        setIsRawMode(false);
+        setMode('view');
+        setFields(data.fields || []);
+        setRow(data.row || {});
+        const initialEdits: Record<string, string> = {};
+        for (const f of data.fields || []) {
+          if (f.editable) initialEdits[f.name] = cleanText(data.row?.[f.name]);
+        }
+        setEdits(initialEdits);
       }
-      setEdits(initialEdits);
     } catch {
       setSaveError('Не удалось загрузить запись');
     } finally {
@@ -110,17 +123,21 @@ export default function PatchesDdfEditor({
     setSaveError('');
     setSaved(false);
     try {
-      await postJson({ action: 'ddf_save', server, path, index: selectedIndex, edits });
+      if (isRawMode) {
+        await postJson({ action: 'ddf_save_raw', server, path, index: selectedIndex, line: rawLine });
+      } else {
+        await postJson({ action: 'ddf_save', server, path, index: selectedIndex, edits });
+        const firstEditableField = fields.find((f) => f.editable)?.name;
+        const newPreview = firstEditableField ? edits[firstEditableField] : undefined;
+        setResults((prev) => prev.map((r) => (
+          r.index === selectedIndex
+            ? { ...r, preview: newPreview || r.preview }
+            : r
+        )));
+      }
       setSaved(true);
-      const firstEditableField = fields.find((f) => f.editable)?.name;
-      const newPreview = firstEditableField ? edits[firstEditableField] : undefined;
-      setResults((prev) => prev.map((r) => (
-        r.index === selectedIndex
-          ? { ...r, preview: newPreview || r.preview }
-          : r
-      )));
     } catch {
-      setSaveError('Не удалось сохранить — попробуйте ещё раз');
+      setSaveError('Не удалось сохранить — проверьте формат строки и попробуйте ещё раз');
     } finally {
       setSaving(false);
     }
@@ -149,6 +166,8 @@ export default function PatchesDdfEditor({
     setRow(null);
     setFields([]);
     setEdits({});
+    setIsRawMode(false);
+    setRawLine(null);
     setSaveError('');
     setSaved(false);
     setConfirmDelete(false);
@@ -280,6 +299,7 @@ export default function PatchesDdfEditor({
           searchError={searchError}
           results={results}
           canManage={canManage}
+          isRawOnly={isRawOnlySchema}
           onOpenRow={openRow}
           onOpenCreate={openCreate}
           onOpenBulk={openBulk}
@@ -293,6 +313,23 @@ export default function PatchesDdfEditor({
           fields={fields}
           edits={edits}
           setEdits={setEdits}
+          canManage={canManage}
+          saving={saving}
+          saved={saved}
+          saveError={saveError}
+          onSave={handleSave}
+          confirmDelete={confirmDelete}
+          setConfirmDelete={setConfirmDelete}
+          deleting={deleting}
+          onDelete={handleDelete}
+        />
+      )}
+
+      {mode === 'raw' && (
+        <PatchesDdfRawPanel
+          loadingRow={loadingRow}
+          line={rawLine}
+          setLine={setRawLine}
           canManage={canManage}
           saving={saving}
           saved={saved}

@@ -12,7 +12,7 @@ export interface FieldDef {
 }
 
 export type RowValue = string | number | (string | number)[] | null;
-export type Mode = 'search' | 'view' | 'create' | 'bulk';
+export type Mode = 'search' | 'view' | 'create' | 'bulk' | 'raw';
 
 const NULL_CHAR = String.fromCharCode(0);
 

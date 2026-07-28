@@ -8,6 +8,7 @@ export default function PatchesDdfSearchPanel({
   searchError,
   results,
   canManage,
+  isRawOnly,
   onOpenRow,
   onOpenCreate,
   onOpenBulk,
@@ -18,6 +19,7 @@ export default function PatchesDdfSearchPanel({
   searchError: string;
   results: SearchResult[];
   canManage: boolean;
+  isRawOnly: boolean;
   onOpenRow: (index: number) => void;
   onOpenCreate: () => void;
   onOpenBulk: () => void;
@@ -38,7 +40,7 @@ export default function PatchesDdfSearchPanel({
             <Icon name="Loader2" size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin" />
           )}
         </div>
-        {canManage && (
+        {canManage && !isRawOnly && (
           <>
             <button
               onClick={onOpenCreate}
