@@ -61,8 +61,14 @@ SIMPLE_TYPES = {
     'FLOAT': ('<f', 4),
 }
 
+# Согласно MANUAL: имя поля (ident) может содержать ЛЮБЫЕ символы кроме пробельных и
+# [](){}=,/*\#:; — то есть не только [A-Za-z0-9_], но и, например, "?" (встречается в реальных
+# DDF, например questname-e.ddf: "UINT tag_?;"). Единственное строгое требование — ident не
+# может НАЧИНАТЬСЯ с цифры.
+_IDENT_CHARS = r'[^\s\[\]{}()=,/*\\#:;]'
 FIELD_RE = re.compile(
-    r'^\s*([A-Z0-9]+)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([A-Za-z0-9_]+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?\s*;'
+    r'^\s*([A-Z0-9]+)\s+([^\d\s\[\]{}()=,/*\\#:;]' + _IDENT_CHARS + r'*)\s*'
+    r'(?:\[\s*(' + _IDENT_CHARS + r'+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?\s*;'
 )
 
 
@@ -92,7 +98,11 @@ def parse_ddf(ddf_text: str) -> list:
         # skip property lines like SOFT = 5, ENBBY = [...], SKIPIF = [...]
         if re.match(r'^[A-Z_]+\s*=', line):
             continue
-        m = re.match(r'^([A-Z0-9]+)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([A-Za-z0-9_]+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?$', line)
+        m = re.match(
+            r'^([A-Z0-9]+)\s+([^\d\s\[\]{}()=,/*\\#:;]' + _IDENT_CHARS + r'*)\s*'
+            r'(?:\[\s*(' + _IDENT_CHARS + r'+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?$',
+            line
+        )
         if not m:
             continue
         ftype, fname, farray, _, ffiller = m.groups()
