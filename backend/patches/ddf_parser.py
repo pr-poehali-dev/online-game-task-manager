@@ -21,9 +21,23 @@ tools, автор M.Soltys aka DStuff). Поддерживаются типы п
   - value — это количество "единиц" текста (байт для ascii, символов для utf-16), ВКЛЮЧАЯ
     завершающий null-терминатор.
 
-MTX/MTX2/MTX3/MAT/MAT2 (используются в файлах вроде armorgrp.dat) в данной версии не
-поддерживаются — из истории использования выяснено, что все текстовые файлы (itemname, npcname,
-npcstring, skillname, questname, commandname и т.п.) их не используют.
+MTX и MAT (используются в файлах вроде armorgrp.dat/etcitemgrp.dat/recipe-c.dat) ПОДДЕРЖИВАЮТСЯ
+(см. ниже) — бинарный формат восстановлен экспериментально на реальных данных и подтверждён
+сверкой с официальным TXT-экспортом l2disasm (побайтовое совпадение). MTX2/MTX3/MAT2 остаются
+НЕ поддержаны — ни одна из известных схем C4/HF их не использует, встретить не удалось.
+
+Формат MTX (подтверждено на etcitemgrp.dat/armorgrp.dat, сверено с l2disasm TXT-экспортом):
+  ДВЕ последовательные подтаблицы UNICODE-строк:
+  UINT count1, count1 x UNICODE (условно "mesh"), UINT count2, count2 x UNICODE (условно "tex").
+  В TXT-экспорте эти 4 части выводятся как отдельные колонки: `{name}_cntm`, `{name}_m[i]`,
+  `{name}_cntt`, `{name}_t[i]`.
+
+Формат MAT (подтверждено на recipe-c.dat "materials" — список ингредиентов рецепта):
+  UINT count, count x (UINT id, UINT amount) — пары "id предмета + количество".
+
+Оба типа не используют схемное поле `array` (в DDF всегда пишутся без `[...]`, например
+"MTX m_HumnFigh;") — счётчики целиком внутри самого значения поля, а не отдельным соседним
+полем схемы, поэтому обрабатываются отдельной веткой в _read_field/_write_field.
 '''
 import struct
 import re
@@ -113,7 +127,7 @@ def parse_ddf(ddf_text: str) -> list:
         if not m:
             continue
         ftype, fname, farray, _, ffiller = m.groups()
-        if ftype in ('MTX', 'MTX2', 'MTX3', 'MAT', 'MAT2'):
+        if ftype in ('MTX2', 'MTX3', 'MAT2'):
             raise DdfError(f'unsupported_type_{ftype}')
         fields.append({
             'type': ftype,
@@ -499,6 +513,12 @@ def default_row(fields: list) -> dict:
         array_ref = field['array']
         if ftype == 'FILLER':
             continue
+        if ftype == 'MTX':
+            row[name] = {'mesh': [], 'tex': []}
+            continue
+        if ftype == 'MAT':
+            row[name] = []
+            continue
         if array_ref is not None:
             count = _resolve_count(row, array_ref) if not array_ref.isdigit() else int(array_ref)
             count = count or 0
@@ -537,15 +557,74 @@ def build_row_from_texts(fields: list, editable_names: list, base_row: dict, tex
     return row
 
 
+def _read_mtx(data: bytes, offset: int):
+    '''MTX = 2 последовательные подтаблицы UNICODE-строк: (count1, count1 x UNICODE),
+    (count2, count2 x UNICODE). Возвращает ({'mesh': [...], 'tex': [...]}, new_offset).'''
+    c1 = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    mesh = []
+    for _ in range(c1):
+        v, offset = decode_unicode_field(data, offset)
+        mesh.append(v)
+    c2 = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    tex = []
+    for _ in range(c2):
+        v, offset = decode_unicode_field(data, offset)
+        tex.append(v)
+    return {'mesh': mesh, 'tex': tex}, offset
+
+
+def _write_mtx(out: bytearray, value):
+    value = value or {}
+    mesh = value.get('mesh') or []
+    tex = value.get('tex') or []
+    out += struct.pack('<I', len(mesh))
+    for v in mesh:
+        out += encode_unicode_field(v or '')
+    out += struct.pack('<I', len(tex))
+    for v in tex:
+        out += encode_unicode_field(v or '')
+
+
+def _read_mat(data: bytes, offset: int):
+    '''MAT = список пар (id, amount): UINT count, count x (UINT id, UINT amount).
+    Возвращает (list[{'id': int, 'amount': int}], new_offset).'''
+    count = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    items = []
+    for _ in range(count):
+        item_id, amount = struct.unpack_from('<II', data, offset)
+        offset += 8
+        items.append({'id': item_id, 'amount': amount})
+    return items, offset
+
+
+def _write_mat(out: bytearray, value):
+    items = value or []
+    out += struct.pack('<I', len(items))
+    for item in items:
+        out += struct.pack('<II', int(item.get('id', 0)), int(item.get('amount', 0)))
+
+
 def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
     ftype = field['type']
     name = field['name']
-    count = _resolve_count(row, field['array'])
 
     if ftype == 'FILLER':
         size = field['filler_size'] or 0
         offset += size
         return offset
+
+    if ftype == 'MTX':
+        row[name], offset = _read_mtx(data, offset)
+        return offset
+
+    if ftype == 'MAT':
+        row[name], offset = _read_mat(data, offset)
+        return offset
+
+    count = _resolve_count(row, field['array'])
 
     if count is not None:
         values = []
@@ -609,6 +688,14 @@ def _write_field(out: bytearray, field: dict, row: dict):
     if ftype == 'FILLER':
         size = field['filler_size'] or 0
         out += bytes(size)
+        return
+
+    if ftype == 'MTX':
+        _write_mtx(out, row.get(name))
+        return
+
+    if ftype == 'MAT':
+        _write_mat(out, row.get(name))
         return
 
     if array_ref is not None:

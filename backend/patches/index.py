@@ -36,20 +36,24 @@ def _ddf_registry_for(server):
 
 
 def _ddf_match(server, path):
-    '''Возвращает (schema_key, fields, editable, has_reccnt_prefix, fixed_record_count) для
-    файла на данном сервере, выбирая нужный реестр схем (C4 или HF), либо None, если формат
-    не поддерживается. Унифицирует разницу в сигнатуре match_ddf() между реестрами: основной
-    ddf_registry.py возвращает 3-кортеж (все его файлы имеют стандартный 4-байтный префикс
-    счётчика записей), ddf_registry_c4.py — 5-кортеж (некоторые файлы C4 имеют фиксированное
-    число записей без префикса).'''
+    '''Возвращает (schema_key, fields, editable, has_reccnt_prefix, fixed_record_count,
+    is_raw_only) для файла на данном сервере, выбирая нужный реестр схем (C4 или HF), либо
+    None, если формат не поддерживается. Унифицирует разницу в сигнатуре match_ddf() между
+    реестрами: основной ddf_registry.py возвращает 3-кортеж (все его файлы имеют стандартный
+    4-байтный префикс счётчика записей и обычную форму редактирования), ddf_registry_c4.py —
+    6-кортеж (некоторые файлы C4 имеют фиксированное число записей без префикса, и/или не
+    имеют осмысленных текстовых полей — is_raw_only=True, требуют RAW-режима на фронтенде).'''
     registry = _ddf_registry_for(server)
     match = registry.match_ddf(path)
     if not match:
         return None
-    if len(match) == 5:
+    if len(match) == 6:
         return match
+    if len(match) == 5:
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        return key, fields, editable, has_reccnt_prefix, fixed_record_count, False
     key, fields, editable = match
-    return key, fields, editable, True, None
+    return key, fields, editable, True, None, False
 
 
 def _ddf_is_supported(server, path):
@@ -270,10 +274,22 @@ def _row_to_file(r, server):
 # DDF (текстовые .dat файлы) — поиск / просмотр / редактирование одной записи
 # ---------------------------------------------------------------------------
 
-def _ddf_load_plain(s3, bucket, schema, cur, server, path):
+def _ddf_quirk_bytes(server, schema_key):
+    '''Некоторые файлы конкретного клиента имеют "приписку" вне стандартного формата .dat,
+    добавленную пользователем вручную (см. ddf_registry_c4.ARMORGRP_TRAILING_QUIRK_BYTES) —
+    N нулевых байт в САМЫЙ конец файла, после стандартного 20-байтного l2encdec-tail.
+    Возвращает количество таких байт для данной схемы на данном сервере (0, если нет).'''
+    if server in DDF_C4_SERVERS and schema_key == 'armorgrp':
+        return ddf_registry_c4.ARMORGRP_TRAILING_QUIRK_BYTES
+    return 0
+
+
+def _ddf_load_plain(s3, bucket, schema, cur, server, path, quirk_bytes=0):
     '''Возвращает (file_key, protocol, plain_bytes) для текстового .dat файла или None,
     если файл не найден в БД. Может бросить l2encdec.L2CryptError, если протокол не
-    распознан или файл повреждён.'''
+    распознан или файл повреждён. quirk_bytes — количество "защитных" байт, добавленных
+    пользователем вручную в САМЫЙ конец файла (см. _ddf_quirk_bytes) — отрезаются перед
+    detect_protocol/decode, чтобы не мешать стандартному разбору формата.'''
     cur.execute(
         f"SELECT file_key FROM {schema}.patch_files WHERE server = %s AND path = %s",
         (server, path)
@@ -284,6 +300,8 @@ def _ddf_load_plain(s3, bucket, schema, cur, server, path):
     file_key = row[0]
     obj = s3.get_object(Bucket=bucket, Key=file_key)
     raw = obj['Body'].read()
+    if quirk_bytes:
+        raw = raw[:-quirk_bytes]
     protocol = l2encdec.detect_protocol(raw)
     if protocol is None:
         raise l2encdec.L2CryptError('unknown_protocol')
@@ -457,11 +475,11 @@ def handler(event: dict, context) -> dict:
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, _ddf_quirk_bytes(server, key))
         except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'decrypt_error_{e}')
@@ -500,11 +518,11 @@ def handler(event: dict, context) -> dict:
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, _ddf_quirk_bytes(server, key))
         except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'decrypt_error_{e}')
@@ -526,6 +544,7 @@ def handler(event: dict, context) -> dict:
             'totalRows': total_rows,
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
+            'isRawOnly': is_raw_only,
         })
 
     if action == 'ddf_save':
@@ -545,11 +564,12 @@ def handler(event: dict, context) -> dict:
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
+        quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, quirk_bytes)
         except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'decrypt_error_{e}')
@@ -583,6 +603,8 @@ def handler(event: dict, context) -> dict:
                 has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
             )
             new_raw = l2encdec.encode(new_plain, protocol)
+            if quirk_bytes:
+                new_raw += bytes(quirk_bytes)
         except ddf_parser.DdfError as e:
             cur.close(); conn.close()
             status = 404 if 'index_out_of_range' in str(e) else 400
@@ -611,12 +633,13 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         if not match:
             return _bad('ddf_not_supported')
-        key, fields, editable, _has_reccnt_prefix, _fixed_record_count = match
+        key, fields, editable, _has_reccnt_prefix, _fixed_record_count, is_raw_only = match
         row = ddf_parser.default_row(fields)
         return _ok({
             'schema': key,
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
+            'isRawOnly': is_raw_only,
         })
 
     if action == 'ddf_create':
@@ -640,17 +663,18 @@ def handler(event: dict, context) -> dict:
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
         if not has_reccnt_prefix:
             # Файлы с фиксированным числом записей в самой схеме (например eula.dat — всегда
             # ровно 1 запись, chargrp.dat — ровно 15, по одной на класс) не поддерживают
             # добавление новых строк — это сломало бы предполагаемую клиентом структуру.
             cur.close(); conn.close()
             return _bad('fixed_schema_no_append')
+        quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, quirk_bytes)
         except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'decrypt_error_{e}')
@@ -682,6 +706,8 @@ def handler(event: dict, context) -> dict:
         try:
             new_plain = ddf_parser.append_records(plain, fields, new_rows)
             new_raw = l2encdec.encode(new_plain, protocol)
+            if quirk_bytes:
+                new_raw += bytes(quirk_bytes)
         except ddf_parser.DdfError as e:
             cur.close(); conn.close()
             return _bad(f'ddf_parse_error_{e}')
@@ -709,14 +735,15 @@ def handler(event: dict, context) -> dict:
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
         if not has_reccnt_prefix:
             cur.close(); conn.close()
             return _bad('fixed_schema_no_delete')
+        quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()
         try:
-            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, quirk_bytes)
         except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'decrypt_error_{e}')
@@ -728,6 +755,8 @@ def handler(event: dict, context) -> dict:
         try:
             new_plain = ddf_parser.delete_record(plain, fields, idx)
             new_raw = l2encdec.encode(new_plain, protocol)
+            if quirk_bytes:
+                new_raw += bytes(quirk_bytes)
         except ddf_parser.DdfError as e:
             cur.close(); conn.close()
             status = 404 if 'index_out_of_range' in str(e) else 400

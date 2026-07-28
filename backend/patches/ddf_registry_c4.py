@@ -17,9 +17,22 @@ DDF-тексты взяты из официального набора опре�
 схемой. Для них в FIXED_RECORD_COUNTS ниже задано это число, и index.py должен вызывать
 парсер с has_reccnt_prefix=False, fixed_record_count=N.
 
-Не поддерживаются (используют сложные типы MTX/MTX2/MAT, парсер их не разбирает, и/или не
-содержат текстовых полей, интересных для редактора): armorgrp, etcitemgrp, recipe-c, npcgrp,
-weapongrp, hairgrp, logongrp.
+MTX/MAT-поля (armorgrp, etcitemgrp, recipe-c) ПОДДЕРЖИВАЮТСЯ — формат разобран экспериментально
+и подтверждён byte-perfect сверкой с официальным TXT-экспортом l2disasm (armorgrp/etcitemgrp
+пользователя), см. подробности в docstring ddf_parser.py про MTX/MAT. У этих трёх файлов нет
+"человеческих" текстовых полей (названия/описания) — вместо привычного текстового редактора для
+них на фронтенде используется РЕЖИМ RAW: вся запись показывается одной строкой значений через
+таб (как в l2disasm TSV-экспорте) и правится целиком одним textarea — см. ddf_raw.py.
+
+Особый случай — armorgrp.dat: пользователь намеренно добавляет 2 нулевых байта в САМЫЙ конец
+файла (после стандартного 20-байтного tail) как защиту от несанкционированного использования
+файла в чужом инструментарии. Это НЕ часть формата dat/DDF — общий алгоритм расшифровки
+(l2encdec.py) эти байты не ожидает и не учитывает. Backend (index.py) отрезает их перед decode
+и дописывает обратно после encode — см. ARMORGRP_TRAILING_QUIRK_BYTES ниже и _ddf_strip_quirk/
+_ddf_restore_quirk в index.py.
+
+Не поддерживаются (используют дублирующиеся имена полей/условные ENBBY-поля, либо не содержат
+интересных для редактора данных): npcgrp, weapongrp, hairgrp, logongrp.
 '''
 import re
 
@@ -394,6 +407,116 @@ _DDF_TEXTS = {
 	ASCF zone_name;
 }
 ''',
+    'etcitemgrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	UINT type1;
+	MTX mesh_tex_pair;
+	UNICODE item_sound;
+	UNICODE equip_sound;
+	UINT stackable;
+	UINT family;
+	UINT grade;
+}
+''',
+    'armorgrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	UINT UNK_1;
+	UINT body_part;
+	MTX m_HumnFigh;
+	MTX m_HumnFigh_add;
+	MTX f_HumnFigh;
+	MTX f_HumnFigh_add;
+	MTX m_DarkElf;
+	MTX m_DarkElf_add;
+	MTX f_DarkElf;
+	MTX f_DarkElf_add;
+	MTX m_Dorf;
+	MTX m_Dorf_add;
+	MTX f_Dorf;
+	MTX f_Dorf_add;
+	MTX m_Elf;
+	MTX m_Elf_add;
+	MTX f_Elf;
+	MTX f_Elf_add;
+	MTX m_HumnMyst;
+	MTX m_HumnMyst_add;
+	MTX f_HumnMyst;
+	MTX f_HumnMyst_add;
+	MTX m_OrcFigh;
+	MTX m_OrcFigh_add;
+	MTX f_OrcFigh;
+	MTX f_OrcFigh_add;
+	MTX m_OrcMage;
+	MTX m_OrcMage_add;
+	MTX f_OrcMage;
+	MTX f_OrcMage_add;
+	MTX Unknown_MT;
+	MTX NPC_MT;
+	MTX ACC_MT;
+	UNICODE att_eff;
+	UINT item_sound_cnt;
+	UNICODE item_sound[item_sound_cnt];
+	UNICODE drop_sound;
+	UNICODE equip_sound;
+	UINT UNK_2;
+	UINT UNK_3;
+	UINT armor_type;
+	UINT crystal_type;
+	UINT avoid_mod;
+	UINT pdef;
+	UINT mdef;
+	UINT mpbonus;
+}
+''',
+    'recipe': '''
+{
+	ASCF name;
+	UINT id_mk;
+	UINT id_recipe;
+	UINT level;
+	UINT id_item;
+	UINT count;
+	UINT mp_cost;
+	UINT success_rate;
+	MAT materials;
+}
+''',
 }
 
 # Человекочитаемые названия полей (для фронтенда) — какие поля показывать как редактируемый
@@ -434,7 +557,26 @@ _EDITABLE_TEXT_FIELDS = {
     'sysstring': ['name'],
     'systemmsg': ['message', 'item_sound', 'sys_msg_ref'],
     'zonename': ['zone_name'],
+    # У этих трёх схем нет "человеческих" текстовых полей (названия/описания) — только
+    # технические пути к моделям/текстурам/звукам внутри MTX/MAT-полей и обычных строковых
+    # полей. Редактирование для них выполняется целиком через RAW_ONLY_SCHEMAS (см. ниже).
+    'etcitemgrp': [],
+    'armorgrp': [],
+    'recipe': ['name'],
 }
+
+# Схемы без осмысленных "человеческих" editable-полей (или там, где текстовые поля — это лишь
+# небольшая часть намного более сложной по структуре записи) — на фронтенде для них вместо
+# обычной формы редактирования отдельных полей показывается RAW-режим: вся запись одной строкой
+# значений через табуляцию (как в l2disasm TSV-экспорте, см. ddf_raw.py), редактируемой одним
+# textarea целиком.
+RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe'}
+
+# armorgrp.dat: пользователь намеренно дописывает 2 нулевых байта в САМЫЙ конец файла (после
+# стандартного 20-байтного l2encdec-tail) как защиту от использования файла в чужом
+# инструментарии. Это НЕ часть формата — index.py должен отрезать эти байты перед decode и
+# дописывать их обратно после encode (см. _ddf_strip_quirk/_ddf_restore_quirk в index.py).
+ARMORGRP_TRAILING_QUIRK_BYTES = 2
 
 # Файлы, у которых в DDF указано "RECCNT = N" (фиксированное число), а не "RECCNT = OFF" —
 # значит в бинарнике НЕТ 4-байтного префикса-счётчика записей в начале файла. Число записей
@@ -459,7 +601,9 @@ def _base_key(filename: str):
 
 def match_ddf(filename: str):
     '''Возвращает (schema_key, fields, editable_field_names, has_reccnt_prefix,
-    fixed_record_count) для файла, если он поддерживается для C4, иначе None.'''
+    fixed_record_count, is_raw_only) для файла, если он поддерживается для C4, иначе None.
+    is_raw_only=True означает, что у схемы нет осмысленных текстовых полей для обычной формы
+    редактирования — фронтенд должен показывать RAW-режим (см. RAW_ONLY_SCHEMAS выше).'''
     key = _base_key(filename)
     if key not in _DDF_TEXTS:
         return None
@@ -469,7 +613,8 @@ def match_ddf(filename: str):
     editable = _EDITABLE_TEXT_FIELDS.get(key, [])
     fixed_count = FIXED_RECORD_COUNTS.get(key)
     has_reccnt_prefix = fixed_count is None
-    return key, fields, editable, has_reccnt_prefix, fixed_count
+    is_raw_only = key in RAW_ONLY_SCHEMAS
+    return key, fields, editable, has_reccnt_prefix, fixed_count, is_raw_only
 
 
 def is_supported(filename: str) -> bool:
