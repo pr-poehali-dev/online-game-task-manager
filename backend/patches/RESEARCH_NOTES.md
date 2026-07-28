@@ -353,9 +353,197 @@ full_bin = l2ddf.append_safe_package_tail(bin2)           # добавить х�
 }
 ```
 
+## ВАЖНО: смена основного DDF-парсера (l2ddf.py -> ddf_parser.py+ddf_registry.py)
+
+В какой-то момент сессии (после сброса контекста) обнаружилось, что в проекте уже существует
+ПАРАЛЛЕЛЬНАЯ реализация той же задачи: `backend/patches/ddf_parser.py` + `ddf_registry.py`,
+уже импортированная в `backend/patches/index.py` (строки `import ddf_parser`, `import
+ddf_registry`). Она устроена немного иначе, чем мой `l2ddf.py`:
+- ASCF-строка возвращается как `AscfStr` — подкласс `str` с атрибутом `.is_unicode` (вместо
+  кортежа `(is_unicode, text)` как было в l2ddf.py). Ведёт себя как обычная строка везде.
+- Пустая ASCF-строка различает ДВА бинарных случая: `None` (counter=0, данных нет вообще) и
+  `AscfStr('')` (counter=1, один null-байт) — это важно для byte-perfect пересборки.
+- `disassemble(binary, fields, has_reccnt_prefix=True)` возвращает `(rows, record_count,
+  tail_bytes)` — сам определяет и хвост (SafePackage), и его отдаёт для передачи в assemble.
+- `assemble(rows, fields, record_count=None, has_reccnt_prefix=True, tail_bytes=None)` — не
+  нужно отдельно вызывать strip/append tail, всё внутри.
+- Есть частичная поддержка `CNTR` (голый packed counter как отдельное поле) и `FILLER`.
+- `ddf_registry.py` уже содержит match_ddf(filename) -> (key, fields, editable_fields) для 5
+  схем (itemname, npcname, npcstring, skillname, commandname) — DDF-тексты зашиты в код.
+
+Я УДАЛИЛ свой `l2ddf.py` (дублирующий, менее интегрированный) и дальше работаю ИСКЛЮЧИТЕЛЬНО
+с `ddf_parser.py`/`ddf_registry.py` — не путать, если контекст снова собьётся! Публичный API
+для справки:
+```python
+from ddf_parser import parse_ddf, disassemble, assemble, DdfError, AscfStr
+from ddf_registry import match_ddf, is_supported
+
+fields = parse_ddf(ddf_text)
+rows, record_count, tail_bytes = disassemble(plain_bytes, fields)   # bytes -> list[dict]
+new_plain = assemble(rows, fields, record_count=record_count, tail_bytes=tail_bytes)  # обратно
+```
+
+### Массовая валидация ddf_parser.py на 31 эталонном файле — статус на момент записи
+
+Прогнан roundtrip-тест (bin -> disassemble -> assemble -> bin, побайтовое сравнение) на ВСЕХ
+доступных парах `dec-*.dat`+`*.ddf` из архива (эталоны лежат в `/tmp/l2edit_extracted/temp/*.ddf`
+— там ЕСТЬ ru-версии DDF в отличие от `data/l2asm-disasm/DAT_defs/H5pt/`, где только `-e`).
+Файлы с "неканоничным" регистром имени (`CommandNamePatch-e.ddf`, `NpcString-e.ddf`,
+`MacroPreset-e.ddf`, `ZoneName-e.ddf`) — искать case-insensitive.
+
+**Результаты (после первого фикса regex для field name, см. ниже):**
+- OK (byte-perfect): additionalitemgrp, castlename-ru, commandname-e, commandname-ru,
+  commandnamepatch-e, dbdropdata, dbitemdata, dbnpcdata, dbspoildata, huntingzone-ru,
+  instantzonedata-ru, itemname-e, itemname-ru, macropreset-e, mobskillanimgrp, npcname-e,
+  npcname-ru, npcstring-e (проверить регистр файла), npcstring-ru, questname-e (после фикса),
+  questname-ru (после фикса, needs re-verify), skillname-e, skillname-ru, systemmsg-e,
+  systemmsg-ru, zonename-e/zonename-ru (после фикса regex, needs re-verify)
+- **НЕ ПОДДЕРЖИВАЕТСЯ** (содержат MTX-тип, парсер намеренно кидает `DdfError`): armorgrp,
+  etcitemgrp, vehiclepartsgrp, recipe-c
+- **НЕ РАБОТАЕТ, требует доп. фикса** (найдено, но ещё НЕ исправлено на момент этой записи):
+  - `npcgrp`, `weapongrp` — используют `ENBBY` (условное поле, читается только если другое
+    поле удовлетворяет условию) — парсер ЭТО НЕ учитывает при disassemble/assemble (просто
+    пропускает свойство ENBBY как текст, но само поле всё равно безусловно читает/пишет) —
+    из-за этого весь разбор записи сдвигается. Также в `npcgrp.ddf` есть ДУБЛИРУЮЩЕЕся имя
+    поля `tex1` (два разных поля названы одинаково — опечатка автора DDF, `UNICODE
+    tex1[cnt_tex1]` и потом снова `UNICODE tex1[cnt_tex2]`) — при записи в dict-row второе
+    значение перезатирает первое, это тоже нужно чем-то решать (например, переименовывать
+    задваивающиеся имена в *_2 при парсинге DDF).
+  - `radiodata-ru` — НЕ баг структуры, а баг `encode_ascf`: некоторые реальные ASCF-строки в
+    этом файле физически НЕ оканчиваются на `\x00` внутри блока (обрываются просто по длине
+    counter, а не по null-терминатору — например URL "NOVOE RADIO" станции обрывается на 'p'
+    без null, дальше сразу идёт следующая запись). `decode_ascf` их читает правильно (canonical
+    AscfStr без хвостового `\x00`, т.к. `text.endswith('\x00')` не сработал — null просто нет),
+    НО `encode_ascf` ВСЕГДА безусловно добавляет `'\x00'` при кодировании
+    (`body = str(text) + '\x00'`), из-за чего counter получается на 1 больше и всё "уезжает".
+    **Нужно разобраться**: почему в оригинале иногда нет null-терминатора — возможно, это
+    зависит от того, была ли строка обрезана из-за упора в лимит counter (16383) или это
+    просто мусор/недосмотр в конкретно этом файле у создателей контента. Возможное решение:
+    сохранять в `AscfStr` ещё один флаг `has_null_terminator` (аналогично `is_unicode`),
+    считанный при disassemble, и использовать его в encode_ascf вместо безусловного
+    добавления `+ '\x00'`.
+  - `questname-e`/`zonename-e`/`questname-ru`/`zonename-ru` (`counter_value_too_large`) — ИСПРАВЛЕНО
+    фиксом regex ниже, но нужно перепроверить после фикса (я это сделал только для
+    questname-e explicitly, остальные 3 предположительно тоже чинятся тем же фиксом, но не
+    перепроверены на момент этой записи — ПЕРЕПРОВЕРИТЬ).
+
+### Найденный и исправленный баг №2: has_null_terminator для ASCF (radiodata-ru) — ИСПРАВЛЕНО
+
+`AscfStr` теперь хранит третий флаг `has_null_terminator` (по умолчанию True), сохранённый при
+`decode_ascf` (проверяется реальным `text.endswith('\x00')` после декодирования raw-байт).
+`encode_ascf` использует `getattr(text, 'has_null_terminator', True)` вместо безусловного
+`+ '\x00'`. Подтверждено: `radiodata-ru` теперь тоже даёт byte-perfect match.
+
+### ИТОГОВЫЙ статус массовой проверки после обоих фиксов: 28/32 файлов OK byte-perfect
+
+```
+additionalitemgrp OK, castlename-ru OK, commandname-e OK, commandname-ru OK,
+commandnamepatch-e OK, dbdropdata OK, dbitemdata OK, dbnpcdata OK, dbspoildata OK,
+huntingzone-ru OK, instantzonedata-ru OK, itemname-e OK, itemname-ru OK, macropreset-e OK,
+mobskillanimgrp OK, npcname-e OK, npcname-ru OK, npcstring-e OK, npcstring-ru OK,
+questname-e OK, questname-ru OK, radiodata-ru OK, skillname-e OK, skillname-ru OK,
+systemmsg-e OK, systemmsg-ru OK, zonename-e OK, zonename-ru OK
+
+НЕ поддерживаются (осознанное ограничение, требуют MTX/ENBBY — следующий этап):
+armorgrp (MTX), etcitemgrp (MTX), npcgrp (ENBBY + дублирующееся имя поля tex1),
+weapongrp (вероятно тоже ENBBY/MTX-подобное — не разбирался подробно)
+```
+
+### Найденный и исправленный баг №1: regex имени поля в `ddf_parser.py`
+
+`FIELD_RE` и внутренний regex в `parse_ddf()` использовали `[A-Za-z_][A-Za-z0-9_]*` для имени
+поля (ident). Но согласно MANUAL, ident может содержать ЛЮБЫЕ символы кроме пробельных и
+`[](){}=,/*\#:;` — например, реальный DDF `questname-e.ddf` содержит поле `UINT tag_?;` (с
+символом `?` в имени). Из-за слишком строгого regex это поле целиком пропускалось (не считалось
+полем), что сдвигало offset чтения ВСЕХ последующих полей на 4 байта и портило весь разбор файла.
+
+Фикс (уже применён в `ddf_parser.py`): заменил символьный класс имени на `[^\s\[\]{}()=,/*\\#:;]`
+(разрешить всё, кроме запрещённого набора), с отдельным более строгим первым символом (не цифра
+и не из запрещённого набора). См. переменную `_IDENT_CHARS` в начале `ddf_parser.py`.
+
+### Ещё не проверенные/не реализованные части (TODO дальше)
+
+1. **Доделать ENBBY** (условные поля) в `ddf_parser.py` — нужно для `npcgrp`/`weapongrp`, но
+   ЭТИ ФАЙЛЫ НЕ являются приоритетными текстовыми файлами (armorgrp/weapongrp/npcgrp — это
+   характеристики предметов/мобов, не тексты). Пользователь просил поддержать "все файлы,
+   которые предусматривает эдитор из архива" — значит теоретически нужно разобраться, но
+   можно отложить как менее приоритетное после текстовых файлов.
+2. **Доделать has_null_terminator флаг** для ASCF (баг radiodata-ru) — см. выше, важно для
+   ЛЮБОГО файла, где встречаются ASCF-строки без null (не только radiodata).
+3. **Обработать дублирующиеся имена полей** в DDF (как `tex1` в npcgrp) — нужна стратегия
+   переименования при парсинге (например, `tex1`, `tex1_2`, ...) и соответствующая обратная
+   связь при assemble (писать по оригинальному порядку полей, не полагаясь только на имя).
+4. **MTX/MTX2/MTX3/MAT/MAT2** — сложные вложенные табличные типы, используются в armorgrp,
+   etcitemgrp, vehiclepartsgrp, recipe-c, weapongrp (частично) и, возможно, других файлах,
+   которые ещё не проверялись (полный список DDF в архиве — 89 файлов в
+   `data/l2asm-disasm/DAT_defs/H5pt/`, я проверил только ~31 из них). Это самый большой кусок
+   оставшейся работы, если пользователь действительно хочет "все файлы из эдитора".
+5. Собрать ПОЛНЫЙ реестр DDF-схем в `ddf_registry.py` — на данный момент там всего 5 схем
+   (itemname, npcname, npcstring, skillname, commandname), а в архиве 89 DDF-файлов
+   (H5pt) + вариации по языкам. Нужно решить: копировать DDF-тексты вручную по мере
+   необходимости, или найти способ хранить/грузить их иначе (embedded в код backend — сейчас
+   единственный практичный вариант, т.к. песочница Bash с архивом не персистентна).
+6. Backend actions (`ddf_read`/`ddf_save` или подобные имена) в `index.py` — ЕЩЁ НЕ
+   РЕАЛИЗОВАНЫ. Нужно решить формат ответа фронтенду (пользователь выбрал: "поиск + просмотр/
+   редактирование одной записи", НЕ таблица целиком и НЕ TSV-файл) — то есть action должен
+   уметь ИСКАТЬ запись (по id или по подстроке в текстовых полях) и возвращать только её, а
+   не весь файл целиком (skillname-e — 76336 записей, весь массив гонять на фронт нельзя).
+7. Frontend UI — ещё не реализован вообще.
+
+### Ключевое пользовательское решение по UX (зафиксировано в этой сессии)
+Пользователь выбрал вариант «Поиск + редактирование одной записи»: пользователь ищет
+предмет/скилл/нпс по названию или ID, открывается карточка с текстовыми полями (только
+`editable text fields` из ddf_registry), правит и сохраняет ТОЛЬКО эту запись — не таблицу и не
+целый файл через скачивание/загрузку TSV.
+Также пользователь уточнил: поддержать нужно "все файлы, которые предусматривает эдитор из
+архива" (а не только 4 изначальных) — то есть **все 89 DDF из H5pt**, по мере возможности (с
+учётом сложности MTX/ENBBY-типов, см. TODO выше). Разумная стратегия: сначала добить и
+закоммитить надёжную поддержку ВСЕХ "простых" (без MTX/MAT) DDF, MTX/MAT/ENBBY — отдельным
+следующим этапом, явно предупредив пользователя об ограничении на данном этапе.
+
+## ЭТАП 3 — ЗАВЕРШЁН: полный реестр 74 DDF-схем в `ddf_registry.py`
+
+`ddf_registry.py` ПЕРЕЗАПИСАН (был на 5 схем, стал на 74). Все DDF-тексты взяты из полного
+набора `data/l2asm-disasm/DAT_defs/H5pt/*.ddf` (89 файлов), из них исключены 7 файлов с
+неподдерживаемыми конструкциями (см. список ниже) — остальные 74 схемы включены целиком, как
+есть (оригинальный текст DDF, включая комментарии/wild-guess названия полей от авторов).
+
+**Исключены (требуют MTX/MAT/ENBBY — следующий этап, если понадобится):**
+`armorgrp`, `etcitemgrp`, `recipe-c`, `vehiclepartsgrp` (все — MTX/MTX2/MTX3/MAT/MAT2),
+`npcgrp`, `weapongrp`, `mantleexception` (ENBBY условные поля).
+
+**Regression-тест на РЕАЛЬНЫХ данных через сам реестр** (`ddf_registry.match_ddf(filename)` ->
+disassemble -> assemble -> побайтовое сравнение) — **28/28 доступных эталонных файлов OK**
+(все, для которых в архиве есть `dec-*.dat`): additionalitemgrp, castlename, commandname (x2 —
+e/ru), commandnamepatch, dbdropdata, dbitemdata, dbnpcdata, dbspoildata, huntingzone,
+instantzonedata, itemname (x2), macropreset, mobskillanimgrp, npcname (x2), npcstring (x2),
+questname (x2), radiodata, skillname (x2), systemmsg (x2), zonename (x2).
+
+Остальные ~46 схем реестра (без dec-*.dat эталона под рукой) — только СИНТАКСИЧЕСКИ проверены
+(парсятся без ошибок через `parse_ddf`), но НЕ проверялись побайтово на реальных данных (нет
+образцов). Если при реальном использовании конкретного файла возникнет mismatch — разбираться
+по той же методологии (см. раздел "Проверенная методология сопоставления" выше).
+
+`match_ddf(filename)` определяет схему по basename файла с обрезкой расширения и языкового
+суффикса (`-e`/`-ru`/`-c`/др. до 3 букв), например `ItemName-e.dat` -> ключ `itemname`. Также
+добавлена функция `list_supported_keys()` — список всех 74 поддерживаемых ключей.
+
+**ВАЖНО про регенерацию файла**: `ddf_registry.py` был сгенерирован программным скриптом (не
+писался руками) — если понадобится дополнить/поправить схему для одного из файлов (например,
+добавить недостающий 8-й файл или поддержать ещё один после доработки ENBBY/MTX), проще всего
+редактировать `_DDF_TEXTS[key]` точечно через Edit-инструмент (найти нужный `'key': '''...''',`
+блок и заменить), а не перегенерировать весь файл заново.
+
 ## Статус коммитов
-- `l2encdec.py` (модуль шифрования) — закоммичен и работает, готово.
-- `l2ddf.py` (DDF-парсер + disasm/asm) — реализован и провалидирован в этой сессии, ГОТОВ К
-  КОММИТУ (проверить что он реально сохранён в файл проекта, не только в песочнице!).
-- Backend actions (decode_text/encode_save) — ещё не реализованы.
+- `l2encdec.py` (модуль шифрования, с CRT+gmpy2 оптимизацией RSA encode) — закоммичен и
+  работает, готово. CRT-ускорение добавлено т.к. без него encode skillname-e (76336 записей,
+  ~15 МБ после расшифровки, ~8500 RSA-блоков) занимал ~44 секунды (риск таймаута облачной
+  функции) — с CRT (чистый Python, без gmpy2) ~15-17 сек, с gmpy2 (если соберётся в облаке)
+  ~2 сек. gmpy2 прописан в requirements.txt с safe fallback на чистый pow().
+- `ddf_parser.py` (DDF-парсер + disassemble/assemble) — ОСНОВНАЯ рабочая реализация (не
+  l2ddf.py, тот удалён). Два бага найдены и исправлены: (1) regex имени поля не разрешал
+  спецсимволы вроде `?`, (2) `AscfStr` не сохранял has_null_terminator флаг. Массово проверен
+  — 28/28 доступных эталонных файлов byte-perfect.
+- `ddf_registry.py` (реестр DDF-схем) — ПОЛНОСТЬЮ ПЕРЕПИСАН, теперь 74 схемы (было 5). Готово.
+- Backend actions (чтение/поиск/сохранение одной записи) — ещё не реализованы в `index.py`.
 - Frontend UI — ещё не реализован.

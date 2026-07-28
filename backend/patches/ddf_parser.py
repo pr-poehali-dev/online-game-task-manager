@@ -35,11 +35,18 @@ class AscfStr(str):
     JSON-сериализация через str() и т.п.), но encode_ascf() при наличии этого флага не будет
     пытаться угадывать кодировку заново — это нужно, чтобы строки, которые пользователь НЕ
     редактировал, кодировались обратно байт-в-байт идентично оригиналу (некоторые ascii-совместимые
-    тексты в реальных файлах всё равно исторически сохранены как UTF-16LE).'''
+    тексты в реальных файлах всё равно исторически сохранены как UTF-16LE).
 
-    def __new__(cls, value, is_unicode=False):
+    has_null_terminator: в подавляющем большинстве .dat файлов ASCF-блок оканчивается байтом
+    '\\x00' (или '\\x00\\x00' для unicode) — это стандарт. НО в некоторых реальных файлах
+    (например radiodata-ru.dat, где строки URL "обрезаны" по месту без null) встречаются ASCF
+    без завершающего null. Флаг сохраняется при чтении и используется при кодировании, чтобы
+    не добавлять "лишний" null там, где его не было в оригинале.'''
+
+    def __new__(cls, value, is_unicode=False, has_null_terminator=True):
         obj = super().__new__(cls, value)
         obj.is_unicode = is_unicode
+        obj.has_null_terminator = has_null_terminator
         return obj
 
 
@@ -164,10 +171,13 @@ def decode_ascf(data: bytes, offset: int):
         raw = data[offset:offset + value]
         offset += value
         text = raw.decode('latin-1', errors='replace')
-    # remove trailing null terminator (always present when value>0)
-    if text.endswith('\x00'):
+    # null-терминатор ОБЫЧНО присутствует (стандартный случай), но не всегда — в некоторых
+    # реальных файлах (например radiodata-ru.dat) ASCF-блок физически обрывается без него;
+    # это нужно запомнить, чтобы encode_ascf не "дописывал" его туда, где не было.
+    has_null = text.endswith('\x00')
+    if has_null:
         text = text[:-1]
-    return AscfStr(text, is_unicode), offset
+    return AscfStr(text, is_unicode, has_null), offset
 
 
 def encode_ascf(text) -> bytes:
@@ -179,11 +189,17 @@ def encode_ascf(text) -> bytes:
     Если text — AscfStr с сохранённым флагом is_unicode, используется именно он (важно для
     byte-perfect пересборки неизменённых полей). Иначе (обычная str, например после правки
     пользователем) кодировка определяется автоматически: latin-1 если все символы укладываются
-    в 0-255, иначе UTF-16LE.'''
+    в 0-255, иначе UTF-16LE.
+
+    has_null_terminator (по умолчанию True, если явно не сохранён на AscfStr — см. decode_ascf)
+    управляет тем, добавлять ли завершающий '\\x00' — почти всегда он должен присутствовать,
+    но в редких реальных файлах (например radiodata-ru.dat) исходный блок обрывается без него,
+    и это нужно сохранить byte-perfect при пересборке неизменённого поля.'''
     if text is None:
         return encode_packed_counter(0, False)
     forced_unicode = getattr(text, 'is_unicode', None)
-    body = str(text) + '\x00'
+    has_null = getattr(text, 'has_null_terminator', True)
+    body = str(text) + ('\x00' if has_null else '')
     if forced_unicode is True:
         raw = body.encode('utf-16-le')
         return encode_packed_counter(len(body), True) + raw

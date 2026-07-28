@@ -17,6 +17,8 @@ import ddf_parser
 import ddf_registry
 import l2encdec
 
+from ddf_parser import AscfStr
+
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
 
@@ -227,7 +229,95 @@ def _row_to_file(r):
         'url': _public_url(r[3]),
         'updatedAt': r[4].isoformat() if r[4] else None,
         'taskIds': [str(t) for t in (r[5] or [])],
+        'ddfSupported': ddf_registry.is_supported(r[1]),
     }
+
+
+# ---------------------------------------------------------------------------
+# DDF (текстовые .dat файлы) — поиск / просмотр / редактирование одной записи
+# ---------------------------------------------------------------------------
+
+def _ddf_load_plain(s3, bucket, schema, cur, server, path):
+    '''Возвращает (file_key, protocol, plain_bytes) для текстового .dat файла или None,
+    если файл не найден в БД. Может бросить l2encdec.L2CryptError, если протокол не
+    распознан или файл повреждён.'''
+    cur.execute(
+        f"SELECT file_key FROM {schema}.patch_files WHERE server = %s AND path = %s",
+        (server, path)
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    file_key = row[0]
+    obj = s3.get_object(Bucket=bucket, Key=file_key)
+    raw = obj['Body'].read()
+    protocol = l2encdec.detect_protocol(raw)
+    if protocol is None:
+        raise l2encdec.L2CryptError('unknown_protocol')
+    plain = l2encdec.decode(raw, protocol)
+    return file_key, protocol, plain
+
+
+def _ddf_field_defs(fields, editable_names):
+    return [
+        {'name': f['name'], 'type': f['type'], 'array': f['array'] is not None,
+         'editable': f['name'] in editable_names}
+        for f in fields
+    ]
+
+
+def _ddf_row_label(row, fields):
+    '''Собирает человекочитаемую подпись записи из первых 1-2 скалярных числовых полей
+    (обычно id [+ level/подуровень]) — для отображения в результатах поиска.'''
+    parts = []
+    for f in fields:
+        if f['array'] is not None:
+            continue
+        if f['type'] not in ('UINT', 'INT', 'HEX'):
+            continue
+        val = row.get(f['name'])
+        if val is None:
+            continue
+        parts.append(f"{f['name']}={val}")
+        if len(parts) >= 2:
+            break
+    return ', '.join(parts)
+
+
+def _ddf_row_preview_text(row, editable_names, limit=140):
+    for name in editable_names:
+        val = row.get(name)
+        if val:
+            s = str(val).replace('\x00', '')
+            if s:
+                return s[:limit]
+    return ''
+
+
+def _ddf_serialize_row(row, fields):
+    '''Готовит запись для JSON-ответа: AscfStr/UNICODE значения остаются строками (включая
+    служебный завершающий '\\x00', если он есть — фронтенд должен ЕГО НЕ ПОКАЗЫВАТЬ явно, но
+    мы всё равно передаём как есть для простоты; frontend обрежет trailing \\x00 сам при
+    отображении). Списки (табличные поля) передаются как есть.'''
+    out = {}
+    for f in fields:
+        name = f['name']
+        val = row.get(name)
+        if isinstance(val, list):
+            out[name] = [str(v) if isinstance(v, str) else v for v in val]
+        elif isinstance(val, str):
+            out[name] = str(val)
+        else:
+            out[name] = val
+    return out
+
+
+def _ddf_row_matches_query(row, editable_names, query_lower):
+    for name in editable_names:
+        val = row.get(name)
+        if val and query_lower in str(val).lower():
+            return True
+    return False
 
 
 def handler(event: dict, context) -> dict:
@@ -245,8 +335,14 @@ def handler(event: dict, context) -> dict:
     (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
     список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
     для подсветки задач, ожидающих заливки в лаунчер.
+    Для текстовых .dat файлов клиента (названия/описания предметов, скиллов, нпс и т.п. — список
+    поддерживаемых схем в ddf_registry.py) доступны действия: ddf_search (поиск записи по подстроке
+    в текстовых полях, возвращает короткий список совпадений), ddf_get (полная запись по индексу
+    для редактирования) и ddf_save (сохранение правок текстовых полей одной записи — файл на лету
+    расшифровывается, запись обновляется, файл пересобирается и зашифровывается обратно в S3).
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
-    задаче/управление папками — администраторам и участникам с правом полного редактирования задач.'''
+    задаче/управление папками/сохранение правок в DDF-файлах — администраторам и участникам с
+    правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -302,10 +398,165 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'taskIds': task_ids})
 
-    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server', 'toggle_task', 'add_root', 'delete_root'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
+                  'toggle_task', 'add_root', 'delete_root', 'ddf_save'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
+
+    if action == 'ddf_search':
+        # Ищет записи в текстовом .dat файле по подстроке (регистронезависимо) среди его
+        # редактируемых текстовых полей. Возвращает только КОРОТКИЙ список совпадений (индекс
+        # записи + подпись + короткий превью текста) — сама запись целиком запрашивается
+        # отдельно через ddf_get, весь массив записей на фронтенд не отдаётся (некоторые файлы,
+        # например skillname-e, содержат более 76 тысяч записей).
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        query = (body.get('query') or '').strip()
+        limit = min(int(body.get('limit') or 50), 200)
+        if not server or not path:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = ddf_registry.match_ddf(path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        cur.close(); conn.close()
+        if not loaded:
+            return _bad('not_found', 404)
+        _file_key, protocol, plain = loaded
+        try:
+            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
+        except ddf_parser.DdfError as e:
+            return _bad(f'ddf_parse_error_{e}')
+        query_lower = query.lower()
+        results = []
+        for idx, row in enumerate(rows):
+            if query_lower and not (
+                query_lower in str(idx) or _ddf_row_matches_query(row, editable, query_lower)
+            ):
+                continue
+            results.append({
+                'index': idx,
+                'label': _ddf_row_label(row, fields),
+                'preview': _ddf_row_preview_text(row, editable),
+            })
+            if len(results) >= limit:
+                break
+        return _ok({
+            'schema': key,
+            'totalRows': len(rows),
+            'matched': len(results),
+            'results': results,
+        })
+
+    if action == 'ddf_get':
+        # Возвращает одну конкретную запись (по индексу) целиком — все поля схемы, с пометкой
+        # какие из них editable (текстовые, доступные для правки на фронтенде).
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        index = body.get('index')
+        if not server or not path or index is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = ddf_registry.match_ddf(path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        cur.close(); conn.close()
+        if not loaded:
+            return _bad('not_found', 404)
+        _file_key, protocol, plain = loaded
+        try:
+            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
+        except ddf_parser.DdfError as e:
+            return _bad(f'ddf_parse_error_{e}')
+        idx = int(index)
+        if idx < 0 or idx >= len(rows):
+            return _bad('index_out_of_range', 404)
+        return _ok({
+            'schema': key,
+            'index': idx,
+            'totalRows': len(rows),
+            'fields': _ddf_field_defs(fields, editable),
+            'row': _ddf_serialize_row(rows[idx], fields),
+        })
+
+    if action == 'ddf_save':
+        # Сохраняет правки ОДНОЙ записи (по индексу) обратно в файл: расшифровывает файл,
+        # разбирает на записи, заменяет текстовые поля указанной записи новыми значениями
+        # (только editable-поля из схемы — остальное игнорируется), собирает обратно и
+        # зашифровывает, перезаписывая тот же S3-объект (размер файла может немного
+        # измениться из-за другой длины текста — это нормально и учитывается автоматически).
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        index = body.get('index')
+        edits = body.get('edits')
+        if not server or not path or index is None or not isinstance(edits, dict):
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = ddf_registry.match_ddf(path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        if not loaded:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        file_key, protocol, plain = loaded
+        try:
+            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
+        except ddf_parser.DdfError as e:
+            cur.close(); conn.close()
+            return _bad(f'ddf_parse_error_{e}')
+        idx = int(index)
+        if idx < 0 or idx >= len(rows):
+            cur.close(); conn.close()
+            return _bad('index_out_of_range', 404)
+        row = rows[idx]
+        for fname, new_value in edits.items():
+            if fname not in editable:
+                continue  # игнорируем попытки править неразрешённые (не текстовые) поля
+            old_value = row.get(fname)
+            is_unicode = getattr(old_value, 'is_unicode', False)
+            has_null = getattr(old_value, 'has_null_terminator', True)
+            row[fname] = AscfStr(str(new_value), is_unicode, has_null)
+        try:
+            new_plain = ddf_parser.assemble(rows, fields, record_count=record_count, tail_bytes=tail)
+            new_raw = l2encdec.encode(new_plain, protocol)
+        except (ddf_parser.DdfError, l2encdec.L2CryptError) as e:
+            cur.close(); conn.close()
+            return _bad(f'encode_error_{e}')
+        s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        cur.execute(
+            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), server, path)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
 
     if action == 'add_root':
         server = _safe_server(body.get('server'))

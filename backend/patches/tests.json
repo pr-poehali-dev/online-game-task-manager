@@ -40,6 +40,24 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_search without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_search", "server": "c4x1", "path": "System/itemname-e.dat", "query": "arrow"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_save without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_save", "server": "c4x1", "path": "System/itemname-e.dat", "index": 0, "edits": {"name": "test"}},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }
