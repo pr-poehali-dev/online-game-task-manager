@@ -262,7 +262,13 @@ def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
     Возвращает (rows, record_count, tail_bytes). tail_bytes — необработанный хвост файла
     после последней записи (обычно служебный маркер "SafePackage", 13 байт: ASCF-строка) —
     он не описан в DDF, но обязателен для точной пересборки байт-в-байт, поэтому сохраняется
-    как есть и должен быть передан обратно в assemble().'''
+    как есть и должен быть передан обратно в assemble().
+
+    ВНИМАНИЕ: держит ВСЕ записи в памяти одновременно (list[dict]) — для больших файлов
+    (например skillname-e.dat, ~76 тысяч записей) это может занимать 150+ МБ, что рискованно
+    в облачной функции с ограниченной памятью. Для поиска/просмотра/редактирования ОДНОЙ
+    записи используйте iter_records()/transform_single_row() ниже — они не накапливают
+    список и потребляют памяти на порядки меньше.'''
     offset = 0
     if has_reccnt_prefix:
         record_count = struct.unpack_from('<I', binary, offset)[0]
@@ -284,6 +290,108 @@ def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
         rows.append(row)
     tail_bytes = binary[offset:]
     return rows, record_count, tail_bytes
+
+
+def iter_records(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
+    '''Генератор — читает записи ОДНУ ЗА ДРУГОЙ, не накапливая список в памяти. Отдаёт кортежи
+    (index, row). После исчерпания генератора у него можно прочитать финальные атрибуты через
+    возвращаемое значение StopIteration.value — но проще пользоваться transform_single_row()/
+    search_records() ниже, которые уже инкапсулируют typical use cases.'''
+    offset = 0
+    if has_reccnt_prefix:
+        record_count = struct.unpack_from('<I', binary, offset)[0]
+        offset += 4
+    else:
+        record_count = None
+
+    idx = 0
+    total_len = len(binary)
+    while offset < total_len:
+        if record_count is not None and idx >= record_count:
+            break
+        row = {}
+        try:
+            for field in fields:
+                offset = _read_field(binary, offset, field, row)
+        except (struct.error, IndexError):
+            break
+        yield idx, row
+        idx += 1
+
+
+def get_record_count(binary: bytes, has_reccnt_prefix: bool = True) -> int:
+    '''Читает только заголовочный счётчик записей (первые 4 байта файла), без разбора самих
+    записей — O(1) по памяти и времени.'''
+    if not has_reccnt_prefix:
+        raise DdfError('no_reccnt_prefix')
+    return struct.unpack_from('<I', binary, 0)[0]
+
+
+def get_record_by_index(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True):
+    '''Возвращает ОДНУ запись по индексу, читая файл потоково (без накопления списка).
+    Экономично по памяти для больших файлов — пригодно для ddf_get.'''
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+        if idx == index:
+            return row
+    raise DdfError(f'index_out_of_range_{index}')
+
+
+def search_records(binary: bytes, fields: list, editable_names: list, query_lower: str, limit: int,
+                    has_reccnt_prefix: bool = True):
+    '''Ищет записи, у которых хотя бы одно из editable_names текстовых полей содержит
+    query_lower (или, если query_lower пустой, возвращает первые limit записей). Читает файл
+    потоково — не накапливает список всех записей в памяти. Возвращает (matches, total_count),
+    где matches — список (index, row) для не более limit совпадений, total_count — реальное
+    количество записей в файле (из заголовка, O(1)).'''
+    total_count = get_record_count(binary, has_reccnt_prefix)
+    matches = []
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+        if query_lower:
+            found = str(idx) == query_lower or any(
+                row.get(name) and query_lower in str(row[name]).lower()
+                for name in editable_names
+            )
+            if not found:
+                continue
+        matches.append((idx, row))
+        if len(matches) >= limit:
+            break
+    return matches, total_count
+
+
+def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
+                          has_reccnt_prefix: bool = True, tail_bytes: bytes = None) -> bytes:
+    '''Читает файл запись за записью, для записи с номером `index` вызывает `mutate_fn(row)`
+    (должна вернуть изменённый row-dict, обычно тот же объект с обновлёнными полями),
+    остальные записи переносит как есть — и сразу же (без накопления списка) сериализует
+    каждую запись в выходной буфер. Экономично по памяти: пиковое потребление — это размер
+    выходного буфера (~размер исходного файла) плюс одна текущая запись, а НЕ список из
+    десятков тысяч записей. Используется в ddf_save для больших файлов (например
+    skillname-e.dat, ~76 тысяч записей), где полный disassemble()+assemble() рискует упереться
+    в лимит памяти облачной функции.
+
+    Возвращает готовые байты файла (без изменений — только запись `index` подверглась
+    mutate_fn). Бросает DdfError, если индекс не найден.'''
+    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
+    out = bytearray()
+    if has_reccnt_prefix:
+        out += struct.pack('<I', record_count)
+
+    found = False
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+        if idx == index:
+            row = mutate_fn(row)
+            found = True
+        for field in fields:
+            _write_field(out, field, row)
+
+    if not found:
+        raise DdfError(f'index_out_of_range_{index}')
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out)
 
 
 def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:

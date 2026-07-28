@@ -534,16 +534,85 @@ questname (x2), radiodata, skillname (x2), systemmsg (x2), zonename (x2).
 редактировать `_DDF_TEXTS[key]` точечно через Edit-инструмент (найти нужный `'key': '''...''',`
 блок и заменить), а не перегенерировать весь файл заново.
 
+## ЭТАП 4 — ЗАВЕРШЁН: backend actions ddf_search/ddf_get/ddf_save в index.py
+
+Добавлены 3 HTTP-действия (POST, тот же endpoint `patches`, отличаются полем `action` в body):
+
+- **`ddf_search`** `{server, path, query, limit?}` -> `{schema, totalRows, matched, results:
+  [{index, label, preview}]}`. Ищет подстроку (регистронезависимо) среди editable-полей;
+  `query=""` вернёт первые `limit` записей без фильтра. Доступно всем авторизованным.
+- **`ddf_get`** `{server, path, index}` -> `{schema, index, totalRows, fields: [{name, type,
+  array, editable}], row: {...}}`. Возвращает ОДНУ запись целиком со всеми полями (не только
+  editable) — фронтенду решать, что показывать read-only, а что — как текстовый инпут.
+  Доступно всем авторизованным.
+- **`ddf_save`** `{server, path, index, edits: {fieldName: newText, ...}}` -> `{ok, index,
+  size}`. Правит ТОЛЬКО editable-поля (остальные ключи в `edits` молча игнорируются), пересобирает
+  и перезаписывает файл в S3 + обновляет size/updated_at в БД. Требует `can_manage`.
+
+Все три action используют новую **потоковую** реализацию в `ddf_parser.py` (см. ниже) —
+не грузят все записи файла в память сразу.
+
+### КРИТИЧЕСКИЙ баг найден и исправлен: OOM (killed by signal 9) на больших файлах в облаке
+
+Изначальная реализация `ddf_save` использовала `disassemble()` (весь файл -> `list[dict]` в
+памяти) + `assemble()` (список -> bytes). На `skillname-e.dat` (76336 записей, ~15 МБ
+расшифрованных данных) это давало пиковое потребление ~206-218 МБ Python-heap (проверено
+локально через `tracemalloc`) — при лимите функции 256 МБ с учётом накладных расходов
+рантайма (интерпретатор, boto3, psycopg2, буферы) реальный вызов в облаке падал:
+`runtime pid N: killed by signal 9` / `{"errorMessage":"user code crashed","errorType":
+"JobExecutionDiscarded"}`. `ddf_search`/`ddf_get` (без итогового assemble) работали нормально
+даже на большом файле — проблема проявлялась именно на `ddf_save`.
+
+**Важно**: настройки функции в UI (Ядро → Функции → patches → Настройки) содержат ТОЛЬКО
+таймаут выполнения (5с/30с/1м/2м/5м/10м) — регулировки памяти там нет, лимит памяти платформой
+не настраивается пользователем. Значит решать нужно было исключительно оптимизацией кода.
+
+**Решение**: добавлены в `ddf_parser.py` потоковые функции, НЕ накапливающие список всех
+записей:
+```python
+iter_records(binary, fields, has_reccnt_prefix=True)          # генератор (index, row)
+get_record_count(binary, has_reccnt_prefix=True)               # O(1), только заголовок
+get_record_by_index(binary, fields, index, has_reccnt_prefix=True)   # для ddf_get
+search_records(binary, fields, editable_names, query_lower, limit, has_reccnt_prefix=True)
+    # -> (matches: list[(index,row)], total_count)             # для ddf_search
+transform_single_row(binary, fields, index, mutate_fn, has_reccnt_prefix=True, tail_bytes=None)
+    # -> bytes (пересобранный файл), для ddf_save — читает записи одну за другой, для записи
+    # с номером index вызывает mutate_fn(row), остальные пишет как есть, СРАЗУ в выходной буфер
+```
+После замены `disassemble+assemble` на `transform_single_row` в `ddf_save` пик памяти на
+skillname-e упал с ~206 МБ до **~29 МБ** (проверено tracemalloc) — экономия ~7x. Byte-perfect
+подтверждён (noop mutate даёт `new_plain == plain` точно). Старые `disassemble()`/`assemble()`
+ОСТАВЛЕНЫ в коде как есть (используются, например, для будущих задач или отладки), но
+помечены предупреждением в docstring — для новых интеграций использовать потоковые функции.
+
+**Подтверждено на живом сервере hfx3old** (после деплоя через sync_backend): `ddf_save` на
+`System/skillname-e.dat` (index=0, поле name) отрабатывает за ~3-5.7 сек без ошибок (время
+объясняется в основном RSA re-encode — см. ниже про gmpy2), значение корректно сохраняется
+и читается обратно через `ddf_get`.
+
+### gmpy2 подтверждён работающим в реальной облачной функции
+
+Лог деплоя показал: `Successfully installed ... gmpy2-2.3.1 ...` — пакет успешно
+скомпилировался и установился в реальном облачном окружении (опасение о рискованности
+нативной сборки не подтвердилось). RSA encode на живом сервере отрабатывает быстро (~3-6 сек
+даже на самом большом файле) благодаря CRT+gmpy2 ускорению в `l2encdec.py`.
+
+### Реальные end-to-end тесты на живом сервере hfx3old — ВСЕ ПРОЙДЕНЫ
+1. `ddf_search` на itemname-e.dat, query="arrow" -> 40 совпадений из 19425 записей, ~быстро
+2. `ddf_get` на itemname-e.dat index=0 -> полная запись "Wooden Arrow" со всеми полями
+3. `ddf_save` на itemname-e.dat index=0 (правка name) -> сохранено, подтверждено через ddf_get,
+   возвращено обратно к оригиналу
+4. `ddf_search`/`ddf_save` на САМОМ БОЛЬШОМ файле skillname-e.dat (76336 записей) — после фикса
+   памяти работает надёжно, значение отредактировано и возвращено обратно к оригиналу
+
 ## Статус коммитов
 - `l2encdec.py` (модуль шифрования, с CRT+gmpy2 оптимизацией RSA encode) — закоммичен и
-  работает, готово. CRT-ускорение добавлено т.к. без него encode skillname-e (76336 записей,
-  ~15 МБ после расшифровки, ~8500 RSA-блоков) занимал ~44 секунды (риск таймаута облачной
-  функции) — с CRT (чистый Python, без gmpy2) ~15-17 сек, с gmpy2 (если соберётся в облаке)
-  ~2 сек. gmpy2 прописан в requirements.txt с safe fallback на чистый pow().
-- `ddf_parser.py` (DDF-парсер + disassemble/assemble) — ОСНОВНАЯ рабочая реализация (не
-  l2ddf.py, тот удалён). Два бага найдены и исправлены: (1) regex имени поля не разрешал
-  спецсимволы вроде `?`, (2) `AscfStr` не сохранял has_null_terminator флаг. Массово проверен
-  — 28/28 доступных эталонных файлов byte-perfect.
-- `ddf_registry.py` (реестр DDF-схем) — ПОЛНОСТЬЮ ПЕРЕПИСАН, теперь 74 схемы (было 5). Готово.
-- Backend actions (чтение/поиск/сохранение одной записи) — ещё не реализованы в `index.py`.
-- Frontend UI — ещё не реализован.
+  работает, готово. gmpy2 подтверждён рабочим в реальном облаке.
+- `ddf_parser.py` (DDF-парсер + disassemble/assemble + потоковые iter_records/get_record_count/
+  get_record_by_index/search_records/transform_single_row) — готово, два бага исправлены
+  (regex имени поля, has_null_terminator), плюс критический фикс OOM через потоковую обработку.
+  Массово проверен — 28/28 доступных эталонных файлов byte-perfect.
+- `ddf_registry.py` (реестр DDF-схем) — 74 схемы. Готово.
+- Backend actions `ddf_search`/`ddf_get`/`ddf_save` в `index.py` — РЕАЛИЗОВАНЫ, задеплоены,
+  протестированы на живом сервере hfx3old (включая самый большой файл skillname-e). Готово.
+- Frontend UI — ещё не реализован (следующий шаг).

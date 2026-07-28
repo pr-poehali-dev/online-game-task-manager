@@ -434,26 +434,16 @@ def handler(event: dict, context) -> dict:
             return _bad('not_found', 404)
         _file_key, protocol, plain = loaded
         try:
-            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
+            matches, total_rows = ddf_parser.search_records(plain, fields, editable, query.lower(), limit)
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')
-        query_lower = query.lower()
-        results = []
-        for idx, row in enumerate(rows):
-            if query_lower and not (
-                query_lower in str(idx) or _ddf_row_matches_query(row, editable, query_lower)
-            ):
-                continue
-            results.append({
-                'index': idx,
-                'label': _ddf_row_label(row, fields),
-                'preview': _ddf_row_preview_text(row, editable),
-            })
-            if len(results) >= limit:
-                break
+        results = [
+            {'index': idx, 'label': _ddf_row_label(row, fields), 'preview': _ddf_row_preview_text(row, editable)}
+            for idx, row in matches
+        ]
         return _ok({
             'schema': key,
-            'totalRows': len(rows),
+            'totalRows': total_rows,
             'matched': len(results),
             'results': results,
         })
@@ -483,19 +473,18 @@ def handler(event: dict, context) -> dict:
         if not loaded:
             return _bad('not_found', 404)
         _file_key, protocol, plain = loaded
-        try:
-            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
-        except ddf_parser.DdfError as e:
-            return _bad(f'ddf_parse_error_{e}')
         idx = int(index)
-        if idx < 0 or idx >= len(rows):
-            return _bad('index_out_of_range', 404)
+        try:
+            total_rows = ddf_parser.get_record_count(plain)
+            row = ddf_parser.get_record_by_index(plain, fields, idx)
+        except ddf_parser.DdfError as e:
+            return _bad(f'ddf_parse_error_{e}', 404 if 'index_out_of_range' in str(e) else 400)
         return _ok({
             'schema': key,
             'index': idx,
-            'totalRows': len(rows),
+            'totalRows': total_rows,
             'fields': _ddf_field_defs(fields, editable),
-            'row': _ddf_serialize_row(rows[idx], fields),
+            'row': _ddf_serialize_row(row, fields),
         })
 
     if action == 'ddf_save':
@@ -527,27 +516,29 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('not_found', 404)
         file_key, protocol, plain = loaded
+        idx = int(index)
+
+        def _apply_edits(row):
+            for fname, new_value in edits.items():
+                if fname not in editable:
+                    continue  # игнорируем попытки править неразрешённые (не текстовые) поля
+                old_value = row.get(fname)
+                is_unicode = getattr(old_value, 'is_unicode', False)
+                has_null = getattr(old_value, 'has_null_terminator', True)
+                row[fname] = AscfStr(str(new_value), is_unicode, has_null)
+            return row
+
         try:
-            rows, record_count, tail = ddf_parser.disassemble(plain, fields)
+            # Потоковая пересборка: читает записи одну за другой и сразу пишет в выходной
+            # буфер, не накапливая список всех записей в памяти — критично для больших файлов
+            # (skillname-e.dat, ~76 тысяч записей, иначе упирается в лимит памяти функции).
+            new_plain = ddf_parser.transform_single_row(plain, fields, idx, _apply_edits)
+            new_raw = l2encdec.encode(new_plain, protocol)
         except ddf_parser.DdfError as e:
             cur.close(); conn.close()
-            return _bad(f'ddf_parse_error_{e}')
-        idx = int(index)
-        if idx < 0 or idx >= len(rows):
-            cur.close(); conn.close()
-            return _bad('index_out_of_range', 404)
-        row = rows[idx]
-        for fname, new_value in edits.items():
-            if fname not in editable:
-                continue  # игнорируем попытки править неразрешённые (не текстовые) поля
-            old_value = row.get(fname)
-            is_unicode = getattr(old_value, 'is_unicode', False)
-            has_null = getattr(old_value, 'has_null_terminator', True)
-            row[fname] = AscfStr(str(new_value), is_unicode, has_null)
-        try:
-            new_plain = ddf_parser.assemble(rows, fields, record_count=record_count, tail_bytes=tail)
-            new_raw = l2encdec.encode(new_plain, protocol)
-        except (ddf_parser.DdfError, l2encdec.L2CryptError) as e:
+            status = 404 if 'index_out_of_range' in str(e) else 400
+            return _bad(f'ddf_parse_error_{e}', status)
+        except l2encdec.L2CryptError as e:
             cur.close(); conn.close()
             return _bad(f'encode_error_{e}')
         s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
