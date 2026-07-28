@@ -15,12 +15,45 @@ import psycopg2
 
 import ddf_parser
 import ddf_registry
+import ddf_registry_c4
 import l2encdec
 
 from ddf_parser import AscfStr
 
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
+
+# Клиент C4 (Chronicle 4) использует ту же схему шифрования (l2encdec, протокол 411-414), но
+# заметно более простую и местами иначе устроенную бинарную структуру .dat файлов, чем клиенты
+# High Five / H5 (например itemname-e.dat в C4 не содержит полей про сеты брони и зачарование).
+# Поэтому для C4 используется отдельный реестр схем (ddf_registry_c4.py), для остальных серверов —
+# основной (ddf_registry.py). Если появятся другие клиенты со своей структурой — добавить сюда.
+DDF_C4_SERVERS = {'c4x1'}
+
+
+def _ddf_registry_for(server):
+    return ddf_registry_c4 if server in DDF_C4_SERVERS else ddf_registry
+
+
+def _ddf_match(server, path):
+    '''Возвращает (schema_key, fields, editable, has_reccnt_prefix, fixed_record_count) для
+    файла на данном сервере, выбирая нужный реестр схем (C4 или HF), либо None, если формат
+    не поддерживается. Унифицирует разницу в сигнатуре match_ddf() между реестрами: основной
+    ddf_registry.py возвращает 3-кортеж (все его файлы имеют стандартный 4-байтный префикс
+    счётчика записей), ddf_registry_c4.py — 5-кортеж (некоторые файлы C4 имеют фиксированное
+    число записей без префикса).'''
+    registry = _ddf_registry_for(server)
+    match = registry.match_ddf(path)
+    if not match:
+        return None
+    if len(match) == 5:
+        return match
+    key, fields, editable = match
+    return key, fields, editable, True, None
+
+
+def _ddf_is_supported(server, path):
+    return _ddf_registry_for(server).is_supported(path)
 
 # Новые версии botocore (>=1.36) по умолчанию добавляют контрольную сумму запроса через
 # chunked-кодирование (trailer). Кастомный (не-AWS) S3-эндпоинт не всегда его корректно
@@ -221,7 +254,7 @@ def _decode_b64(data_b64):
     return base64.b64decode(data_b64)
 
 
-def _row_to_file(r):
+def _row_to_file(r, server):
     return {
         'id': r[0],
         'path': r[1],
@@ -229,7 +262,7 @@ def _row_to_file(r):
         'url': _public_url(r[3]),
         'updatedAt': r[4].isoformat() if r[4] else None,
         'taskIds': [str(t) for t in (r[5] or [])],
-        'ddfSupported': ddf_registry.is_supported(r[1]),
+        'ddfSupported': _ddf_is_supported(server, r[1]),
     }
 
 
@@ -382,7 +415,7 @@ def handler(event: dict, context) -> dict:
             f"WHERE server = %s ORDER BY path",
             (server,)
         )
-        files = [_row_to_file(r) for r in cur.fetchall()]
+        files = [_row_to_file(r, server) for r in cur.fetchall()]
         cur.execute(
             f"SELECT name FROM {schema}.patch_custom_roots WHERE server = %s ORDER BY name",
             (server,)
@@ -420,11 +453,11 @@ def handler(event: dict, context) -> dict:
         if not server or not path:
             cur.close(); conn.close()
             return _bad('bad_request')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
         s3 = _s3_client()
         bucket = _bucket()
         try:
@@ -437,7 +470,10 @@ def handler(event: dict, context) -> dict:
             return _bad('not_found', 404)
         _file_key, protocol, plain = loaded
         try:
-            matches, total_rows = ddf_parser.search_records(plain, fields, editable, query.lower(), limit)
+            matches, total_rows = ddf_parser.search_records(
+                plain, fields, editable, query.lower(), limit,
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')
         results = [
@@ -460,11 +496,11 @@ def handler(event: dict, context) -> dict:
         if not server or not path or index is None:
             cur.close(); conn.close()
             return _bad('bad_request')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
         s3 = _s3_client()
         bucket = _bucket()
         try:
@@ -478,8 +514,10 @@ def handler(event: dict, context) -> dict:
         _file_key, protocol, plain = loaded
         idx = int(index)
         try:
-            total_rows = ddf_parser.get_record_count(plain)
-            row = ddf_parser.get_record_by_index(plain, fields, idx)
+            total_rows = ddf_parser.get_record_count(plain, has_reccnt_prefix, fixed_record_count)
+            row = ddf_parser.get_record_by_index(
+                plain, fields, idx, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}', 404 if 'index_out_of_range' in str(e) else 400)
         return _ok({
@@ -503,11 +541,11 @@ def handler(event: dict, context) -> dict:
         if not server or not path or index is None or not isinstance(edits, dict):
             cur.close(); conn.close()
             return _bad('bad_request')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
         s3 = _s3_client()
         bucket = _bucket()
         try:
@@ -532,10 +570,18 @@ def handler(event: dict, context) -> dict:
             return row
 
         try:
+            # Для файлов БЕЗ 4-байтного префикса-счётчика (eula/chargrp) реальный хвост файла
+            # не совпадает со стандартным маркером "SafePackage" — нужно прочитать его точно.
+            tail_bytes = None if has_reccnt_prefix else ddf_parser.get_tail_bytes(
+                plain, fields, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
             # Потоковая пересборка: читает записи одну за другой и сразу пишет в выходной
             # буфер, не накапливая список всех записей в памяти — критично для больших файлов
             # (skillname-e.dat, ~76 тысяч записей, иначе упирается в лимит памяти функции).
-            new_plain = ddf_parser.transform_single_row(plain, fields, idx, _apply_edits)
+            new_plain = ddf_parser.transform_single_row(
+                plain, fields, idx, _apply_edits,
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
+            )
             new_raw = l2encdec.encode(new_plain, protocol)
         except ddf_parser.DdfError as e:
             cur.close(); conn.close()
@@ -556,15 +602,16 @@ def handler(event: dict, context) -> dict:
         # Возвращает "пустой шаблон" записи (все поля — значения по умолчанию: 0 для чисел,
         # пустая строка для текста) для формы "создать новую запись с нуля". В отличие от
         # ddf_get не читает сам .dat файл — схема одна и та же для всех записей файла.
+        server = _safe_server(body.get('server'))
         path = body.get('path')
         if not path:
             cur.close(); conn.close()
             return _bad('bad_request')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         cur.close(); conn.close()
         if not match:
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, _has_reccnt_prefix, _fixed_record_count = match
         row = ddf_parser.default_row(fields)
         return _ok({
             'schema': key,
@@ -589,11 +636,17 @@ def handler(event: dict, context) -> dict:
         if len(new_rows_input) > 500:
             cur.close(); conn.close()
             return _bad('too_many_rows')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        if not has_reccnt_prefix:
+            # Файлы с фиксированным числом записей в самой схеме (например eula.dat — всегда
+            # ровно 1 запись, chargrp.dat — ровно 15, по одной на класс) не поддерживают
+            # добавление новых строк — это сломало бы предполагаемую клиентом структуру.
+            cur.close(); conn.close()
+            return _bad('fixed_schema_no_append')
         s3 = _s3_client()
         bucket = _bucket()
         try:
@@ -652,11 +705,14 @@ def handler(event: dict, context) -> dict:
         if not server or not path or index is None:
             cur.close(); conn.close()
             return _bad('bad_request')
-        match = ddf_registry.match_ddf(path)
+        match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
-        key, fields, editable = match
+        key, fields, editable, has_reccnt_prefix, fixed_record_count = match
+        if not has_reccnt_prefix:
+            cur.close(); conn.close()
+            return _bad('fixed_schema_no_delete')
         s3 = _s3_client()
         bucket = _bucket()
         try:

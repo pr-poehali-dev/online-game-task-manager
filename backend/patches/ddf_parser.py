@@ -254,10 +254,15 @@ def _resolve_count(row: dict, array_ref):
     raise DdfError(f'unknown_array_ref_{array_ref}')
 
 
-def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
+def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True, fixed_record_count: int = None):
     '''Разбирает бинарное содержимое .dat файла (уже расшифрованное l2encdec.decode) в список
     строк (list[dict]). has_reccnt_prefix=True означает, что первые 4 байта файла — счётчик
-    записей (implicit RECCNT), который есть почти во всех dat файлах.
+    записей (implicit RECCNT), который есть в большинстве dat файлов. Некоторые файлы (там, где
+    в DDF явно указано "RECCNT = N" вместо "RECCNT = OFF" — например eula.dat, chargrp.dat,
+    logongrp.dat в клиенте C4) НЕ имеют этого 4-байтного префикса вообще — число записей у них
+    жёстко фиксировано схемой; для них нужно передать has_reccnt_prefix=False и
+    fixed_record_count=N (взятое из DDF), иначе парсер не будет знать, где остановиться, и
+    захватит хвостовой маркер файла как часть последней записи.
 
     Возвращает (rows, record_count, tail_bytes). tail_bytes — необработанный хвост файла
     после последней записи (обычно служебный маркер "SafePackage", 13 байт: ASCF-строка) —
@@ -274,7 +279,7 @@ def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
         record_count = struct.unpack_from('<I', binary, offset)[0]
         offset += 4
     else:
-        record_count = None
+        record_count = fixed_record_count
 
     rows = []
     total_len = len(binary)
@@ -292,17 +297,16 @@ def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
     return rows, record_count, tail_bytes
 
 
-def iter_records(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
+def iter_records(binary: bytes, fields: list, has_reccnt_prefix: bool = True, fixed_record_count: int = None):
     '''Генератор — читает записи ОДНУ ЗА ДРУГОЙ, не накапливая список в памяти. Отдаёт кортежи
-    (index, row). После исчерпания генератора у него можно прочитать финальные атрибуты через
-    возвращаемое значение StopIteration.value — но проще пользоваться transform_single_row()/
-    search_records() ниже, которые уже инкапсулируют typical use cases.'''
+    (index, row). См. disassemble() про has_reccnt_prefix/fixed_record_count для файлов без
+    4-байтного префикса-счётчика (RECCNT = N в DDF вместо RECCNT = OFF).'''
     offset = 0
     if has_reccnt_prefix:
         record_count = struct.unpack_from('<I', binary, offset)[0]
         offset += 4
     else:
-        record_count = None
+        record_count = fixed_record_count
 
     idx = 0
     total_len = len(binary)
@@ -319,33 +323,62 @@ def iter_records(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
         idx += 1
 
 
-def get_record_count(binary: bytes, has_reccnt_prefix: bool = True) -> int:
-    '''Читает только заголовочный счётчик записей (первые 4 байта файла), без разбора самих
-    записей — O(1) по памяти и времени.'''
+def get_record_count(binary: bytes, has_reccnt_prefix: bool = True, fixed_record_count: int = None) -> int:
+    '''Читает количество записей: из 4-байтного заголовка файла (O(1)), либо — если у схемы нет
+    такого префикса (has_reccnt_prefix=False) — возвращает fixed_record_count, взятое из DDF.'''
     if not has_reccnt_prefix:
-        raise DdfError('no_reccnt_prefix')
+        if fixed_record_count is None:
+            raise DdfError('no_reccnt_prefix')
+        return fixed_record_count
     return struct.unpack_from('<I', binary, 0)[0]
 
 
-def get_record_by_index(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True):
+def get_record_by_index(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True,
+                         fixed_record_count: int = None):
     '''Возвращает ОДНУ запись по индексу, читая файл потоково (без накопления списка).
     Экономично по памяти для больших файлов — пригодно для ddf_get.'''
-    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         if idx == index:
             return row
     raise DdfError(f'index_out_of_range_{index}')
 
 
+def get_tail_bytes(binary: bytes, fields: list, has_reccnt_prefix: bool = True,
+                    fixed_record_count: int = None) -> bytes:
+    '''Возвращает необработанный хвост файла после последней записи (обычно служебный маркер
+    "SafePackage"), не накапливая список всех записей в памяти. НУЖНО для точной пересборки
+    файлов БЕЗ 4-байтного префикса-счётчика (has_reccnt_prefix=False, например eula.dat,
+    chargrp.dat) через transform_single_row/delete_record/append_records — у таких файлов
+    реальный хвост часто отличается от стандартного 13-байтного маркера "SafePackage" (у eula,
+    например, хвост дополнительно содержит несколько служебных байт текста), и подстановка
+    дефолтного tail_bytes даёт неверный (более короткий) результат. Для файлов С префиксом
+    (has_reccnt_prefix=True) хвост почти всегда стандартный и эту функцию можно не вызывать —
+    но она работает одинаково корректно в обоих случаях.'''
+    offset = 4 if has_reccnt_prefix else 0
+    record_count = get_record_count(binary, has_reccnt_prefix, fixed_record_count)
+    count = 0
+    total_len = len(binary)
+    while offset < total_len and count < record_count:
+        row = {}
+        try:
+            for field in fields:
+                offset = _read_field(binary, offset, field, row)
+        except (struct.error, IndexError):
+            break
+        count += 1
+    return binary[offset:]
+
+
 def search_records(binary: bytes, fields: list, editable_names: list, query_lower: str, limit: int,
-                    has_reccnt_prefix: bool = True):
+                    has_reccnt_prefix: bool = True, fixed_record_count: int = None):
     '''Ищет записи, у которых хотя бы одно из editable_names текстовых полей содержит
     query_lower (или, если query_lower пустой, возвращает первые limit записей). Читает файл
     потоково — не накапливает список всех записей в памяти. Возвращает (matches, total_count),
     где matches — список (index, row) для не более limit совпадений, total_count — реальное
     количество записей в файле (из заголовка, O(1)).'''
-    total_count = get_record_count(binary, has_reccnt_prefix)
+    total_count = get_record_count(binary, has_reccnt_prefix, fixed_record_count)
     matches = []
-    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         if query_lower:
             found = str(idx) == query_lower or any(
                 row.get(name) and query_lower in str(row[name]).lower()
@@ -360,7 +393,8 @@ def search_records(binary: bytes, fields: list, editable_names: list, query_lowe
 
 
 def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
-                          has_reccnt_prefix: bool = True, tail_bytes: bytes = None) -> bytes:
+                          has_reccnt_prefix: bool = True, fixed_record_count: int = None,
+                          tail_bytes: bytes = None) -> bytes:
     '''Читает файл запись за записью, для записи с номером `index` вызывает `mutate_fn(row)`
     (должна вернуть изменённый row-dict, обычно тот же объект с обновлёнными полями),
     остальные записи переносит как есть — и сразу же (без накопления списка) сериализует
@@ -372,13 +406,13 @@ def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
 
     Возвращает готовые байты файла (без изменений — только запись `index` подверглась
     mutate_fn). Бросает DdfError, если индекс не найден.'''
-    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
     out = bytearray()
     if has_reccnt_prefix:
+        record_count = get_record_count(binary, has_reccnt_prefix)
         out += struct.pack('<I', record_count)
 
     found = False
-    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         if idx == index:
             row = mutate_fn(row)
             found = True
@@ -395,18 +429,18 @@ def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
 
 
 def delete_record(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True,
-                   tail_bytes: bytes = None) -> bytes:
+                   fixed_record_count: int = None, tail_bytes: bytes = None) -> bytes:
     '''Потоково копирует все записи КРОМЕ той, что имеет номер `index` — удаляет ровно одну
     запись. Экономично по памяти (как transform_single_row/append_records). Обновлённый
-    счётчик записей (record_count - 1) пишется в заголовок. Бросает DdfError, если индекс
-    не найден.'''
-    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
+    счётчик записей (record_count - 1) пишется в заголовок (только если has_reccnt_prefix).
+    Бросает DdfError, если индекс не найден.'''
     out = bytearray()
     if has_reccnt_prefix:
+        record_count = get_record_count(binary, has_reccnt_prefix)
         out += struct.pack('<I', record_count - 1)
 
     found = False
-    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         if idx == index:
             found = True
             continue
@@ -423,21 +457,22 @@ def delete_record(binary: bytes, fields: list, index: int, has_reccnt_prefix: bo
 
 
 def append_records(binary: bytes, fields: list, new_rows: list, has_reccnt_prefix: bool = True,
-                    tail_bytes: bytes = None) -> bytes:
+                    fixed_record_count: int = None, tail_bytes: bytes = None) -> bytes:
     '''Потоково копирует ВСЕ существующие записи как есть и дописывает в конец файла новые
     записи из new_rows (list[dict], каждый dict должен содержать значения для ВСЕХ полей
     схемы — используйте default_row()/build_row_from_texts() ниже, чтобы собрать такой dict).
     Экономично по памяти — как transform_single_row, не накапливает список всех записей.
-    Обновлённый счётчик записей (record_count + len(new_rows)) пишется в заголовок файла.
+    Обновлённый счётчик записей (record_count + len(new_rows)) пишется в заголовок файла
+    (только если has_reccnt_prefix).
 
     Возвращает готовые байты файла. Не проверяет уникальность id — ответственность за это
     (и за корректность значений полей) на вызывающем коде (backend action).'''
-    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
     out = bytearray()
     if has_reccnt_prefix:
+        record_count = get_record_count(binary, has_reccnt_prefix)
         out += struct.pack('<I', record_count + len(new_rows))
 
-    for _idx, row in iter_records(binary, fields, has_reccnt_prefix):
+    for _idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         for field in fields:
             _write_field(out, field, row)
 
