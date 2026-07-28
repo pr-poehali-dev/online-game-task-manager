@@ -1,0 +1,364 @@
+'''Парсер DDF (dat definition file) — формат L2disasm/l2asm для описания структуры .dat файлов
+Lineage 2, и движок для превращения бинарного содержимого .dat файла в плоскую таблицу
+(список строк-словарей) и обратно.
+
+Формат DDF описан в data/l2asm-disasm/MANUAL оригинального инструментария (Lineage2 community
+tools, автор M.Soltys aka DStuff). Поддерживаются типы полей:
+
+  UINT/HEX (uint32), INT (int32), UWORD (uint16), WORD (int16), UCHAR/CHEX (uint8), CHAR (int8),
+  FLOAT (float32), UNICODE (int32 длина в символах + UTF-16LE строка), ASCF (спецформат:
+  1-2 байта packed counter + текст ascii/utf-16LE + null-терминатор), CNTR (тот же packed counter
+  отдельным полем), FILLER (заполнитель фиксированного размера), а также статические и
+  динамические массивы полей ("table[N]" / "table[other_field]").
+
+Формат packed counter (используется в ASCF и CNTR), восстановлен экспериментально и подтверждён
+на десятках тысяч реальных записей:
+  - старший бит (0x80) первого байта = флаг "строка в UTF-16LE" (hint 'u'), иначе ascii/8-bit
+    (hint 'a')
+  - следующий бит (0x40) первого байта = флаг "значение занимает 2 байта"
+  - если 0x40 не установлен: value = byte0 & 0x3F (0..63)
+  - если 0x40 установлен: value = (byte0 & 0x3F) | (byte1 << 6) (64..16383)
+  - value — это количество "единиц" текста (байт для ascii, символов для utf-16), ВКЛЮЧАЯ
+    завершающий null-терминатор.
+
+MTX/MTX2/MTX3/MAT/MAT2 (используются в файлах вроде armorgrp.dat) в данной версии не
+поддерживаются — из истории использования выяснено, что все текстовые файлы (itemname, npcname,
+npcstring, skillname, questname, commandname и т.п.) их не используют.
+'''
+import struct
+import re
+
+
+class AscfStr(str):
+    '''Строка ASCF-поля с сохранённым исходным флагом кодировки (True = UTF-16LE / hint 'u',
+    False = 8-bit ascii/latin-1 / hint 'a'). Ведёт себя как обычная str везде (сравнение,
+    JSON-сериализация через str() и т.п.), но encode_ascf() при наличии этого флага не будет
+    пытаться угадывать кодировку заново — это нужно, чтобы строки, которые пользователь НЕ
+    редактировал, кодировались обратно байт-в-байт идентично оригиналу (некоторые ascii-совместимые
+    тексты в реальных файлах всё равно исторически сохранены как UTF-16LE).'''
+
+    def __new__(cls, value, is_unicode=False):
+        obj = super().__new__(cls, value)
+        obj.is_unicode = is_unicode
+        return obj
+
+
+class DdfError(Exception):
+    pass
+
+
+# ---------------------------------------------------------------------------
+# 1) DDF grammar parsing
+# ---------------------------------------------------------------------------
+
+SIMPLE_TYPES = {
+    'UINT': ('<I', 4), 'HEX': ('<I', 4),
+    'INT': ('<i', 4),
+    'UWORD': ('<H', 2),
+    'WORD': ('<h', 2),
+    'UCHAR': ('<B', 1), 'CHEX': ('<B', 1),
+    'CHAR': ('<b', 1),
+    'FLOAT': ('<f', 4),
+}
+
+FIELD_RE = re.compile(
+    r'^\s*([A-Z0-9]+)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([A-Za-z0-9_]+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?\s*;'
+)
+
+
+def _strip_comments(text: str) -> str:
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
+    text = re.sub(r'//[^\n]*', '', text)
+    text = re.sub(r'#[^\n]*', '', text)
+    return text
+
+
+def parse_ddf(ddf_text: str) -> list:
+    '''Разбирает DDF-файл и возвращает список полей (плоский, без учёта вложенности
+    MTX/MAT — не поддерживаются). Каждый элемент — dict с ключами:
+      type, name, array (имя поля-счётчика или число, либо None), filler_size
+    '''
+    text = _strip_comments(ddf_text)
+    body_match = re.search(r'\{(.*)\}', text, flags=re.DOTALL)
+    if not body_match:
+        raise DdfError('no_main_section_found')
+    body = body_match.group(1)
+
+    fields = []
+    for raw_line in body.split(';'):
+        line = raw_line.strip()
+        if not line:
+            continue
+        # skip property lines like SOFT = 5, ENBBY = [...], SKIPIF = [...]
+        if re.match(r'^[A-Z_]+\s*=', line):
+            continue
+        m = re.match(r'^([A-Z0-9]+)\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[\s*([A-Za-z0-9_]+)\s*\])?\s*(\{\s*([A-Za-z0-9_]+)\s*\})?$', line)
+        if not m:
+            continue
+        ftype, fname, farray, _, ffiller = m.groups()
+        if ftype in ('MTX', 'MTX2', 'MTX3', 'MAT', 'MAT2'):
+            raise DdfError(f'unsupported_type_{ftype}')
+        fields.append({
+            'type': ftype,
+            'name': fname,
+            'array': farray,
+            'filler_size': int(ffiller) if ffiller else None,
+        })
+    return fields
+
+
+# ---------------------------------------------------------------------------
+# 2) Packed counter (ASCF / CNTR)
+# ---------------------------------------------------------------------------
+
+def decode_packed_counter(data: bytes, offset: int):
+    '''Возвращает (value, is_unicode, new_offset).'''
+    b0 = data[offset]
+    is_unicode = bool(b0 & 0x80)
+    if b0 & 0x40:
+        b1 = data[offset + 1]
+        value = (b0 & 0x3F) | (b1 << 6)
+        return value, is_unicode, offset + 2
+    value = b0 & 0x3F
+    return value, is_unicode, offset + 1
+
+
+def encode_packed_counter(value: int, is_unicode: bool) -> bytes:
+    if value > 16383:
+        raise DdfError('counter_value_too_large')
+    base = 0x80 if is_unicode else 0x00
+    if value < 64:
+        return bytes([base | value])
+    return bytes([base | 0x40 | (value & 0x3F), value >> 6])
+
+
+def decode_ascf(data: bytes, offset: int):
+    '''Читает ASCF-строку. Возвращает (text, new_offset).
+
+    ВАЖНО: пустая строка встречается в реальных файлах в ДВУХ разных бинарных представлениях:
+      - counter=0 (совсем без данных) -> возвращаем Python None
+      - counter=1 + один нулевой байт (null-терминатор без текста) -> возвращаем AscfStr('')
+    Различие сохраняется, чтобы encode_ascf мог точно восстановить исходные байты.
+
+    Результат — AscfStr (подкласс str) с флагом is_unicode, сохранённым из исходных данных:
+    некоторые ascii-совместимые тексты в реальных файлах всё равно исторически закодированы как
+    UTF-16LE, поэтому кодировку нельзя надёжно угадать заново при пересборке — её нужно помнить.'''
+    value, is_unicode, offset = decode_packed_counter(data, offset)
+    if value == 0:
+        return None, offset
+    if is_unicode:
+        raw = data[offset:offset + value * 2]
+        offset += value * 2
+        text = raw.decode('utf-16-le', errors='replace')
+    else:
+        raw = data[offset:offset + value]
+        offset += value
+        text = raw.decode('latin-1', errors='replace')
+    # remove trailing null terminator (always present when value>0)
+    if text.endswith('\x00'):
+        text = text[:-1]
+    return AscfStr(text, is_unicode), offset
+
+
+def encode_ascf(text) -> bytes:
+    '''Кодирует строку обратно в формат ASCF.
+
+    text=None -> counter=0 (нет данных вообще).
+    text='' (или AscfStr) -> counter=1 + один нулевой байт (пустая строка с null-терминатором).
+
+    Если text — AscfStr с сохранённым флагом is_unicode, используется именно он (важно для
+    byte-perfect пересборки неизменённых полей). Иначе (обычная str, например после правки
+    пользователем) кодировка определяется автоматически: latin-1 если все символы укладываются
+    в 0-255, иначе UTF-16LE.'''
+    if text is None:
+        return encode_packed_counter(0, False)
+    forced_unicode = getattr(text, 'is_unicode', None)
+    body = str(text) + '\x00'
+    if forced_unicode is True:
+        raw = body.encode('utf-16-le')
+        return encode_packed_counter(len(body), True) + raw
+    if forced_unicode is False:
+        try:
+            raw = body.encode('latin-1')
+            return encode_packed_counter(len(raw), False) + raw
+        except UnicodeEncodeError:
+            pass  # user edited an ascii field with non-latin1 chars -> fall through to auto-detect
+    try:
+        raw = body.encode('latin-1')
+        is_unicode = False
+        value = len(raw)
+    except UnicodeEncodeError:
+        raw = body.encode('utf-16-le')
+        is_unicode = True
+        value = len(body)
+    return encode_packed_counter(value, is_unicode) + raw
+
+
+def decode_unicode_field(data: bytes, offset: int):
+    '''UNICODE тип: int32 (длина СТРОКИ В БАЙТАХ, без null-терминатора) + UTF-16LE строка
+    (без null-терминатора внутри).'''
+    byte_len = struct.unpack_from('<i', data, offset)[0]
+    offset += 4
+    if byte_len <= 0:
+        return '', offset
+    raw = data[offset:offset + byte_len]
+    offset += byte_len
+    text = raw.decode('utf-16-le', errors='replace')
+    return text, offset
+
+
+def encode_unicode_field(text: str) -> bytes:
+    if text == '':
+        return struct.pack('<i', 0)
+    raw = text.encode('utf-16-le')
+    return struct.pack('<i', len(raw)) + raw
+
+
+# ---------------------------------------------------------------------------
+# 3) Disassemble: binary -> list of row dicts
+# ---------------------------------------------------------------------------
+
+def _resolve_count(row: dict, array_ref):
+    if array_ref is None:
+        return None
+    if array_ref.isdigit():
+        return int(array_ref)
+    if array_ref in row:
+        return int(row[array_ref])
+    raise DdfError(f'unknown_array_ref_{array_ref}')
+
+
+def disassemble(binary: bytes, fields: list, has_reccnt_prefix: bool = True):
+    '''Разбирает бинарное содержимое .dat файла (уже расшифрованное l2encdec.decode) в список
+    строк (list[dict]). has_reccnt_prefix=True означает, что первые 4 байта файла — счётчик
+    записей (implicit RECCNT), который есть почти во всех dat файлах.
+
+    Возвращает (rows, record_count, tail_bytes). tail_bytes — необработанный хвост файла
+    после последней записи (обычно служебный маркер "SafePackage", 13 байт: ASCF-строка) —
+    он не описан в DDF, но обязателен для точной пересборки байт-в-байт, поэтому сохраняется
+    как есть и должен быть передан обратно в assemble().'''
+    offset = 0
+    if has_reccnt_prefix:
+        record_count = struct.unpack_from('<I', binary, offset)[0]
+        offset += 4
+    else:
+        record_count = None
+
+    rows = []
+    total_len = len(binary)
+    while offset < total_len:
+        if record_count is not None and len(rows) >= record_count:
+            break
+        row = {}
+        try:
+            for field in fields:
+                offset = _read_field(binary, offset, field, row)
+        except (struct.error, IndexError):
+            break
+        rows.append(row)
+    tail_bytes = binary[offset:]
+    return rows, record_count, tail_bytes
+
+
+def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
+    ftype = field['type']
+    name = field['name']
+    count = _resolve_count(row, field['array'])
+
+    if ftype == 'FILLER':
+        size = field['filler_size'] or 0
+        offset += size
+        return offset
+
+    if count is not None:
+        values = []
+        for _ in range(count):
+            offset, value = _read_single(data, offset, ftype)
+            values.append(value)
+        row[name] = values
+        return offset
+
+    offset, value = _read_single(data, offset, ftype)
+    row[name] = value
+    return offset
+
+
+def _read_single(data: bytes, offset: int, ftype: str):
+    if ftype in SIMPLE_TYPES:
+        fmt, size = SIMPLE_TYPES[ftype]
+        value = struct.unpack_from(fmt, data, offset)[0]
+        return offset + size, value
+    if ftype == 'ASCF':
+        text, offset = decode_ascf(data, offset)
+        return offset, text
+    if ftype == 'CNTR':
+        value, _, offset = decode_packed_counter(data, offset)
+        return offset, value
+    if ftype == 'UNICODE':
+        text, offset = decode_unicode_field(data, offset)
+        return offset, text
+    raise DdfError(f'unsupported_type_{ftype}')
+
+
+# ---------------------------------------------------------------------------
+# 4) Assemble: list of row dicts -> binary
+# ---------------------------------------------------------------------------
+
+def assemble(rows: list, fields: list, record_count: int = None, has_reccnt_prefix: bool = True,
+             tail_bytes: bytes = None) -> bytes:
+    '''Обратная операция: список строк -> бинарное содержимое .dat файла (готовое для
+    l2encdec.encode). tail_bytes — хвост, полученный от disassemble() (обычно служебный
+    маркер "SafePackage"); если не передан, используется стандартный маркер по умолчанию.'''
+    out = bytearray()
+    if has_reccnt_prefix:
+        cnt = record_count if record_count is not None else len(rows)
+        out += struct.pack('<I', cnt)
+
+    for row in rows:
+        for field in fields:
+            _write_field(out, field, row)
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out)
+
+
+def _write_field(out: bytearray, field: dict, row: dict):
+    ftype = field['type']
+    name = field['name']
+    array_ref = field['array']
+
+    if ftype == 'FILLER':
+        size = field['filler_size'] or 0
+        out += bytes(size)
+        return
+
+    if array_ref is not None:
+        values = row.get(name) or []
+        for value in values:
+            _write_single(out, ftype, value)
+        return
+
+    value = row.get(name)
+    _write_single(out, ftype, value)
+
+
+def _write_single(out: bytearray, ftype: str, value):
+    if ftype in SIMPLE_TYPES:
+        fmt, _size = SIMPLE_TYPES[ftype]
+        if ftype == 'FLOAT':
+            out += struct.pack(fmt, float(value))
+        else:
+            out += struct.pack(fmt, int(value))
+        return
+    if ftype == 'ASCF':
+        out += encode_ascf(value)
+        return
+    if ftype == 'CNTR':
+        out += encode_packed_counter(int(value), False)
+        return
+    if ftype == 'UNICODE':
+        out += encode_unicode_field(value if value is not None else '')
+        return
+    raise DdfError(f'unsupported_type_{ftype}')

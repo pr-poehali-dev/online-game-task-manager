@@ -81,6 +81,19 @@ def _add_padding(data: bytes) -> bytes:
     return bytes(out)
 
 
+try:
+    # gmpy2 (обёртка над GMP) ускоряет модульное возведение в степень с 1023-битным модулем
+    # примерно в 7 раз по сравнению со встроенным pow() — критично для больших .dat файлов
+    # (skillname-e.dat даёт ~8500 RSA-блоков на encode, это разница между ~6 и ~45 секундами).
+    # Если пакет недоступен в среде функции — используем встроенный pow() как надёжный fallback.
+    import gmpy2
+    def _modpow(value: int, exponent: int, modulus: int) -> int:
+        return int(gmpy2.powmod(value, exponent, modulus))
+except ImportError:
+    def _modpow(value: int, exponent: int, modulus: int) -> int:
+        return pow(value, exponent, modulus)
+
+
 def _rsa_apply(data: bytes, modulus_hex: str, exponent_hex: str) -> bytes:
     '''Поблочное модульное возведение в степень (RSA) — эквивалент mbedtls_mpi_exp_mod.'''
     if len(data) % BLOCK_SIZE != 0:
@@ -91,7 +104,7 @@ def _rsa_apply(data: bytes, modulus_hex: str, exponent_hex: str) -> bytes:
     for offset in range(0, len(data), BLOCK_SIZE):
         block = data[offset:offset + BLOCK_SIZE]
         value = int.from_bytes(block, 'big')
-        result = pow(value, exponent, modulus)
+        result = _modpow(value, exponent, modulus)
         out.extend(result.to_bytes(BLOCK_SIZE, 'big'))
     return bytes(out)
 

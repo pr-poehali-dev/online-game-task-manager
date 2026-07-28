@@ -13,6 +13,10 @@ import boto3
 from botocore.config import Config
 import psycopg2
 
+import ddf_parser
+import ddf_registry
+import l2encdec
+
 
 MAX_FILE_SIZE = 200 * 1024 * 1024  # 200 МБ на один файл (собирается в памяти функции из кусочков)
 
