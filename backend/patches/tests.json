@@ -58,6 +58,33 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_new without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_new", "path": "System/itemname-e.dat"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_create without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_create", "server": "c4x1", "path": "System/itemname-e.dat", "rows": [{"id": 1, "name": "test"}]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_delete without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_delete", "server": "c4x1", "path": "System/itemname-e.dat", "index": 0},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

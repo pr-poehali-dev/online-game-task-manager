@@ -338,11 +338,14 @@ def handler(event: dict, context) -> dict:
     Для текстовых .dat файлов клиента (названия/описания предметов, скиллов, нпс и т.п. — список
     поддерживаемых схем в ddf_registry.py) доступны действия: ddf_search (поиск записи по подстроке
     в текстовых полях, возвращает короткий список совпадений), ddf_get (полная запись по индексу
-    для редактирования) и ddf_save (сохранение правок текстовых полей одной записи — файл на лету
-    расшифровывается, запись обновляется, файл пересобирается и зашифровывается обратно в S3).
+    для редактирования), ddf_save (сохранение правок текстовых полей одной записи — файл на лету
+    расшифровывается, запись обновляется, файл пересобирается и зашифровывается обратно в S3),
+    ddf_new (пустой шаблон записи с значениями по умолчанию — для формы "создать новую запись") и
+    ddf_create (добавляет одну или несколько новых записей в конец файла — для пакетного добавления
+    из вставленного списка).
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
-    задаче/управление папками/сохранение правок в DDF-файлах — администраторам и участникам с
-    правом полного редактирования задач.'''
+    задаче/управление папками/сохранение правок и добавление новых записей в DDF-файлах —
+    администраторам и участникам с правом полного редактирования задач.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -399,7 +402,7 @@ def handler(event: dict, context) -> dict:
         return _ok({'taskIds': task_ids})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
-                  'toggle_task', 'add_root', 'delete_root', 'ddf_save'):
+                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -548,6 +551,141 @@ def handler(event: dict, context) -> dict:
         )
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
+
+    if action == 'ddf_new':
+        # Возвращает "пустой шаблон" записи (все поля — значения по умолчанию: 0 для чисел,
+        # пустая строка для текста) для формы "создать новую запись с нуля". В отличие от
+        # ddf_get не читает сам .dat файл — схема одна и та же для всех записей файла.
+        path = body.get('path')
+        if not path:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = ddf_registry.match_ddf(path)
+        cur.close(); conn.close()
+        if not match:
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        row = ddf_parser.default_row(fields)
+        return _ok({
+            'schema': key,
+            'fields': _ddf_field_defs(fields, editable),
+            'row': _ddf_serialize_row(row, fields),
+        })
+
+    if action == 'ddf_create':
+        # Добавляет одну ИЛИ несколько новых записей в конец файла (пакетное добавление —
+        # для формы "вставить список текстом"). Каждый элемент body['rows'] — dict вида
+        # {fieldName: value, ...} со значениями ВСЕХ нужных полей схемы (не только текстовых —
+        # например id обязателен); отсутствующие поля берут значение по умолчанию (0/'').
+        # Файл расшифровывается, существующие записи переносятся как есть (потоково, без
+        # накопления в памяти), новые записи дописываются в конец, счётчик записей в
+        # заголовке обновляется, файл зашифровывается обратно и перезаписывается в S3.
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        new_rows_input = body.get('rows')
+        if not server or not path or not isinstance(new_rows_input, list) or not new_rows_input:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        if len(new_rows_input) > 500:
+            cur.close(); conn.close()
+            return _bad('too_many_rows')
+        match = ddf_registry.match_ddf(path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        if not loaded:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        file_key, protocol, plain = loaded
+
+        new_rows = []
+        for raw_row in new_rows_input:
+            if not isinstance(raw_row, dict):
+                cur.close(); conn.close()
+                return _bad('bad_request')
+            row = ddf_parser.default_row(fields)
+            texts = {k: v for k, v in raw_row.items() if k in editable}
+            row = ddf_parser.build_row_from_texts(fields, editable, row, texts)
+            for f in fields:
+                fname = f['name']
+                if fname in editable or f['array'] is not None:
+                    continue
+                if fname in raw_row and raw_row[fname] is not None:
+                    try:
+                        row[fname] = float(raw_row[fname]) if f['type'] == 'FLOAT' else int(raw_row[fname])
+                    except (TypeError, ValueError):
+                        cur.close(); conn.close()
+                        return _bad(f'bad_value_for_field_{fname}')
+            new_rows.append(row)
+
+        try:
+            new_plain = ddf_parser.append_records(plain, fields, new_rows)
+            new_raw = l2encdec.encode(new_plain, protocol)
+        except ddf_parser.DdfError as e:
+            cur.close(); conn.close()
+            return _bad(f'ddf_parse_error_{e}')
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'encode_error_{e}')
+        s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        cur.execute(
+            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), server, path)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'added': len(new_rows), 'size': len(new_raw)})
+
+    if action == 'ddf_delete':
+        # Удаляет ОДНУ запись по индексу (например ошибочно добавленную) — расшифровывает
+        # файл, потоково переносит все записи кроме указанной, зашифровывает обратно.
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        index = body.get('index')
+        if not server or not path or index is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        match = ddf_registry.match_ddf(path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, editable = match
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        if not loaded:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        file_key, protocol, plain = loaded
+        idx = int(index)
+        try:
+            new_plain = ddf_parser.delete_record(plain, fields, idx)
+            new_raw = l2encdec.encode(new_plain, protocol)
+        except ddf_parser.DdfError as e:
+            cur.close(); conn.close()
+            status = 404 if 'index_out_of_range' in str(e) else 400
+            return _bad(f'ddf_parse_error_{e}', status)
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'encode_error_{e}')
+        s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        cur.execute(
+            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), server, path)
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'size': len(new_raw)})
 
     if action == 'add_root':
         server = _safe_server(body.get('server'))

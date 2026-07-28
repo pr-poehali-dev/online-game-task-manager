@@ -394,6 +394,114 @@ def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
     return bytes(out)
 
 
+def delete_record(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True,
+                   tail_bytes: bytes = None) -> bytes:
+    '''Потоково копирует все записи КРОМЕ той, что имеет номер `index` — удаляет ровно одну
+    запись. Экономично по памяти (как transform_single_row/append_records). Обновлённый
+    счётчик записей (record_count - 1) пишется в заголовок. Бросает DdfError, если индекс
+    не найден.'''
+    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
+    out = bytearray()
+    if has_reccnt_prefix:
+        out += struct.pack('<I', record_count - 1)
+
+    found = False
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix):
+        if idx == index:
+            found = True
+            continue
+        for field in fields:
+            _write_field(out, field, row)
+
+    if not found:
+        raise DdfError(f'index_out_of_range_{index}')
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out)
+
+
+def append_records(binary: bytes, fields: list, new_rows: list, has_reccnt_prefix: bool = True,
+                    tail_bytes: bytes = None) -> bytes:
+    '''Потоково копирует ВСЕ существующие записи как есть и дописывает в конец файла новые
+    записи из new_rows (list[dict], каждый dict должен содержать значения для ВСЕХ полей
+    схемы — используйте default_row()/build_row_from_texts() ниже, чтобы собрать такой dict).
+    Экономично по памяти — как transform_single_row, не накапливает список всех записей.
+    Обновлённый счётчик записей (record_count + len(new_rows)) пишется в заголовок файла.
+
+    Возвращает готовые байты файла. Не проверяет уникальность id — ответственность за это
+    (и за корректность значений полей) на вызывающем коде (backend action).'''
+    record_count = get_record_count(binary, has_reccnt_prefix) if has_reccnt_prefix else None
+    out = bytearray()
+    if has_reccnt_prefix:
+        out += struct.pack('<I', record_count + len(new_rows))
+
+    for _idx, row in iter_records(binary, fields, has_reccnt_prefix):
+        for field in fields:
+            _write_field(out, field, row)
+
+    for row in new_rows:
+        for field in fields:
+            _write_field(out, field, row)
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out)
+
+
+def default_row(fields: list) -> dict:
+    '''Строит "пустую" запись со значениями по умолчанию для всех полей схемы (0 для чисел,
+    пустая ASCF/UNICODE строка для текстов, [] заполненные нулями/пустыми строками для
+    статических массивов, [] для динамических — соответствующее числовое поле-счётчик тоже
+    будет 0). Используется как основа для формы "создать новую запись с нуля" на фронтенде
+    (через ddf_get с index=null) и как стартовая точка перед применением build_row_from_texts.'''
+    row = {}
+    for field in fields:
+        ftype = field['type']
+        name = field['name']
+        array_ref = field['array']
+        if ftype == 'FILLER':
+            continue
+        if array_ref is not None:
+            count = _resolve_count(row, array_ref) if not array_ref.isdigit() else int(array_ref)
+            count = count or 0
+            row[name] = [_default_scalar(ftype) for _ in range(count)]
+        else:
+            row[name] = _default_scalar(ftype)
+    return row
+
+
+def _default_scalar(ftype: str):
+    if ftype == 'ASCF':
+        return AscfStr('', False, True)
+    if ftype == 'UNICODE':
+        return ''
+    if ftype == 'FLOAT':
+        return 0.0
+    return 0
+
+
+def build_row_from_texts(fields: list, editable_names: list, base_row: dict, texts: dict) -> dict:
+    '''Берёт base_row (обычно default_row(fields) или копию существующей записи-шаблона),
+    подставляет в неё текстовые значения из texts (dict {field_name: str}) для editable-полей,
+    сохраняя оригинальный флаг кодировки/null-терминатора у AscfStr-полей, если он был в
+    base_row. Не editable-поля (id, числовые счётчики и т.п.) остаются как в base_row —
+    вызывающий код (backend action) должен сам подставить id/другие обязательные значения
+    ДО или ПОСЛЕ вызова этой функции через прямое присваивание row[name] = value.'''
+    row = dict(base_row)
+    for name, text in texts.items():
+        if name not in editable_names:
+            continue
+        old_value = row.get(name)
+        if isinstance(old_value, AscfStr):
+            row[name] = AscfStr(str(text), old_value.is_unicode, old_value.has_null_terminator)
+        else:
+            row[name] = str(text)
+    return row
+
+
 def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
     ftype = field['type']
     name = field['name']
