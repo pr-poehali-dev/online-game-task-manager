@@ -84,8 +84,9 @@ def _add_padding(data: bytes) -> bytes:
 try:
     # gmpy2 (обёртка над GMP) ускоряет модульное возведение в степень с 1023-битным модулем
     # примерно в 7 раз по сравнению со встроенным pow() — критично для больших .dat файлов
-    # (skillname-e.dat даёт ~8500 RSA-блоков на encode, это разница между ~6 и ~45 секундами).
-    # Если пакет недоступен в среде функции — используем встроенный pow() как надёжный fallback.
+    # (skillname-e.dat даёт ~8500 RSA-блоков на encode). Если пакет недоступен в среде функции
+    # (не собрался — требует C-компилятор+libgmp) — используем встроенный pow() как fallback,
+    # который дополнительно ускоряется через CRT (см. ниже) до приемлемого времени.
     import gmpy2
     def _modpow(value: int, exponent: int, modulus: int) -> int:
         return int(gmpy2.powmod(value, exponent, modulus))
@@ -94,17 +95,52 @@ except ImportError:
         return pow(value, exponent, modulus)
 
 
+# CRT (китайская теорема об остатках) ускоряет RSA encode (публичный экспонент ~1024 бита)
+# примерно в 2.5-3 раза по сравнению с "наивным" pow(value, e, N) на полном модуле — множители
+# p, q найдены один раз офлайн через факторизацию N по известной паре (e, d) алгоритмом Miller
+# (модуль общий для decode/encode, простые числа THIS МОДУЛЯ не публикуются нигде за пределами
+# этого файла). Используется только для encode (публичный экспонент) — decode и так быстрый,
+# т.к. приватный экспонент всего 7 бит (0x1d).
+_MODERN_RSA_P = int(
+    "20066103313011168283987980898034368123518393266113311782508459310939569824351"
+    "170672391567135173138867049094840716137543413062920130100627083145499351008871"
+)
+
+
 def _rsa_apply(data: bytes, modulus_hex: str, exponent_hex: str) -> bytes:
-    '''Поблочное модульное возведение в степень (RSA) — эквивалент mbedtls_mpi_exp_mod.'''
+    '''Поблочное модульное возведение в степень (RSA) — эквивалент mbedtls_mpi_exp_mod.
+    Для публичного (длинного) экспонента модуля MODERN_RSA_MODULUS автоматически применяется
+    CRT-ускорение (см. _MODERN_RSA_P выше), если модуль/экспонент совпадают с ним.'''
     if len(data) % BLOCK_SIZE != 0:
         raise L2CryptError('rsa_block_size_mismatch')
     modulus = int(modulus_hex, 16)
     exponent = int(exponent_hex, 16)
+
+    use_crt = (
+        modulus_hex == MODERN_RSA_MODULUS
+        and exponent_hex == MODERN_RSA_PUBLIC_EXP
+    )
+    if use_crt:
+        p = _MODERN_RSA_P
+        q = modulus // p
+        dP = exponent % (p - 1)
+        dQ = exponent % (q - 1)
+        q_inv = pow(q, -1, p)
+
+        def modpow_fn(value):
+            m1 = _modpow(value % p, dP, p)
+            m2 = _modpow(value % q, dQ, q)
+            h = (q_inv * (m1 - m2)) % p
+            return m2 + h * q
+    else:
+        def modpow_fn(value):
+            return _modpow(value, exponent, modulus)
+
     out = bytearray()
     for offset in range(0, len(data), BLOCK_SIZE):
         block = data[offset:offset + BLOCK_SIZE]
         value = int.from_bytes(block, 'big')
-        result = _modpow(value, exponent, modulus)
+        result = modpow_fn(value)
         out.extend(result.to_bytes(BLOCK_SIZE, 'big'))
     return bytes(out)
 
