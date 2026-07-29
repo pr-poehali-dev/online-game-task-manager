@@ -64,7 +64,7 @@ export default function PatchesDdfSearchPanel({
 
       {searchError && <p className="text-sm text-destructive mb-3">{searchError}</p>}
 
-      <div className="max-h-[55vh] overflow-auto scrollbar-thin -mx-1 px-1">
+      <div>
         {results.length === 0 && !searching && (
           <p className="text-sm text-muted-foreground text-center py-8">
             {query ? 'Ничего не найдено' : 'Начните вводить запрос или выберите запись из списка'}
