@@ -382,18 +382,26 @@ def _ddf_serialize_row(row, fields):
 
 def _ddf_color_hex(row, color_group_def):
     '''Собирает "#RRGGBB" из значения(й) цветовой группы записи (см. _ddf_color_group).
-    Для array=True — из первых трёх элементов списка row[fields[0]] (CHEX rgb[3]/rgba[4],
-    альфа-компонента 4-го элемента, если есть, в HEX-цвете не участвует — веб-цвет всегда RGB).
-    Для array=False — из трёх отдельных скалярных полей row[fields[0..2]] (ColorR/G/B).
+
+    ВАЖНО — байты хранятся в ФАЙЛЕ в ОБРАТНОМ порядке (B,G,R[,A]), а не R,G,B(,A) — то есть
+    fields[0] физически содержит синий канал, fields[1] — зелёный, fields[2] — красный (4-й
+    элемент/поле, если есть, — альфа, в веб-HEX не участвует). Подтверждено экспериментально:
+    сравнение отредактированного значения (row rgb=[216,24,24], т.е. байты в файле по порядку
+    216,24,24) с реальным цветом текста в игровом чате на скриншоте пользователя — замеренный
+    цвет пикселей RGB(23,23,209) совпадает именно с интерпретацией байт как B=216,G=24,R=24
+    (=> #1818d8), а НЕ с прямым R=216,G=24,B=24. Это касается ОБОИХ форматов хранения —
+    array=True (rgb[3]/rgba[4]) и array=False (отдельные скалярные поля ColorR/ColorG/ColorB) —
+    имена полей в DDF-схеме исторически присвоены "по порядку следования в файле", а не по
+    фактическому смыслу байта, поэтому поле "ColorR" физически хранит синий канал, а не красный.
     Каждый компонент — int 0-255 (тип CHEX/UCHAR в схеме) — на всякий случай clamp'ится.'''
     if not color_group_def:
         return None
     names = color_group_def['fields']
     if color_group_def['array']:
         values = row.get(names[0]) or []
-        r, g, b = (values + [0, 0, 0])[:3]
+        b, g, r = (values + [0, 0, 0])[:3]
     else:
-        r, g, b = (row.get(n, 0) or 0 for n in names[:3])
+        b, g, r = (row.get(n, 0) or 0 for n in names[:3])
     clamp = lambda v: max(0, min(255, int(v)))
     return '#%02x%02x%02x' % (clamp(r), clamp(g), clamp(b))
 
@@ -688,20 +696,23 @@ def handler(event: dict, context) -> dict:
                 has_null = getattr(old_value, 'has_null_terminator', True)
                 row[fname] = AscfStr(str(new_value), is_unicode, has_null)
             if color_hex is not None and color_group_def:
-                # Раскладываем "#RRGGBB" обратно в компоненты схемы — либо целиком в поле-массив
-                # (rgb[3]/rgba[4], альфа-компонента 4-го элемента, если есть, не трогается —
-                # веб-цвет не содержит альфы), либо в отдельные скалярные CHEX-поля R/G/B.
+                # Раскладываем "#RRGGBB" обратно в компоненты схемы — байты в ФАЙЛЕ идут в
+                # ОБРАТНОМ порядке B,G,R (см. подробное объяснение в _ddf_color_hex выше),
+                # поэтому первый элемент/поле группы получает синий канал, третий — красный.
+                # Либо целиком в поле-массив (rgb[3]/rgba[4], альфа-компонента 4-го элемента,
+                # если есть, не трогается — веб-цвет не содержит альфы), либо в отдельные
+                # скалярные CHEX-поля.
                 r = int(color_hex[1:3], 16)
                 g = int(color_hex[3:5], 16)
                 b = int(color_hex[5:7], 16)
                 names = color_group_def['fields']
                 if color_group_def['array']:
                     old_list = row.get(names[0]) or []
-                    row[names[0]] = [r, g, b] + list(old_list[3:])
+                    row[names[0]] = [b, g, r] + list(old_list[3:])
                 else:
-                    row[names[0]] = r
+                    row[names[0]] = b
                     row[names[1]] = g
-                    row[names[2]] = b
+                    row[names[2]] = r
             return row
 
         try:
