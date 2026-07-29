@@ -584,6 +584,75 @@ def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
     return bytes(out)
 
 
+def update_record_sorted(binary: bytes, fields: list, index: int, mutate_fn, key_fn,
+                          has_reccnt_prefix: bool = True, fixed_record_count: int = None,
+                          tail_bytes: bytes = None):
+    '''Как transform_single_row(), но ДОПОЛНИТЕЛЬНО поддерживает сортировку: если после
+    mutate_fn(row) ключ записи (key_fn) изменился настолько, что запись оказалась НЕ на своём
+    месте относительно соседей (см. insert_records_sorted про то, что "своё место" — первая
+    позиция, где ключ следующей существующей записи >= собственного) — запись физически
+    ПЕРЕМЕЩАЕТСЯ в файле на новую позицию (а не просто редактируется на месте), чтобы весь файл
+    остался отсортирован. Используется в ddf_save_raw — единственном месте, где пользователь
+    может поменять сами id-поля записи через текстовое редактирование (обычная форма ddf_save
+    id-поля никогда не затрагивает — они не входят в editable, см. _EDITABLE_TEXT_FIELDS).
+
+    ВАЖНО про направление перемещения: новая позиция записи может оказаться и РАНЬШЕ, и ПОЗЖЕ её
+    исходного индекса (например пользователь уменьшил id — запись должна переместиться назад,
+    к более ранним записям, которые физически уже "позади" неё в файле). Однопроходный алгоритм
+    (как в insert_records_sorted, где все new_rows заведомо идут ПОСЛЕ всех существующих в потоке)
+    здесь не подходит: пока мы дойдём до исходной позиции записи (чтобы вызвать mutate_fn/key_fn),
+    все более ранние записи уже выведены в out — вставить туда что-то задним числом нельзя.
+    Поэтому используются ДВА прохода: 1) находим и обновляем запись `index` заранее (через
+    get_record_by_index + mutate_fn), вычисляем её новый ключ; 2) основной проход по ВСЕМ
+    записям — исходная позиция `index` пропускается (не пишется), а обновлённая запись
+    вставляется в правильное место относительно ОСТАЛЬНЫХ записей (перед первой, чей ключ >=
+    новому) — независимо от того, раньше это место или позже исходной позиции.
+
+    Возвращает (bytes, new_index) — new_index это позиция записи в ИТОГОВОМ файле (может
+    отличаться от исходного index, если запись физически переместилась) — вызывающий код
+    (ddf_save_raw в index.py) должен обновить индекс на фронтенде, иначе последующие действия
+    (удаление, повторное сохранение) попадут не в ту запись.
+
+    Бросает DdfError, если индекс не найден.'''
+    old_row = get_record_by_index(binary, fields, index, has_reccnt_prefix, fixed_record_count)
+    updated_row = mutate_fn(old_row)
+    updated_key = key_fn(updated_row)
+
+    out = bytearray()
+    if has_reccnt_prefix:
+        record_count = get_record_count(binary, has_reccnt_prefix)
+        out += struct.pack('<I', record_count)
+
+    inserted = False
+    new_index = 0
+    out_idx = 0
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
+        if idx == index:
+            continue
+        existing_key = key_fn(row)
+        if not inserted and updated_key <= existing_key:
+            for field in fields:
+                _write_field(out, field, updated_row)
+            new_index = out_idx
+            out_idx += 1
+            inserted = True
+        for field in fields:
+            _write_field(out, field, row)
+        out_idx += 1
+
+    if not inserted:
+        # Новый ключ больше, чем у ЛЮБОЙ другой записи (включая случай, когда файл состоит
+        # ровно из одной записи) — уходит в конец.
+        new_index = out_idx
+        for field in fields:
+            _write_field(out, field, updated_row)
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out), new_index
+
+
 def delete_record(binary: bytes, fields: list, index: int, has_reccnt_prefix: bool = True,
                    fixed_record_count: int = None, tail_bytes: bytes = None) -> bytes:
     '''Потоково копирует все записи КРОМЕ той, что имеет номер `index` — удаляет ровно одну
@@ -635,6 +704,50 @@ def append_records(binary: bytes, fields: list, new_rows: list, has_reccnt_prefi
     for row in new_rows:
         for field in fields:
             _write_field(out, field, row)
+
+    if tail_bytes is None:
+        tail_bytes = encode_ascf('SafePackage')
+    out += tail_bytes
+    return bytes(out)
+
+
+def insert_records_sorted(binary: bytes, fields: list, new_rows: list, key_fn, has_reccnt_prefix: bool = True,
+                           fixed_record_count: int = None, tail_bytes: bytes = None) -> bytes:
+    '''Как append_records(), но КАЖДАЯ новая запись из new_rows вставляется в позицию,
+    определяемую key_fn (обычно значения id-полей записи, см. _ddf_key_of/_ID_FIELDS в
+    index.py/ddf_registry*.py) — так, чтобы ВЕСЬ файл (существующие + новые записи) оставался
+    отсортирован по этому ключу по возрастанию. НЕ переупорядочивает уже существующие записи
+    между собой (даже если они физически расположены не по порядку — по решению пользователя,
+    старый "беспорядок" в файле не трогаем) — новая запись просто вставляется на первую позицию,
+    где её ключ <= ключа следующей существующей записи (то есть сразу ПЕРЕД первой существующей
+    записью с ключом >= нового). Если такой записи нет (новый ключ больше всех существующих) —
+    запись уходит в конец файла, как и раньше в append_records.
+
+    new_rows должны быть уже отсортированы между собой по key_fn (вызывающий код в index.py
+    сортирует list перед вызовом) — это упрощает слияние: оба потока (существующие записи и
+    new_rows) читаются как отсортированные последовательности и сливаются один раз, без обратных
+    перемоток.
+
+    Потоково — как append_records, не накапливает список всех существующих записей в памяти.'''
+    out = bytearray()
+    if has_reccnt_prefix:
+        record_count = get_record_count(binary, has_reccnt_prefix)
+        out += struct.pack('<I', record_count + len(new_rows))
+
+    pending = list(new_rows)  # копия — будем вынимать по мере вставки (pop(0))
+    for _idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
+        existing_key = key_fn(row)
+        while pending and key_fn(pending[0]) <= existing_key:
+            new_row = pending.pop(0)
+            for field in fields:
+                _write_field(out, field, new_row)
+        for field in fields:
+            _write_field(out, field, row)
+
+    # Всё, что осталось в pending (ключ больше, чем у ЛЮБОЙ существующей записи) — в конец файла.
+    for new_row in pending:
+        for field in fields:
+            _write_field(out, field, new_row)
 
     if tail_bytes is None:
         tail_bytes = encode_ascf('SafePackage')

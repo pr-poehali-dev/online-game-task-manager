@@ -199,7 +199,18 @@ export default function PatchesDdfEditor({
     setSaved(false);
     try {
       if (isRawMode) {
-        await postJson({ action: 'ddf_save_raw', server, path, index: selectedIndex, line: rawLine });
+        const data = await postJson({ action: 'ddf_save_raw', server, path, index: selectedIndex, line: rawLine });
+        if (data.moved) {
+          // Файл поддерживает сортировку по id (см. _ID_FIELDS/update_record_sorted в backend) —
+          // если пользователь поменял в raw-режиме сами id-поля записи, она физически
+          // переместилась в файле на новую позицию, а индексы ВСЕХ записей между старой и новой
+          // позицией сдвинулись на 1. Список результатов поиска (results), закэшированный из
+          // предыдущего ddf_search, теперь содержит устаревшие индексы — перезапрашиваем список
+          // заново, чтобы дальнейшие действия (открыть другую запись, удалить) не промахнулись
+          // мимо цели; selectedIndex обновляем на новую позицию перемещённой записи.
+          setSelectedIndex(data.index);
+          runSearch(query);
+        }
       } else {
         await postJson({ action: 'ddf_save', server, path, index: selectedIndex, edits, colorHex });
         const firstEditableField = fields.find((f) => f.editable)?.name;

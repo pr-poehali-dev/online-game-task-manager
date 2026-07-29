@@ -872,14 +872,30 @@ def handler(event: dict, context) -> dict:
         def _apply_raw_line(_row):
             return new_row
 
+        new_index = idx
         try:
             tail_bytes = None if has_reccnt_prefix else ddf_parser.get_tail_bytes(
                 plain, fields, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
             )
-            new_plain = ddf_parser.transform_single_row(
-                plain, fields, idx, _apply_raw_line,
-                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
-            )
+            if id_field_names:
+                # Raw-режим — единственное место, где пользователь может поменять сами id-поля
+                # существующей записи (обычная форма их никогда не затрагивает). Если id-ключ
+                # изменился, запись нужно физически ПЕРЕМЕСТИТЬ на новую позицию, чтобы файл
+                # остался отсортирован по возрастанию (см. update_record_sorted) — а не просто
+                # отредактировать на месте, как раньше через transform_single_row. new_index —
+                # позиция записи в ИТОГОВОМ файле, может отличаться от исходной idx — возвращаем
+                # его фронтенду, иначе последующие действия (удаление, повторное сохранение)
+                # попадут не в ту запись.
+                key_fn = lambda row: _ddf_key_of(row, id_field_names)
+                new_plain, new_index = ddf_parser.update_record_sorted(
+                    plain, fields, idx, _apply_raw_line, key_fn,
+                    has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
+                )
+            else:
+                new_plain = ddf_parser.transform_single_row(
+                    plain, fields, idx, _apply_raw_line,
+                    has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, tail_bytes=tail_bytes
+                )
             new_raw = l2encdec.encode(new_plain, protocol)
             if quirk_bytes:
                 new_raw += bytes(quirk_bytes)
@@ -896,7 +912,7 @@ def handler(event: dict, context) -> dict:
             (len(new_raw), server, path)
         )
         cur.close(); conn.close()
-        return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
+        return _ok({'ok': True, 'index': new_index, 'size': len(new_raw), 'moved': new_index != idx})
 
     if action == 'ddf_new':
         # Возвращает "пустой шаблон" записи (все поля — значения по умолчанию: 0 для чисел,
@@ -1048,7 +1064,17 @@ def handler(event: dict, context) -> dict:
                 return _bad(f'duplicate_id_in_input_{key_str}')
 
         try:
-            new_plain = ddf_parser.append_records(plain, fields, new_rows)
+            if id_field_names:
+                # Схема имеет понятие "id" (_ID_FIELDS) — по требованию пользователя весь файл
+                # должен оставаться отсортирован по возрастанию id-ключа: новые записи
+                # вставляются на правильную позицию (см. insert_records_sorted), а не дописываются
+                # в конец файла. new_rows сортируются между собой ПЕРЕД вставкой (insert_records_
+                # sorted ожидает отсортированный список для корректного слияния однопроходом).
+                key_fn = lambda row: _ddf_key_of(row, id_field_names)
+                new_rows_sorted = sorted(new_rows, key=key_fn)
+                new_plain = ddf_parser.insert_records_sorted(plain, fields, new_rows_sorted, key_fn)
+            else:
+                new_plain = ddf_parser.append_records(plain, fields, new_rows)
             new_raw = l2encdec.encode(new_plain, protocol)
             if quirk_bytes:
                 new_raw += bytes(quirk_bytes)
