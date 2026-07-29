@@ -123,6 +123,47 @@ export default function PatchesDdfEditor({
     }
   }
 
+  // Переключатель "форма / текст целиком" для ОБЫЧНЫХ схем (не isRawOnlySchema — те и так
+  // всегда открыты в raw, переключать некуда). Раньше raw-режим показывался только для
+  // "особых" файлов (armorgrp/etcitemgrp/recipe — с MTX/MAT-полями без человеческих текстовых
+  // полей), хотя backend (ddf_get_raw/ddf_save_raw) всегда умел работать с ЛЮБОЙ схемой —
+  // теперь пользователь может по желанию открыть текстовое представление записи целиком (как в
+  // l2disasm TSV-экспорте) даже у обычных файлов, чтобы получить доступ к полям, для которых нет
+  // отдельной формы (счётчики массивов, служебные UNK_* и т.п.). Несохранённые правки текущего
+  // режима при переключении отбрасываются — данные перезапрашиваются заново с сервера.
+  async function toggleRawView() {
+    if (selectedIndex === null) return;
+    setLoadingRow(true);
+    setSaveError('');
+    setSaved(false);
+    try {
+      if (isRawMode) {
+        const data = await postJson({ action: 'ddf_get', server, path, index: selectedIndex });
+        setIsRawMode(false);
+        setMode('view');
+        setFields(data.fields || []);
+        setRow(data.row || {});
+        setColorGroup(data.colorGroup || null);
+        setColorHex(data.colorHex || null);
+        const initialEdits: Record<string, string> = {};
+        for (const f of data.fields || []) {
+          if (f.editable) initialEdits[f.name] = cleanText(data.row?.[f.name]);
+        }
+        setEdits(initialEdits);
+      } else {
+        const rawData = await postJson({ action: 'ddf_get_raw', server, path, index: selectedIndex });
+        setIsRawMode(true);
+        setMode('raw');
+        setRawLine(rawData.line ?? '');
+        setRawColumns(rawData.columns || []);
+      }
+    } catch {
+      setSaveError('Не удалось переключить режим просмотра');
+    } finally {
+      setLoadingRow(false);
+    }
+  }
+
   async function handleSave() {
     if (selectedIndex === null) return;
     setSaving(true);
@@ -295,9 +336,22 @@ export default function PatchesDdfEditor({
             <span className="text-xs text-muted-foreground shrink-0">· {totalRows} записей</span>
           )}
         </div>
-        <button onClick={onClose} className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-          <Icon name="X" size={16} />
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {(mode === 'view' || mode === 'raw') && !isRawOnlySchema && (
+            <button
+              onClick={toggleRawView}
+              disabled={loadingRow}
+              title={isRawMode ? 'Показать обычную форму' : 'Показать все поля текстом'}
+              className="h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              <Icon name={isRawMode ? 'FormInput' : 'Code'} size={13} />
+              {isRawMode ? 'Форма' : 'Текстом'}
+            </button>
+          )}
+          <button onClick={onClose} className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            <Icon name="X" size={16} />
+          </button>
+        </div>
       </div>
 
       {mode === 'search' && (
