@@ -87,18 +87,28 @@ export default function PatchesDdfViewPanel({
             </div>
           )}
 
-          {fields.filter((f) => f.editable).map((f) => (
-            <div key={f.name}>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">{f.name}</label>
-              <textarea
-                value={edits[f.name] ?? ''}
-                onChange={(e) => setEdits((prev) => ({ ...prev, [f.name]: e.target.value }))}
-                rows={edits[f.name]?.length > 80 ? 4 : 1}
-                disabled={!canManage}
-                className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm resize-y min-h-[38px] disabled:opacity-70"
-              />
-            </div>
-          ))}
+          {fields.filter((f) => f.editable).map((f) => {
+            const value = edits[f.name] ?? '';
+            const lineBreaks = (value.match(/\n/g) || []).length;
+            // Большие текстовые поля (правила сервера eula, длинные описания квестов и т.п.) —
+            // даём просторное поле ввода сразу, без необходимости вручную тянуть за уголок.
+            const isLarge = value.length > 200 || lineBreaks > 2;
+            const rows = isLarge ? 16 : value.length > 80 ? 4 : 1;
+            return (
+              <div key={f.name}>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{f.name}</label>
+                <textarea
+                  value={value}
+                  onChange={(e) => setEdits((prev) => ({ ...prev, [f.name]: e.target.value }))}
+                  rows={rows}
+                  disabled={!canManage}
+                  className={`w-full px-3 py-2 rounded-lg border border-border bg-background text-sm resize-y disabled:opacity-70 ${
+                    isLarge ? 'min-h-[360px] leading-relaxed' : 'min-h-[38px]'
+                  }`}
+                />
+              </div>
+            );
+          })}
 
           {fields.filter((f) => f.editable).length === 0 && (
             <p className="text-sm text-muted-foreground">В этой записи нет текстовых полей для редактирования.</p>
