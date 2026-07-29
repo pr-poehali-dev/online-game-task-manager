@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import { ModalOverlay } from './shared';
 import type { ServerId } from './shared';
 import { postJson } from './patchesApi';
-import type { SearchResult, FieldDef, RowValue, Mode, RawColumn } from './patchesDdfShared';
+import type { SearchResult, FieldDef, RowValue, Mode, RawColumn, ColorGroupDef } from './patchesDdfShared';
 import { cleanText } from './patchesDdfShared';
 import PatchesDdfSearchPanel from './PatchesDdfSearchPanel';
 import PatchesDdfViewPanel from './PatchesDdfViewPanel';
@@ -35,6 +35,8 @@ export default function PatchesDdfEditor({
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [row, setRow] = useState<Record<string, RowValue> | null>(null);
   const [edits, setEdits] = useState<Record<string, string>>({});
+  const [colorGroup, setColorGroup] = useState<ColorGroupDef | null>(null);
+  const [colorHex, setColorHex] = useState<string | null>(null);
   const [isRawMode, setIsRawMode] = useState(false);
   const [rawLine, setRawLine] = useState<string | null>(null);
   const [rawColumns, setRawColumns] = useState<RawColumn[]>([]);
@@ -106,6 +108,8 @@ export default function PatchesDdfEditor({
         setMode('view');
         setFields(data.fields || []);
         setRow(data.row || {});
+        setColorGroup(data.colorGroup || null);
+        setColorHex(data.colorHex || null);
         const initialEdits: Record<string, string> = {};
         for (const f of data.fields || []) {
           if (f.editable) initialEdits[f.name] = cleanText(data.row?.[f.name]);
@@ -128,7 +132,7 @@ export default function PatchesDdfEditor({
       if (isRawMode) {
         await postJson({ action: 'ddf_save_raw', server, path, index: selectedIndex, line: rawLine });
       } else {
-        await postJson({ action: 'ddf_save', server, path, index: selectedIndex, edits });
+        await postJson({ action: 'ddf_save', server, path, index: selectedIndex, edits, colorHex });
         const firstEditableField = fields.find((f) => f.editable)?.name;
         const newPreview = firstEditableField ? edits[firstEditableField] : undefined;
         setResults((prev) => prev.map((r) => (
@@ -168,6 +172,8 @@ export default function PatchesDdfEditor({
     setRow(null);
     setFields([]);
     setEdits({});
+    setColorGroup(null);
+    setColorHex(null);
     setIsRawMode(false);
     setRawLine(null);
     setRawColumns([]);
@@ -316,6 +322,9 @@ export default function PatchesDdfEditor({
           fields={fields}
           edits={edits}
           setEdits={setEdits}
+          colorGroup={colorGroup}
+          colorHex={colorHex}
+          setColorHex={setColorHex}
           canManage={canManage}
           saving={saving}
           saved={saved}

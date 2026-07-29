@@ -1365,6 +1365,21 @@ _EDITABLE_TEXT_FIELDS = {
     'zonename_classic': ['zone_name', 'map'],
 }
 
+# Группы полей, которые физически хранят RGB(A)-цвет — либо один массив однобайтовых
+# компонент (CHEX rgb[3] / rgba[4]), либо несколько отдельных скалярных CHEX-полей подряд
+# (ColorR/ColorG/ColorB/ColorA). Фронтенд показывает такую группу единым color picker'ом
+# вместо потерянных "невидимых" полей (массивы раньше не попадали ни в editable, ни в summary —
+# см. RESEARCH_NOTES.md, раздел про systemmsg/rgb). 'fields' — имена в порядке R,G,B[,A];
+# 'array' — True, если это ОДНО поле-массив (тогда при записи шлём весь список одним значением
+# в ddf_save под именем fields[0]), False — если это N отдельных скалярных полей (шлём каждое
+# под своим именем).
+_COLOR_FIELD_GROUPS = {
+    'npcname': {'fields': ['rgb'], 'array': True},
+    'systemmsg': {'fields': ['ColorR', 'ColorG', 'ColorB', 'ColorA'], 'array': False},
+    'systemmsg_classic': {'fields': ['rgba'], 'array': True},
+    'systemmsgpatch': {'fields': ['ColorR', 'ColorG', 'ColorB', 'ColorA'], 'array': False},
+}
+
 _FIELDS_CACHE = {}
 
 
@@ -1397,3 +1412,9 @@ def is_supported(filename: str) -> bool:
 
 def list_supported_keys():
     return sorted(_DDF_TEXTS.keys())
+
+
+def color_group(filename: str):
+    '''Возвращает описание цветовой группы полей ({'fields': [...], 'array': bool}) для этой
+    схемы, либо None, если у неё нет полей-цвета. См. _COLOR_FIELD_GROUPS выше.'''
+    return _COLOR_FIELD_GROUPS.get(_base_key(filename))

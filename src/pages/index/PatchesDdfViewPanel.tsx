@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import Icon from '@/components/ui/icon';
-import type { FieldDef, RowValue } from './patchesDdfShared';
+import type { ColorGroupDef, FieldDef, RowValue } from './patchesDdfShared';
 import { cleanText } from './patchesDdfShared';
 
 export default function PatchesDdfViewPanel({
@@ -8,6 +9,9 @@ export default function PatchesDdfViewPanel({
   fields,
   edits,
   setEdits,
+  colorGroup,
+  colorHex,
+  setColorHex,
   canManage,
   saving,
   saved,
@@ -23,6 +27,9 @@ export default function PatchesDdfViewPanel({
   fields: FieldDef[];
   edits: Record<string, string>;
   setEdits: (updater: (prev: Record<string, string>) => Record<string, string>) => void;
+  colorGroup: ColorGroupDef | null;
+  colorHex: string | null;
+  setColorHex: (v: string | null) => void;
   canManage: boolean;
   saving: boolean;
   saved: boolean;
@@ -33,6 +40,10 @@ export default function PatchesDdfViewPanel({
   deleting: boolean;
   onDelete: () => void;
 }) {
+  const colorFieldNames = new Set(colorGroup?.fields || []);
+  const [hexDraft, setHexDraft] = useState(colorHex ?? '');
+  useEffect(() => { setHexDraft(colorHex ?? ''); }, [colorHex]);
+
   return (
     <div className="p-5">
       {loadingRow ? (
@@ -42,12 +53,39 @@ export default function PatchesDdfViewPanel({
       ) : row ? (
         <div className="space-y-4">
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground border-b border-border pb-3">
-            {fields.filter((f) => !f.editable && !f.array).map((f) => (
+            {fields.filter((f) => !f.editable && !f.array && !colorFieldNames.has(f.name)).map((f) => (
               <span key={f.name}>
                 <span className="opacity-70">{f.name}:</span> {cleanText(row[f.name])}
               </span>
             ))}
           </div>
+
+          {colorGroup && colorHex && (
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Цвет</label>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={colorHex}
+                  onChange={(e) => setColorHex(e.target.value)}
+                  disabled={!canManage}
+                  className="h-9 w-14 rounded-lg border border-border bg-background cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
+                />
+                <input
+                  value={hexDraft}
+                  onChange={(e) => setHexDraft(e.target.value)}
+                  onBlur={() => {
+                    if (/^#[0-9a-fA-F]{6}$/.test(hexDraft)) setColorHex(hexDraft);
+                    else setHexDraft(colorHex ?? '');
+                  }}
+                  disabled={!canManage}
+                  maxLength={7}
+                  spellCheck={false}
+                  className="w-24 h-9 px-3 rounded-lg border border-border bg-background text-sm font-mono disabled:opacity-70"
+                />
+              </div>
+            </div>
+          )}
 
           {fields.filter((f) => f.editable).map((f) => (
             <div key={f.name}>

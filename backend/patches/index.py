@@ -60,6 +60,18 @@ def _ddf_match(server, path):
 def _ddf_is_supported(server, path):
     return _ddf_registry_for(server).is_supported(path)
 
+
+def _ddf_color_group(server, path):
+    '''Возвращает описание цветовой группы полей ({'fields': [...], 'array': bool}) для этого
+    файла, либо None. См. _COLOR_FIELD_GROUPS в ddf_registry.py/ddf_registry_c4.py — некоторые
+    схемы (systemmsg, npcname) хранят RGB(A)-цвет либо одним массивом однобайтовых компонент,
+    либо несколькими отдельными скалярными полями (ColorR/ColorG/ColorB/ColorA), которые раньше
+    были не видны на фронтенде вообще (не попадали ни в editable, ни в summary — массивы из
+    summary исключены, см. PatchesDdfViewPanel.tsx), а теперь показываются как color picker.'''
+    registry = _ddf_registry_for(server)
+    getter = getattr(registry, 'color_group', None)
+    return getter(path) if getter else None
+
 # Новые версии botocore (>=1.36) по умолчанию добавляют контрольную сумму запроса через
 # chunked-кодирование (trailer). Кастомный (не-AWS) S3-эндпоинт не всегда его корректно
 # разбирает — трейлер попадает прямо в тело файла (особенно заметно на 0-байтных файлах).
@@ -368,6 +380,24 @@ def _ddf_serialize_row(row, fields):
     return out
 
 
+def _ddf_color_hex(row, color_group_def):
+    '''Собирает "#RRGGBB" из значения(й) цветовой группы записи (см. _ddf_color_group).
+    Для array=True — из первых трёх элементов списка row[fields[0]] (CHEX rgb[3]/rgba[4],
+    альфа-компонента 4-го элемента, если есть, в HEX-цвете не участвует — веб-цвет всегда RGB).
+    Для array=False — из трёх отдельных скалярных полей row[fields[0..2]] (ColorR/G/B).
+    Каждый компонент — int 0-255 (тип CHEX/UCHAR в схеме) — на всякий случай clamp'ится.'''
+    if not color_group_def:
+        return None
+    names = color_group_def['fields']
+    if color_group_def['array']:
+        values = row.get(names[0]) or []
+        r, g, b = (values + [0, 0, 0])[:3]
+    else:
+        r, g, b = (row.get(n, 0) or 0 for n in names[:3])
+    clamp = lambda v: max(0, min(255, int(v)))
+    return '#%02x%02x%02x' % (clamp(r), clamp(g), clamp(b))
+
+
 def _ddf_row_matches_query(row, editable_names, query_lower):
     for name in editable_names:
         val = row.get(name)
@@ -549,6 +579,7 @@ def handler(event: dict, context) -> dict:
             )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}', 404 if 'index_out_of_range' in str(e) else 400)
+        color_group_def = _ddf_color_group(server, path)
         return _ok({
             'schema': key,
             'index': idx,
@@ -556,6 +587,8 @@ def handler(event: dict, context) -> dict:
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
             'isRawOnly': is_raw_only,
+            'colorGroup': color_group_def,
+            'colorHex': _ddf_color_hex(row, color_group_def),
         })
 
     if action == 'ddf_get_raw':
@@ -613,18 +646,25 @@ def handler(event: dict, context) -> dict:
         # (только editable-поля из схемы — остальное игнорируется), собирает обратно и
         # зашифровывает, перезаписывая тот же S3-объект (размер файла может немного
         # измениться из-за другой длины текста — это нормально и учитывается автоматически).
+        # Опциональный body['colorHex'] ("#RRGGBB") — для схем с _COLOR_FIELD_GROUPS (systemmsg,
+        # npcname) — раскладывается в компоненты цвета (см. _ddf_color_group/_ddf_color_hex).
         server = _safe_server(body.get('server'))
         path = body.get('path')
         index = body.get('index')
         edits = body.get('edits')
+        color_hex = body.get('colorHex')
         if not server or not path or index is None or not isinstance(edits, dict):
             cur.close(); conn.close()
             return _bad('bad_request')
+        if color_hex is not None and not re.match(r'^#[0-9a-fA-F]{6}$', str(color_hex)):
+            cur.close(); conn.close()
+            return _bad('bad_color_hex')
         match = _ddf_match(server, path)
         if not match:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
         key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
+        color_group_def = _ddf_color_group(server, path)
         quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()
@@ -647,6 +687,21 @@ def handler(event: dict, context) -> dict:
                 is_unicode = getattr(old_value, 'is_unicode', False)
                 has_null = getattr(old_value, 'has_null_terminator', True)
                 row[fname] = AscfStr(str(new_value), is_unicode, has_null)
+            if color_hex is not None and color_group_def:
+                # Раскладываем "#RRGGBB" обратно в компоненты схемы — либо целиком в поле-массив
+                # (rgb[3]/rgba[4], альфа-компонента 4-го элемента, если есть, не трогается —
+                # веб-цвет не содержит альфы), либо в отдельные скалярные CHEX-поля R/G/B.
+                r = int(color_hex[1:3], 16)
+                g = int(color_hex[3:5], 16)
+                b = int(color_hex[5:7], 16)
+                names = color_group_def['fields']
+                if color_group_def['array']:
+                    old_list = row.get(names[0]) or []
+                    row[names[0]] = [r, g, b] + list(old_list[3:])
+                else:
+                    row[names[0]] = r
+                    row[names[1]] = g
+                    row[names[2]] = b
             return row
 
         try:
@@ -756,11 +811,14 @@ def handler(event: dict, context) -> dict:
             return _bad('ddf_not_supported')
         key, fields, editable, _has_reccnt_prefix, _fixed_record_count, is_raw_only = match
         row = ddf_parser.default_row(fields)
+        color_group_def = _ddf_color_group(server, path)
         return _ok({
             'schema': key,
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
             'isRawOnly': is_raw_only,
+            'colorGroup': color_group_def,
+            'colorHex': _ddf_color_hex(row, color_group_def),
         })
 
     if action == 'ddf_create':

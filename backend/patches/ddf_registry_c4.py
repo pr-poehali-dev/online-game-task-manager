@@ -793,6 +793,14 @@ FIXED_RECORD_COUNTS = {
     'logongrp': 26,
 }
 
+# Группы полей, которые физически хранят RGB(A)-цвет — см. подробное объяснение в
+# ddf_registry.py (_COLOR_FIELD_GROUPS). У C4 обе схемы используют компактный формат "один
+# массив из 3 CHEX-компонент" (без альфа-канала, в отличие от H5 systemmsg).
+_COLOR_FIELD_GROUPS = {
+    'npcname': {'fields': ['rgb'], 'array': True},
+    'systemmsg': {'fields': ['rgb'], 'array': True},
+}
+
 _FIELDS_CACHE = {}
 
 
@@ -829,3 +837,9 @@ def is_supported(filename: str) -> bool:
 
 def list_supported_keys():
     return sorted(_DDF_TEXTS.keys())
+
+
+def color_group(filename: str):
+    '''Возвращает описание цветовой группы полей ({'fields': [...], 'array': bool}) для этой
+    схемы, либо None, если у неё нет полей-цвета. См. _COLOR_FIELD_GROUPS выше.'''
+    return _COLOR_FIELD_GROUPS.get(_base_key(filename))
