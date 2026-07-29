@@ -55,17 +55,103 @@ class AscfStr(str):
     '\\x00' (или '\\x00\\x00' для unicode) — это стандарт. НО в некоторых реальных файлах
     (например radiodata-ru.dat, где строки URL "обрезаны" по месту без null) встречаются ASCF
     без завершающего null. Флаг сохраняется при чтении и используется при кодировании, чтобы
-    не добавлять "лишний" null там, где его не было в оригинале.'''
+    не добавлять "лишний" null там, где его не было в оригинале.
 
-    def __new__(cls, value, is_unicode=False, has_null_terminator=True):
+    was_mojibake: True, если ИСХОДНОЕ значение (сохранённое в самом .dat файле) было "битой"
+    кириллицей (cp1251, прочитанной как latin-1, см. looks_like_cp1251_mojibake). str-значение
+    этого объекта — уже ИСПРАВЛЕННЫЙ, читаемый текст (см. decode_ascf) — флаг используется ТОЛЬКО
+    при последующем encode_ascf, чтобы знать, нужно ли перекодировать текст обратно в те же
+    "испорченные" байты перед записью в файл (см. unfix_cp1251_mojibake).'''
+
+    def __new__(cls, value, is_unicode=False, has_null_terminator=True, was_mojibake=False):
         obj = super().__new__(cls, value)
         obj.is_unicode = is_unicode
         obj.has_null_terminator = has_null_terminator
+        obj.was_mojibake = was_mojibake
         return obj
 
 
 class DdfError(Exception):
     pass
+
+
+# ---------------------------------------------------------------------------
+# Cyrillic mojibake detection/fix для ASCF-полей (is_unicode=False, 8-битная кодировка)
+# ---------------------------------------------------------------------------
+#
+# ПРОБЛЕМА (найдена пользователем на реальных данных C4x1, файл actionname-e.dat): часть ASCF-
+# строк на русскоязычном клиенте C4 физически хранит текст в кодировке Windows-1251 (обычная
+# кириллица), а не в "родной" для ASCF 8-битной кодировке (latin-1/ISO-8859-1), которую decode_ascf
+# читает по умолчанию. В результате при чтении "как есть" получается классический mojibake —
+# каждый кириллический байт (0x80-0xFF) трактуется как отдельный latin-1 символ, и вместо
+# "Сесть/Встать" на экране получается "Ñåñòü/Âñòàòü".
+#
+# Подтверждено экспериментально на живых серверах (см. RESEARCH_NOTES.md): просканировано 2043+
+# непустых ASCF-превью на 16 схемах C4-клиента (actionname, npcname, sysstring, questname,
+# skillname, castlename и др.) — ВСЕ строки с байтами 0x80-0xFF либо УЖЕ содержат корректную
+# кириллицу (значит на самом деле физически хранятся как UTF-16LE, is_unicode=True — их decode_ascf
+# и так читает верно), либо превращаются в mojibake, которое ПОЛНОСТЬЮ и однозначно
+# восстанавливается в валидную кириллицу через `raw_latin1_bytes.decode('cp1251')` — 0 ошибок
+# декодирования, 0 ложных срабатываний на легитимном не-кириллическом latin-1 тексте (например
+# английские тексты H5-клиента с "é", "©", NBSP — там эвристика ниже корректно возвращает False,
+# т.к. после cp1251-декода получается НЕ кириллица).
+#
+# РЕШЕНИЕ: детектируем и чиним mojibake на ЛЕТУ — только в местах, где строка показывается
+# пользователю (JSON-ответ ddf_get/ddf_search, raw-режим) и когда пользователь СОХРАНЯЕТ новый
+# текст (перекодируем обратно в те же "неправильные" latin-1 байты, которые ожидает игровой
+# клиент) — а НЕ меняем то, что фактически лежит в самом .dat файле при обычной пересборке
+# неизменённых записей (round-trip disassemble+assemble остаётся byte-perfect как и раньше).
+
+_CYRILLIC_RANGE = range(0x0400, 0x0500)
+
+
+def looks_like_cp1251_mojibake(text: str) -> bool:
+    '''True, если text похож на кириллицу, "испорченную" двойной интерпретацией кодировки
+    (физически cp1251, прочитана как latin-1) — то есть: минимум 2 буквенных символа, минимум
+    половина из них лежит в диапазоне 0x80-0xFF (типичном для mojibake из cp1251), и после
+    перекодировки latin-1-байтов обратно через cp1251 минимум 80% буквенных символов оказываются
+    кириллицей. Порог 80%, а не 100% — чтобы не спотыкаться на редких примесях типа "-"/цифр/
+    заимствованных латинских слов внутри в основном русской строки.'''
+    alpha_chars = [c for c in text if c.isalpha()]
+    if len(alpha_chars) < 2:
+        return False
+    high_byte_alpha = [c for c in alpha_chars if ord(c) >= 0x80]
+    if len(high_byte_alpha) / len(alpha_chars) < 0.5:
+        return False
+    try:
+        raw = text.encode('latin-1')
+        decoded = raw.decode('cp1251')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return False
+    decoded_alpha = [c for c in decoded if c.isalpha()]
+    if not decoded_alpha:
+        return False
+    cyr_count = sum(1 for c in decoded_alpha if ord(c) in _CYRILLIC_RANGE)
+    return (cyr_count / len(decoded_alpha)) >= 0.8
+
+
+def fix_cp1251_mojibake(text: str) -> str:
+    '''Если text похож на "битую" кириллицу (см. looks_like_cp1251_mojibake) — возвращает
+    исправленную версию (декодированную через cp1251). Иначе возвращает text без изменений.
+    Безопасно вызывать на ЛЮБОЙ строке (числа, пустые строки, обычный ascii-текст, уже корректная
+    кириллица/UTF-16 текст) — эвристика внутри отфильтровывает всё, что не похоже на mojibake.'''
+    if not looks_like_cp1251_mojibake(text):
+        return text
+    return text.encode('latin-1').decode('cp1251')
+
+
+def unfix_cp1251_mojibake(text: str) -> str:
+    '''Обратная операция к fix_cp1251_mojibake — если text содержит кириллицу, перекодирует её
+    в те же "испорченные" latin-1 байты, которые физически ожидает .dat файл на этом сервере
+    (то есть готовит строку для encode_ascf с is_unicode=False). Используется при сохранении
+    правок пользователя для ASCF-полей, где исходное значение было mojibake (см. is_mojibake_field
+    флаг, проставляемый при чтении). Не кириллица — возвращается как есть.'''
+    if not any(ord(c) in _CYRILLIC_RANGE for c in text):
+        return text
+    try:
+        return text.encode('cp1251').decode('latin-1')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return text
 
 
 # ---------------------------------------------------------------------------
@@ -198,7 +284,14 @@ def decode_ascf(data: bytes, offset: int):
 
     Результат — AscfStr (подкласс str) с флагом is_unicode, сохранённым из исходных данных:
     некоторые ascii-совместимые тексты в реальных файлах всё равно исторически закодированы как
-    UTF-16LE, поэтому кодировку нельзя надёжно угадать заново при пересборке — её нужно помнить.'''
+    UTF-16LE, поэтому кодировку нельзя надёжно угадать заново при пересборке — её нужно помнить.
+
+    Для 8-битного (не-unicode) варианта дополнительно применяется эвристика
+    looks_like_cp1251_mojibake/fix_cp1251_mojibake — если строка похожа на кириллицу, "битую"
+    из-за прочтения cp1251-байт как latin-1, возвращается уже ИСПРАВЛЕННЫЙ читаемый текст с
+    выставленным флагом was_mojibake=True (см. AscfStr) — encode_ascf ниже использует этот флаг,
+    чтобы корректно перекодировать текст ОБРАТНО в те же "испорченные" байты при пересборке файла
+    (см. подробности и обоснование эвристики в комментарии над looks_like_cp1251_mojibake выше).'''
     value, is_unicode, offset = decode_packed_counter(data, offset)
     if value == 0:
         return None, offset
@@ -216,7 +309,13 @@ def decode_ascf(data: bytes, offset: int):
     has_null = text.endswith('\x00')
     if has_null:
         text = text[:-1]
-    return AscfStr(text, is_unicode, has_null), offset
+    was_mojibake = False
+    if not is_unicode:
+        fixed = fix_cp1251_mojibake(text)
+        if fixed != text:
+            text = fixed
+            was_mojibake = True
+    return AscfStr(text, is_unicode, has_null, was_mojibake), offset
 
 
 def encode_ascf(text) -> bytes:
@@ -233,12 +332,20 @@ def encode_ascf(text) -> bytes:
     has_null_terminator (по умолчанию True, если явно не сохранён на AscfStr — см. decode_ascf)
     управляет тем, добавлять ли завершающий '\\x00' — почти всегда он должен присутствовать,
     но в редких реальных файлах (например radiodata-ru.dat) исходный блок обрывается без него,
-    и это нужно сохранить byte-perfect при пересборке неизменённого поля.'''
+    и это нужно сохранить byte-perfect при пересборке неизменённого поля.
+
+    was_mojibake=True (см. AscfStr/decode_ascf) — текст перед latin-1-кодированием сначала
+    перекодируется ОБРАТНО в "испорченные" cp1251-как-latin1 байты через unfix_cp1251_mojibake
+    (т.е. в файл пишется та же кириллица в той же исторической кодировке, что и была изначально —
+    именно её ожидает игровой клиент на этом сервере). Работает и для НОВОГО кириллического
+    текста, введённого пользователем взамен старого — если поле было mojibake, оно им и остаётся.'''
     if text is None:
         return encode_packed_counter(0, False)
     forced_unicode = getattr(text, 'is_unicode', None)
     has_null = getattr(text, 'has_null_terminator', True)
-    body = str(text) + ('\x00' if has_null else '')
+    was_mojibake = getattr(text, 'was_mojibake', False)
+    body_text = unfix_cp1251_mojibake(str(text)) if was_mojibake else str(text)
+    body = body_text + ('\x00' if has_null else '')
     if forced_unicode is True:
         raw = body.encode('utf-16-le')
         return encode_packed_counter(len(body), True) + raw
@@ -576,7 +683,10 @@ def build_row_from_texts(fields: list, editable_names: list, base_row: dict, tex
             continue
         old_value = row.get(name)
         if isinstance(old_value, AscfStr):
-            row[name] = AscfStr(str(text), old_value.is_unicode, old_value.has_null_terminator)
+            row[name] = AscfStr(
+                str(text), old_value.is_unicode, old_value.has_null_terminator,
+                getattr(old_value, 'was_mojibake', False)
+            )
         else:
             row[name] = str(text)
     return row

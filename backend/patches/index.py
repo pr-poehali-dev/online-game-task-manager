@@ -694,7 +694,14 @@ def handler(event: dict, context) -> dict:
                 old_value = row.get(fname)
                 is_unicode = getattr(old_value, 'is_unicode', False)
                 has_null = getattr(old_value, 'has_null_terminator', True)
-                row[fname] = AscfStr(str(new_value), is_unicode, has_null)
+                # was_mojibake сохраняем из старого значения поля: если оно было "битой"
+                # кириллицей (см. ddf_parser.looks_like_cp1251_mojibake) — пользователь видел и
+                # правил уже ИСПРАВЛЕННЫЙ читаемый текст (см. decode_ascf), значит новое значение
+                # тоже нужно перекодировать обратно в те же "испорченные" байты при записи в файл
+                # (см. encode_ascf/unfix_cp1251_mojibake) — иначе игра снова не сможет прочитать
+                # кириллицу правильно.
+                was_mojibake = getattr(old_value, 'was_mojibake', False)
+                row[fname] = AscfStr(str(new_value), is_unicode, has_null, was_mojibake)
             if color_hex is not None and color_group_def:
                 # Раскладываем "#RRGGBB" обратно в компоненты схемы — байты в ФАЙЛЕ идут в
                 # ОБРАТНОМ порядке B,G,R (см. подробное объяснение в _ddf_color_hex выше),

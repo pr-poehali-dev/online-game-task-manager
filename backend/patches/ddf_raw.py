@@ -181,7 +181,11 @@ def raw_line_to_row(line: str, fields: list, base_row: dict = None) -> dict:
             old = base_row.get(name)
             is_unicode = getattr(old, 'is_unicode', False)
             has_null = getattr(old, 'has_null_terminator', True)
-            value = AscfStr(value, is_unicode, has_null)
+            # was_mojibake сохраняем из старого значения — в raw-режиме пользователь тоже видит
+            # уже ИСПРАВЛЕННЫЙ читаемый текст (см. decode_ascf/row_to_raw_line), поэтому при
+            # сохранении его нужно так же перекодировать обратно (см. encode_ascf в ddf_parser.py).
+            was_mojibake = getattr(old, 'was_mojibake', False)
+            value = AscfStr(value, is_unicode, has_null, was_mojibake)
         row[name] = value
 
     if pos != len(tokens):
