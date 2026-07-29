@@ -585,7 +585,8 @@ def handler(event: dict, context) -> dict:
         try:
             matches, total_rows = ddf_parser.search_records(
                 plain, fields, editable, query.lower(), limit,
-                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, offset=offset
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, offset=offset,
+                id_field_names=_ddf_id_fields(server, path)
             )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')

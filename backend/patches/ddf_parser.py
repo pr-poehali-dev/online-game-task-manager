@@ -516,15 +516,29 @@ def get_tail_bytes(binary: bytes, fields: list, has_reccnt_prefix: bool = True,
 
 
 def search_records(binary: bytes, fields: list, editable_names: list, query_lower: str, limit: int,
-                    has_reccnt_prefix: bool = True, fixed_record_count: int = None, offset: int = 0):
-    '''Ищет записи, у которых хотя бы одно из editable_names текстовых полей содержит
-    query_lower (или, если query_lower пустой, возвращает записи подряд). Читает файл
-    потоково — не накапливает список всех записей в памяти. offset — сколько НАЙДЕННЫХ
-    совпадений пропустить с начала перед тем, как начать собирать (используется для подгрузки
-    "ещё" при прокрутке списка результатов на фронтенде — см. action ddf_search в index.py).
-    Записи variable-length (ASCF-строки переменной длины), поэтому смещение по байтам заранее
-    вычислить нельзя — offset всегда требует последовательного сканирования с начала файла, как
-    и обычный поиск по подстроке; это тот же порядок сложности, что был и раньше.
+                    has_reccnt_prefix: bool = True, fixed_record_count: int = None, offset: int = 0,
+                    id_field_names: list = None):
+    '''Ищет записи, у которых хотя бы одно из editable_names текстовых полей ИЛИ одно из
+    id_field_names (см. _ID_FIELDS в ddf_registry*.py — "настоящий" числовой идентификатор
+    записи, например id/quest_id/skill_id) содержит query_lower (или, если query_lower пустой,
+    возвращает записи подряд). Читает файл потоково — не накапливает список всех записей в
+    памяти. offset — сколько НАЙДЕННЫХ совпадений пропустить с начала перед тем, как начать
+    собирать (используется для подгрузки "ещё" при прокрутке списка результатов на фронтенде —
+    см. action ddf_search в index.py). Записи variable-length (ASCF-строки переменной длины),
+    поэтому смещение по байтам заранее вычислить нельзя — offset всегда требует последовательного
+    сканирования с начала файла, как и обычный поиск по подстроке; это тот же порядок сложности,
+    что был и раньше.
+
+    ВАЖНО про id_field_names: раньше поиск числа находил запись ТОЛЬКО если это число совпадало
+    с порядковым ИНДЕКСОМ записи В ФАЙЛЕ (str(idx) == query_lower) — для схем без текстовых
+    editable-полей (raw_only, например armorgrp/etcitemgrp) это означало, что найти запись по её
+    РЕАЛЬНОМУ игровому id было невозможно вообще, если эта запись физически лежит не на позиции
+    с тем же номером (см. RESEARCH_NOTES.md, диагностика "исторического беспорядка" в некоторых
+    файлах) — ввод "1" в поиск armorgrp не находил запись с id=1, если она лежит на индексе 1351.
+    Теперь дополнительно проверяется совпадение по ЗНАЧЕНИЮ id-поля(ей) самой записи (то же
+    правило подстроки, что и у текстовых полей) — независимо от того, на каком физическом месте
+    в файле эта запись находится.
+
     Возвращает (matches, total_count), где matches — список (index, row) для не более limit
     совпадений НАЧИНАЯ С offset-го, total_count — реальное количество записей в файле (из
     заголовка, O(1)).'''
@@ -537,6 +551,11 @@ def search_records(binary: bytes, fields: list, editable_names: list, query_lowe
                 row.get(name) and query_lower in str(row[name]).lower()
                 for name in editable_names
             )
+            if not found and id_field_names:
+                found = any(
+                    row.get(name) is not None and query_lower in str(row[name]).lower()
+                    for name in id_field_names
+                )
             if not found:
                 continue
         if skipped < offset:
