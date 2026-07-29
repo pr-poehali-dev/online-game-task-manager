@@ -1365,6 +1365,98 @@ _EDITABLE_TEXT_FIELDS = {
     'zonename_classic': ['zone_name', 'map'],
 }
 
+# Поля, образующие УНИКАЛЬНЫЙ идентификатор записи — используется для защиты от создания
+# дубликатов (см. index.py, action ddf_create/ddf_save_raw). Список из 1 поля — простой id (не
+# может повторяться ни у одной другой записи файла); список из 2+ полей — составной ключ (по
+# механике игры допустимо повторение id ПЕРВОГО поля, но не всей комбинации сразу — например
+# skillname: один и тот же skill id встречается много раз с разными level, но пара (id, level)
+# должна быть уникальна). Схема отсутствует в словаре ИЛИ имеет пустой список — значит у неё нет
+# осмысленного понятия "уникальный id" (например только служебные/координатные FLOAT-поля без
+# единого идентификатора) — проверка на дубликаты для таких схем не выполняется вообще.
+#
+# Для полей вида "tag"/"nbr" — это НЕ идентификатор, а служебное поле (часто константа, например
+# tag=1 у всех записей actionname, или последовательный индекс nbr в castlename/zonename,
+# СОВПАДАЮЩИЙ с порядковым номером записи в файле, а не смысловой id) — в ключ не включается.
+_ID_FIELDS = {
+    'actionname': ['id'],
+    'actionnamepatch': ['id'],
+    'additionaleffect': ['item_id'],
+    'additionalitemgrp': ['id'],
+    'britemgrp': ['ID'],
+    'castlename': ['id'],
+    'classinfo': ['id'],
+    'clientdata': ['id'],
+    'commandname': ['id'],
+    'commandnamepatch': ['id'],
+    'creditgrp': ['id'],
+    'dailyquests': ['id'],
+    # npc_id+item_id — один моб дропает много разных предметов (item_id разный), но одна и та же
+    # пара npc+item не должна повторяться дважды с разными шансами/диапазонами.
+    'dbdropdata': ['npc_id', 'item_id'],
+    'dbitemdata': ['ItemId'],
+    'dbnpcdata': ['NpcId'],
+    'dbspoildata': ['npc_id', 'item_id'],
+    'disableskillanimdata': ['id'],
+    'entereventgrp': ['id'],
+    'exceptionminimapdata': ['location_id'],
+    'gametip': ['id'],
+    'goodsicon': ['id'],
+    'gradedata': ['grade_id'],
+    'helpdata': ['ID'],
+    'hennagrp': ['id'],
+    'huntingzone': ['id'],
+    'idcname': ['server_id'],
+    'instantzonedata': ['id'],
+    'itemname': ['id'],
+    'itemname_classic': ['id'],
+    'l2gamedatabase': ['id'],
+    'lifestonedata': ['id'],
+    'macropreset': ['ID'],
+    # Механика игры: один и тот же моб (npc_id) использует НЕСКОЛЬКО разных скиллов (skill_id) —
+    # уникальна именно пара, а не сам npc_id.
+    'mobskillanimgrp': ['npc_id', 'skill_id'],
+    'musicinfo': ['id'],
+    'npcname': ['id'],
+    'npcstring': ['id'],
+    'obscene': ['id'],
+    'optiondata_client': ['option_id'],
+    'posteffectdata': ['effect_id'],
+    'productname': ['id'],
+    # Механика игры: один quest_id состоит из НЕСКОЛЬКИХ этапов (quest_prog) — уникальна пара.
+    'questname': ['quest_id', 'quest_prog'],
+    'radardata': ['zone_id'],
+    'radarnpcdata': ['npc_id'],
+    'raiddata': ['id'],
+    # Type (тип ездового животного) + NpcId — на случай, если один NpcId теоретически мог бы
+    # использоваться в нескольких Type-контекстах; составной ключ безопаснее (не блокирует
+    # легитимные случаи), чем одиночный NpcId.
+    'ridedata': ['Type', 'NpcId'],
+    'sceneplayerdata': ['id'],
+    'servername': ['server_id'],
+    'serveroptions': ['server_id'],
+    'shortcutalias': ['id'],
+    # Механика игры: один skill_id имеет НЕСКОЛЬКО уровней (skill_level) — уникальна пара.
+    'skillgrp': ['skill_id', 'skill_level'],
+    'skillname': ['id', 'level'],
+    'skillname_classic': ['id', 'level'],
+    'skillsoundgrp': ['skill_id', 'skill_level'],
+    'skillsoundsource': ['id'],
+    'skilltypedata': ['skill_id', 'skill_level'],
+    'staticobject': ['id'],
+    'symbolname': ['id'],
+    'sysstring': ['id'],
+    'sysstring_classic': ['id'],
+    'sysstringpatch': ['id'],
+    'systemmsg': ['id'],
+    'systemmsg_classic': ['id'],
+    'systemmsgpatch': ['id'],
+    # gender различает мужской/женский вариант трансформации — один transform id может иметь
+    # отдельные записи на каждый пол.
+    'transformdata': ['id', 'gender'],
+    'zonename': ['nbr'],
+    'zonename_classic': ['nbr'],
+}
+
 # Группы полей, которые физически хранят RGB(A)-цвет — либо один массив однобайтовых
 # компонент (CHEX rgb[3] / rgba[4]), либо несколько отдельных скалярных CHEX-полей подряд
 # (ColorR/ColorG/ColorB/ColorA). Фронтенд показывает такую группу единым color picker'ом
@@ -1421,3 +1513,10 @@ def color_group(filename: str):
     '''Возвращает описание цветовой группы полей ({'fields': [...], 'array': bool}) для этой
     схемы, либо None, если у неё нет полей-цвета. См. _COLOR_FIELD_GROUPS выше.'''
     return _COLOR_FIELD_GROUPS.get(_base_key(filename))
+
+
+def id_fields(filename: str) -> list:
+    '''Возвращает список имён полей, образующих уникальный идентификатор записи этой схемы (см.
+    _ID_FIELDS выше), либо [] если у схемы нет осмысленного понятия "id" — в этом случае проверка
+    на дубликаты не выполняется.'''
+    return _ID_FIELDS.get(_base_key(filename), [])

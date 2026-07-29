@@ -10,6 +10,7 @@ export default function PatchesDdfCreatePanel({
   createRawLine,
   setCreateRawLine,
   createRawColumns,
+  createIdFields,
   creating,
   createError,
   onSubmit,
@@ -22,6 +23,7 @@ export default function PatchesDdfCreatePanel({
   createRawLine: string;
   setCreateRawLine: (v: string) => void;
   createRawColumns: RawColumn[];
+  createIdFields: string[];
   creating: boolean;
   createError: string;
   onSubmit: () => void;
@@ -34,6 +36,7 @@ export default function PatchesDdfCreatePanel({
     const labels = createRawColumns.length === tokens.length
       ? createRawColumns.map((c) => c.label)
       : tokens.map((_, i) => String(i));
+    const idLabels = new Set(createIdFields);
 
     function setTokenAt(index: number, value: string) {
       const next = [...tokens];
@@ -52,6 +55,7 @@ export default function PatchesDdfCreatePanel({
             <p className="text-sm text-muted-foreground">
               У этого файла сложная структура записи — заполните нужные значения (остальные останутся значениями
               по умолчанию) и сохраните, новая запись добавится в конец файла.
+              {idLabels.size > 0 && ' Поля, выделенные жёлтым — идентификатор записи, должны быть уникальными.'}
             </p>
 
             <div className="border border-border rounded-lg overflow-x-auto scrollbar-thin">
@@ -59,7 +63,7 @@ export default function PatchesDdfCreatePanel({
                 <tbody>
                   <tr>
                     {labels.map((label, i) => (
-                      <td key={i} className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-r border-border last:border-r-0 whitespace-nowrap bg-secondary/40">
+                      <td key={i} className={`px-2 py-1.5 text-[11px] font-medium border-b border-r border-border last:border-r-0 whitespace-nowrap ${idLabels.has(label) ? 'text-amber-500 bg-amber-500/10' : 'text-muted-foreground bg-secondary/40'}`}>
                         {label}
                       </td>
                     ))}
@@ -71,7 +75,7 @@ export default function PatchesDdfCreatePanel({
                           value={token}
                           onChange={(e) => setTokenAt(i, e.target.value)}
                           spellCheck={false}
-                          className="h-9 px-2 text-xs font-mono bg-background outline-none focus:bg-secondary/30 min-w-[60px]"
+                          className={`h-9 px-2 text-xs font-mono bg-background outline-none focus:bg-secondary/30 min-w-[60px] ${idLabels.has(labels[i]) ? 'ring-1 ring-inset ring-amber-500/40' : ''}`}
                           style={{ width: `${Math.max(60, Math.min(240, token.length * 7 + 20))}px` }}
                         />
                       </td>
@@ -106,15 +110,18 @@ export default function PatchesDdfCreatePanel({
         </div>
       ) : (
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">Заполните поля новой записи и сохраните — она добавится в конец файла.</p>
+          <p className="text-sm text-muted-foreground">
+            Заполните поля новой записи и сохраните — она добавится в конец файла.
+            {createIdFields.length > 0 && ' Поля, выделенные жёлтым — идентификатор записи, должны быть уникальными.'}
+          </p>
           <div className="grid grid-cols-2 gap-3">
             {createFields.filter((f) => !f.array && !f.editable).map((f) => (
               <div key={f.name}>
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">{f.name}</label>
+                <label className={`text-xs font-medium mb-1 block ${createIdFields.includes(f.name) ? 'text-amber-500' : 'text-muted-foreground'}`}>{f.name}</label>
                 <input
                   value={createValues[f.name] ?? ''}
                   onChange={(e) => setCreateValues((prev) => ({ ...prev, [f.name]: e.target.value }))}
-                  className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm"
+                  className={`w-full h-9 px-3 rounded-lg border bg-background text-sm ${createIdFields.includes(f.name) ? 'border-amber-500/50 ring-1 ring-inset ring-amber-500/20' : 'border-border'}`}
                 />
               </div>
             ))}

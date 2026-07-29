@@ -768,6 +768,45 @@ _EDITABLE_TEXT_FIELDS = {
     'npcgrp': [],
 }
 
+# Поля, образующие УНИКАЛЬНЫЙ идентификатор записи — см. подробное объяснение в ddf_registry.py
+# (_ID_FIELDS). Схема отсутствует в словаре ИЛИ имеет пустой список — проверка на дубликаты не
+# выполняется (нет осмысленного понятия "id" — например hairgrp/helmetgrp/logongrp состоят только
+# из служебных CHAR/FLOAT-полей без единого идентификатора, различаются исключительно порядковым
+# номером записи в файле).
+_ID_FIELDS = {
+    'actionname': ['id'],
+    'armorgrp': ['id'],
+    'castlename': ['id'],
+    'classinfo': ['id'],
+    'commandname': ['id'],
+    'creditgrp': ['id'],
+    'entereventgrp': ['id'],
+    'etcitemgrp': ['id'],
+    'hennagrp': ['id'],
+    'itemname': ['id'],
+    # Механика игры: один и тот же моб (npc_id) использует НЕСКОЛЬКО разных скиллов (skill_id).
+    'mobskillanimgrp': ['npc_id', 'skill_id'],
+    'musicinfo': ['id'],
+    'npcname': ['id'],
+    'obscene': ['id'],
+    # Механика игры: один quest_id состоит из НЕСКОЛЬКИХ этапов (quest_prog).
+    'questname': ['quest_id', 'quest_prog'],
+    # id_recipe — реальный уникальный id рецепта (id_mk — id мастерства/профессии, не уникален
+    # сам по себе, у одной профессии много рецептов).
+    'recipe': ['id_recipe'],
+    'servername': ['server_id'],
+    # Механика игры: один skill_id имеет НЕСКОЛЬКО уровней (skill_level).
+    'skillgrp': ['skill_id', 'skill_level'],
+    'skillname': ['id', 'level'],
+    'skillsoundgrp': ['skill_id', 'skill_level'],
+    'staticobject': ['id'],
+    'symbolname': ['id'],
+    'sysstring': ['id'],
+    'systemmsg': ['id'],
+    'weapongrp': ['id'],
+    'zonename': ['nbr'],
+}
+
 # Схемы без осмысленных "человеческих" editable-полей (или там, где текстовые поля — это лишь
 # небольшая часть намного более сложной по структуре записи) — на фронтенде для них вместо
 # обычной формы редактирования отдельных полей показывается RAW-режим: вся запись одной строкой
@@ -843,3 +882,10 @@ def color_group(filename: str):
     '''Возвращает описание цветовой группы полей ({'fields': [...], 'array': bool}) для этой
     схемы, либо None, если у неё нет полей-цвета. См. _COLOR_FIELD_GROUPS выше.'''
     return _COLOR_FIELD_GROUPS.get(_base_key(filename))
+
+
+def id_fields(filename: str) -> list:
+    '''Возвращает список имён полей, образующих уникальный идентификатор записи этой схемы (см.
+    _ID_FIELDS выше), либо [] если у схемы нет осмысленного понятия "id" — в этом случае проверка
+    на дубликаты не выполняется.'''
+    return _ID_FIELDS.get(_base_key(filename), [])

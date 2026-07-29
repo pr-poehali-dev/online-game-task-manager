@@ -72,6 +72,52 @@ def _ddf_color_group(server, path):
     getter = getattr(registry, 'color_group', None)
     return getter(path) if getter else None
 
+
+def _ddf_id_fields(server, path):
+    '''Возвращает список имён полей, образующих уникальный идентификатор записи (см. _ID_FIELDS
+    в ddf_registry.py/ddf_registry_c4.py), либо [] если у схемы нет осмысленного понятия "id"
+    (проверка на дубликаты не выполняется). Список из 1 поля — простой id; из 2+ — составной
+    ключ (например skillname: (id, level) — один и тот же skill id повторяется у разных уровней,
+    но пара должна быть уникальна).'''
+    registry = _ddf_registry_for(server)
+    getter = getattr(registry, 'id_fields', None)
+    return getter(path) if getter else []
+
+
+def _ddf_key_of(row, id_field_names):
+    '''Извлекает кортеж значений id-полей из row — используется как ключ для проверки
+    дубликатов (см. _ddf_check_duplicate_key ниже).'''
+    return tuple(row.get(name) for name in id_field_names)
+
+
+def _ddf_check_duplicate_key(plain, fields, id_field_names, has_reccnt_prefix, fixed_record_count,
+                              new_keys, skip_index=None):
+    '''Сканирует ВСЕ существующие записи файла (потоково, без накопления в памяти — см.
+    ddf_parser.iter_records) и проверяет, что ни одна из них не имеет тот же id-ключ, что и любая
+    запись из new_keys (list вида [(id_field_names[0]_value, id_field_names[1]_value, ...), ...]
+    — обычно 1 элемент для ddf_save_raw, N элементов для ddf_create со списком). Заодно
+    проверяет уникальность ВНУТРИ new_keys (на случай если пользователь вставил список с
+    повторами). skip_index — индекс записи, которую нужно ИСКЛЮЧИТЬ из сравнения с существующими
+    (сама редактируемая запись при ddf_save_raw — иначе "конфликт сама с собой", если id-поля не
+    менялись).
+
+    Возвращает (conflicting_key, source) при первом найденном конфликте — source='existing' если
+    конфликт с уже существующей записью файла, 'input' если конфликт между двумя новыми записями
+    в одном и том же запросе. Возвращает None, если конфликтов нет.'''
+    seen_new = {}
+    for key in new_keys:
+        if key in seen_new:
+            return key, 'input'
+        seen_new[key] = True
+
+    for idx, row in ddf_parser.iter_records(plain, fields, has_reccnt_prefix, fixed_record_count):
+        if skip_index is not None and idx == skip_index:
+            continue
+        key = _ddf_key_of(row, id_field_names)
+        if key in seen_new:
+            return key, 'existing'
+    return None
+
 # Новые версии botocore (>=1.36) по умолчанию добавляют контрольную сумму запроса через
 # chunked-кодирование (trailer). Кастомный (не-AWS) S3-эндпоинт не всегда его корректно
 # разбирает — трейлер попадает прямо в тело файла (особенно заметно на 0-байтных файлах).
@@ -597,6 +643,7 @@ def handler(event: dict, context) -> dict:
             'isRawOnly': is_raw_only,
             'colorGroup': color_group_def,
             'colorHex': _ddf_color_hex(row, color_group_def),
+            'idFields': _ddf_id_fields(server, path),
         })
 
     if action == 'ddf_get_raw':
@@ -646,6 +693,7 @@ def handler(event: dict, context) -> dict:
             'totalRows': total_rows,
             'line': line,
             'columns': columns,
+            'idFields': _ddf_id_fields(server, path),
         })
 
     if action == 'ddf_save':
@@ -785,8 +833,37 @@ def handler(event: dict, context) -> dict:
         file_key, protocol, plain = loaded
         idx = int(index)
 
-        def _apply_raw_line(row):
-            return ddf_raw.raw_line_to_row(line, fields, base_row=row)
+        # Raw-режим (в отличие от обычной формы) даёт доступ ко ВСЕМ полям, включая id — нужно
+        # явно проверить, что после правки строка не совпадает по id-ключу с какой-то ДРУГОЙ
+        # записью файла (см. _ddf_id_fields/_ddf_check_duplicate_key). Разбираем строку в row
+        # ЗАРАНЕЕ (используя текущую версию записи как base_row — для сохранения AscfStr-флагов
+        # кодировки), чтобы одновременно и проверить конфликт, и переиспользовать готовый row в
+        # mutate_fn ниже (не парсить строку дважды).
+        try:
+            old_row = ddf_parser.get_record_by_index(
+                plain, fields, idx, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
+            new_row = ddf_raw.raw_line_to_row(line, fields, base_row=old_row)
+        except ddf_parser.DdfError as e:
+            cur.close(); conn.close()
+            status = 404 if 'index_out_of_range' in str(e) else 400
+            return _bad(f'ddf_parse_error_{e}', status)
+
+        id_field_names = _ddf_id_fields(server, path)
+        if id_field_names:
+            new_key = _ddf_key_of(new_row, id_field_names)
+            conflict = _ddf_check_duplicate_key(
+                plain, fields, id_field_names, has_reccnt_prefix, fixed_record_count, [new_key],
+                skip_index=idx
+            )
+            if conflict:
+                conflict_key, _source = conflict
+                cur.close(); conn.close()
+                key_str = ', '.join(f'{n}={v}' for n, v in zip(id_field_names, conflict_key))
+                return _bad(f'duplicate_id_exists_{key_str}')
+
+        def _apply_raw_line(_row):
+            return new_row
 
         try:
             tail_bytes = None if has_reccnt_prefix else ddf_parser.get_tail_bytes(
@@ -841,6 +918,7 @@ def handler(event: dict, context) -> dict:
             'isRawOnly': is_raw_only,
             'colorGroup': color_group_def,
             'colorHex': _ddf_color_hex(row, color_group_def),
+            'idFields': _ddf_id_fields(server, path),
         }
         if is_raw_only:
             result['rawLine'] = ddf_raw.row_to_raw_line(row, fields)
@@ -947,6 +1025,20 @@ def handler(event: dict, context) -> dict:
                             cur.close(); conn.close()
                             return _bad(f'bad_value_for_field_{fname}')
                 new_rows.append(row)
+
+        id_field_names = _ddf_id_fields(server, path)
+        if id_field_names:
+            new_keys = [_ddf_key_of(row, id_field_names) for row in new_rows]
+            conflict = _ddf_check_duplicate_key(
+                plain, fields, id_field_names, has_reccnt_prefix, fixed_record_count, new_keys
+            )
+            if conflict:
+                conflict_key, source = conflict
+                cur.close(); conn.close()
+                key_str = ', '.join(f'{n}={v}' for n, v in zip(id_field_names, conflict_key))
+                if source == 'existing':
+                    return _bad(f'duplicate_id_exists_{key_str}')
+                return _bad(f'duplicate_id_in_input_{key_str}')
 
         try:
             new_plain = ddf_parser.append_records(plain, fields, new_rows)

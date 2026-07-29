@@ -15,6 +15,7 @@ export default function PatchesDdfRawPanel({
   setConfirmDelete,
   deleting,
   onDelete,
+  onDuplicate,
 }: {
   loadingRow: boolean;
   line: string | null;
@@ -29,6 +30,7 @@ export default function PatchesDdfRawPanel({
   setConfirmDelete: (v: boolean) => void;
   deleting: boolean;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const tokens = line !== null ? line.split('\t') : [];
   const labels = columns.length === tokens.length ? columns.map((c) => c.label) : tokens.map((_, i) => String(i));
@@ -97,6 +99,15 @@ export default function PatchesDdfRawPanel({
               </span>
             )}
             {saveError && <span className="text-sm text-destructive">{saveError}</span>}
+            {canManage && (
+              <button
+                onClick={onDuplicate}
+                title="Создать новую запись на основе этой"
+                className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <Icon name="Copy" size={14} />
+              </button>
+            )}
             {canManage && (
               <div className="ml-auto">
                 {confirmDelete ? (

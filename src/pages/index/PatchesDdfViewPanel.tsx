@@ -21,6 +21,7 @@ export default function PatchesDdfViewPanel({
   setConfirmDelete,
   deleting,
   onDelete,
+  onDuplicate,
 }: {
   loadingRow: boolean;
   row: Record<string, RowValue> | null;
@@ -39,6 +40,7 @@ export default function PatchesDdfViewPanel({
   setConfirmDelete: (v: boolean) => void;
   deleting: boolean;
   onDelete: () => void;
+  onDuplicate: () => void;
 }) {
   const colorFieldNames = new Set(colorGroup?.fields || []);
   const [hexDraft, setHexDraft] = useState(colorHex ?? '');
@@ -131,6 +133,15 @@ export default function PatchesDdfViewPanel({
               </span>
             )}
             {saveError && <span className="text-sm text-destructive">{saveError}</span>}
+            {canManage && (
+              <button
+                onClick={onDuplicate}
+                title="Создать новую запись на основе этой"
+                className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              >
+                <Icon name="Copy" size={14} />
+              </button>
+            )}
             {canManage && (
               <div className="ml-auto">
                 {confirmDelete ? (
