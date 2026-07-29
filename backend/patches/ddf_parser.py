@@ -100,11 +100,27 @@ def _strip_comments(text: str) -> str:
     return text
 
 
+_ENBBY_RE = re.compile(
+    r'^ENBBY\s*=\s*\[\s*\(\s*(' + _IDENT_CHARS + r'+)\s*,\s*(-?\d+)\s*\)\s*\]$'
+)
+
+
 def parse_ddf(ddf_text: str) -> list:
     '''Разбирает DDF-файл и возвращает список полей (плоский, без учёта вложенности
-    MTX/MAT — не поддерживаются). Каждый элемент — dict с ключами:
-      type, name, array (имя поля-счётчика или число, либо None), filler_size
-    '''
+    MTX/MAT — поддерживаются отдельной веткой в disassemble/assemble, см. docstring выше).
+    Каждый элемент — dict с ключами:
+      type, name, array (имя поля-счётчика или число, либо None), filler_size,
+      enbby_field (имя поля-условия, либо None), enbby_value (число, с которым сравнивается
+      enbby_field — поле присутствует в бинарнике ТОЛЬКО когда enbby_field == enbby_value)
+
+    Формат ENBBY (подтверждено экспериментально byte-perfect на реальных данных weapongrp.dat,
+    сверено с официальным TXT-экспортом l2disasm — 0 расхождений на 1134 записях): свойство
+    "ENBBY = [(cond_field, N)];" идёт СРАЗУ после объявления поля в DDF и означает, что ЭТО поле
+    физически присутствует в бинарнике только если ранее прочитанное поле cond_field (в текущей
+    записи) равно N — иначе поле просто отсутствует (не занимает места в файле), и на фронтенде/
+    при сборке ему подставляется дефолтное значение. В известных схемах (weapongrp) встречается
+    только как "последнее поле каждой A/B-пары" — сама пара A всегда присутствует безусловно,
+    B-вариант условен (при wpn_mesh_cnt==2 — двуручное/парное оружие).'''
     text = _strip_comments(ddf_text)
     body_match = re.search(r'\{(.*)\}', text, flags=re.DOTALL)
     if not body_match:
@@ -116,7 +132,14 @@ def parse_ddf(ddf_text: str) -> list:
         line = raw_line.strip()
         if not line:
             continue
-        # skip property lines like SOFT = 5, ENBBY = [...], SKIPIF = [...]
+        enbby_match = _ENBBY_RE.match(line)
+        if enbby_match:
+            if not fields:
+                continue
+            fields[-1]['enbby_field'] = enbby_match.group(1)
+            fields[-1]['enbby_value'] = int(enbby_match.group(2))
+            continue
+        # skip other property lines like SOFT = 5, SKIPIF = [...]
         if re.match(r'^[A-Z_]+\s*=', line):
             continue
         m = re.match(
@@ -134,6 +157,8 @@ def parse_ddf(ddf_text: str) -> list:
             'name': fname,
             'array': farray,
             'filler_size': int(ffiller) if ffiller else None,
+            'enbby_field': None,
+            'enbby_value': None,
         })
     return fields
 
@@ -607,9 +632,36 @@ def _write_mat(out: bytearray, value):
         out += struct.pack('<II', int(item.get('id', 0)), int(item.get('amount', 0)))
 
 
+def _enbby_active(field: dict, row: dict) -> bool:
+    '''Возвращает True, если поле не имеет ENBBY-условия, либо условие выполняется (ранее
+    прочитанное поле enbby_field в текущей записи равно enbby_value) — то есть поле физически
+    присутствует в бинарнике и должно читаться/записываться. См. docstring parse_ddf().'''
+    cond_field = field.get('enbby_field')
+    if cond_field is None:
+        return True
+    return row.get(cond_field) == field.get('enbby_value')
+
+
 def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
     ftype = field['type']
     name = field['name']
+
+    if not _enbby_active(field, row):
+        # Поле отсутствует в бинарнике (ENBBY-условие не выполнено) — не читаем ничего, но
+        # подставляем дефолтное значение ПРАВИЛЬНОЙ формы, чтобы row всегда содержал ВСЕ поля
+        # схемы: для статических массивов (junk1B[5]) — список из N дефолтных значений (не
+        # пустой список!) — подтверждено на реальном TXT-экспорте l2disasm: колонки
+        # "junk1B[0]".."junk1B[4]" присутствуют (пустыми) даже когда ENBBY-условие не выполнено.
+        if field['array'] is not None:
+            count = _resolve_count(row, field['array']) or 0
+            row[name] = [_default_scalar(ftype) for _ in range(count)]
+        elif ftype == 'MTX':
+            row[name] = {'mesh': [], 'tex': []}
+        elif ftype == 'MAT':
+            row[name] = []
+        else:
+            row[name] = _default_scalar(ftype)
+        return offset
 
     if ftype == 'FILLER':
         size = field['filler_size'] or 0
@@ -684,6 +736,12 @@ def _write_field(out: bytearray, field: dict, row: dict):
     ftype = field['type']
     name = field['name']
     array_ref = field['array']
+
+    if not _enbby_active(field, row):
+        # ENBBY-условие не выполнено — поле физически отсутствует в бинарнике, ничего не
+        # пишем (даже для скалярных строковых/числовых полей — иначе получим "лишние" байты,
+        # которых не было в оригинале, и файл разъедется по смещениям для всех записей после).
+        return
 
     if ftype == 'FILLER':
         size = field['filler_size'] or 0

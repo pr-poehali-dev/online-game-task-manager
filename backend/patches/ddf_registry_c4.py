@@ -48,8 +48,20 @@ hairaccessarygrp.dat — ПРОПУЩЕН осознанно: пользоват
 похожий по названию hairaccessorylocgrp.ddf НЕ подходит (структура записи не совпадает, размер
 файла и header-count не сходятся при disassemble). Без подлинной схемы поддержать нельзя.
 
-Не поддерживаются (используют дублирующиеся имена полей/условные ENBBY-поля, требуют отдельного
-этапа): npcgrp, weapongrp.
+weapongrp ПОДДЕРЖИВАЕТСЯ через RAW-режим — использует ENBBY (условные поля, читаются только если
+другое поле в этой же записи равно заданному значению). Формат ENBBY разобран экспериментально
+и подтверждён byte-perfect + побайтовым сравнением с официальным TXT-экспортом l2disasm
+(weapongrp.txt пользователя, 0 расхождений на 1134 записях) — см. подробности в docstring
+parse_ddf() в ddf_parser.py. Единственное отличие RAW-режима проекта от l2disasm — для
+динамических массивов переменной длины (wpn_mesh/wpn_tex/item_sound) l2disasm использует
+ФИКСИРОВАННУЮ ширину столбцов (максимум count по ВСЕМ записям файла, с пустыми ячейками-
+заполнителями для записей с меньшим count), а в проекте — переменную ширину ПО ЗАПИСИ (ровно
+такое число колонок, сколько элементов реально в этой записи) — это осознанное упрощение (не
+нужно вычислять максимум по всему файлу перед показом одной записи) и не нарушает
+самосогласованность (row -> raw line -> row round-trip подтверждён 0 расхождений на всех 1134
+записях).
+
+Не поддерживается (дублирующееся имя поля tex1, отдельный этап): npcgrp.
 '''
 import re
 
@@ -593,6 +605,70 @@ _DDF_TEXTS = {
 	FLOAT yaw;
 }
 ''',
+    'weapongrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	UINT projectile_?;
+	UINT body_part;
+	UINT handness;
+	UINT wpn_mesh_cnt;
+	UNICODE wpn_mesh[wpn_mesh_cnt];
+	UINT wpn_tex_cnt;
+	UNICODE wpn_tex[wpn_tex_cnt];
+	UINT item_sound_cnt;
+	UNICODE item_sound[item_sound_cnt];
+	UNICODE drop_sound;
+	UNICODE equip_sound;
+	UNICODE effect;
+	UINT random_damage;
+	UINT patt;
+	UINT matt;
+	UINT weapon_type;
+	UINT crystal_type;
+	UINT critical;
+	INT hit_mod;
+	INT avoid_mod;
+	UINT shield_pdef;
+	UINT shield_rate;
+	UINT speed;
+	UINT mp_consume;
+	UINT SS_count;
+	UINT SPS_count;
+	UINT curvature;
+	UINT UNK_2;
+	INT is_hero;
+	UINT UNK_3;
+	UNICODE effA;
+	UNICODE effB;
+		ENBBY = [(wpn_mesh_cnt,2)];
+	FLOAT junk1A[5];
+	FLOAT junk1B[5];
+		ENBBY = [(wpn_mesh_cnt,2)];
+	UNICODE rangeA;
+	UNICODE rangeB;
+		ENBBY = [(wpn_mesh_cnt,2)];
+	FLOAT junk2A[6];
+	FLOAT junk2B[6];
+		ENBBY = [(wpn_mesh_cnt,2)];
+}
+''',
 }
 
 # Человекочитаемые названия полей (для фронтенда) — какие поля показывать как редактируемый
@@ -643,6 +719,7 @@ _EDITABLE_TEXT_FIELDS = {
     'hairgrp': [],
     'helmetgrp': [],
     'logongrp': [],
+    'weapongrp': [],
 }
 
 # Схемы без осмысленных "человеческих" editable-полей (или там, где текстовые поля — это лишь
@@ -650,7 +727,7 @@ _EDITABLE_TEXT_FIELDS = {
 # обычной формы редактирования отдельных полей показывается RAW-режим: вся запись одной строкой
 # значений через табуляцию (как в l2disasm TSV-экспорте, см. ddf_raw.py), редактируемой одним
 # textarea целиком.
-RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe', 'hairgrp', 'helmetgrp', 'logongrp'}
+RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe', 'hairgrp', 'helmetgrp', 'logongrp', 'weapongrp'}
 
 # armorgrp.dat: пользователь намеренно дописывает 2 нулевых байта в САМЫЙ конец файла (после
 # стандартного 20-байтного l2encdec-tail) как защиту от использования файла в чужом
