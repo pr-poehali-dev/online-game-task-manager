@@ -31,8 +31,25 @@ MTX/MAT-поля (armorgrp, etcitemgrp, recipe-c) ПОДДЕРЖИВАЮТСЯ �
 и дописывает обратно после encode — см. ARMORGRP_TRAILING_QUIRK_BYTES ниже и _ddf_strip_quirk/
 _ddf_restore_quirk в index.py.
 
-Не поддерживаются (используют дублирующиеся имена полей/условные ENBBY-поля, либо не содержат
-интересных для редактора данных): npcgrp, weapongrp, hairgrp, logongrp.
+hairgrp/helmetgrp/logongrp ПОДДЕРЖИВАЮТСЯ через RAW-режим (см. выше) — hairgrp/helmetgrp состоят
+только из числовых CHAR-полей (индексы моделей/цветов волос и шлемов на расу/пол, 120 полей на
+запись, RECCNT=15 без reccnt-префикса), там нет отдельных "человеческих" текстовых полей вообще.
+helmetgrp.dat использует ТУ ЖЕ бинарную схему, что и hairgrp (официального отдельного DDF для
+helmetgrp не было — подтверждено экспериментально byte-perfect на реальных данных: те же 120
+CHAR-полей, RECCNT=15). logongrp (точки спавна камеры на экране логина, RECCNT=26, без
+reccnt-префикса) — поля x/y/z/yaw в оригинальном DDF ошибочно помечены как INT, но реальные
+данные — это биты FLOAT-координат (подтверждено экспериментально: как INT значения выглядят как
+бессмысленные огромные числа вроде -964568064, как FLOAT — как разумные координаты вроде
+-16622.0); опечатка исправлена здесь на FLOAT, что не влияет на byte-perfect совместимость (тот
+же размер поля 4 байта), но даёт осмысленные значения в редакторе.
+
+hairaccessarygrp.dat — ПРОПУЩЕН осознанно: пользователь подтвердил, что это кастомный
+(самостоятельно добавленный на сервер) файл без официальной DDF-схемы в архиве инструментария —
+похожий по названию hairaccessorylocgrp.ddf НЕ подходит (структура записи не совпадает, размер
+файла и header-count не сходятся при disassemble). Без подлинной схемы поддержать нельзя.
+
+Не поддерживаются (используют дублирующиеся имена полей/условные ENBBY-поля, требуют отдельного
+этапа): npcgrp, weapongrp.
 '''
 import re
 
@@ -517,6 +534,65 @@ _DDF_TEXTS = {
 	MAT materials;
 }
 ''',
+    # hairgrp и helmetgrp используют ОДНУ И ТУ ЖЕ схему (120 CHAR-полей, RECCNT=15) — см.
+    # docstring выше про helmetgrp. _base_key() сведёт оба имени файла к разным ключам словаря,
+    # поэтому текст схемы продублирован (а не разделяется через alias), чтобы не усложнять
+    # match_ddf() отдельным механизмом ссылок между ключами.
+    'hairgrp': '''
+{
+	CHAR m0_a0; CHAR m0_b0; CHAR m0_a1; CHAR m0_b1; CHAR m0_a2; CHAR m0_b2; CHAR m0_a3; CHAR m0_b3;
+	CHAR m0_a4; CHAR m0_b4; CHAR m0_a5; CHAR m0_b5; CHAR m0_a6; CHAR m0_b6; CHAR m0_a7; CHAR m0_b7;
+	CHAR m0_a8; CHAR m0_b8; CHAR m0_a9; CHAR m0_b9;
+	CHAR m1_a0; CHAR m1_b0; CHAR m1_a1; CHAR m1_b1; CHAR m1_a2; CHAR m1_b2; CHAR m1_a3; CHAR m1_b3;
+	CHAR m1_a4; CHAR m1_b4; CHAR m1_a5; CHAR m1_b5; CHAR m1_a6; CHAR m1_b6; CHAR m1_a7; CHAR m1_b7;
+	CHAR m1_a8; CHAR m1_b8; CHAR m1_a9; CHAR m1_b9;
+	CHAR m2_a0; CHAR m2_b0; CHAR m2_a1; CHAR m2_b1; CHAR m2_a2; CHAR m2_b2; CHAR m2_a3; CHAR m2_b3;
+	CHAR m2_a4; CHAR m2_b4; CHAR m2_a5; CHAR m2_b5; CHAR m2_a6; CHAR m2_b6; CHAR m2_a7; CHAR m2_b7;
+	CHAR m2_a8; CHAR m2_b8; CHAR m2_a9; CHAR m2_b9;
+	CHAR m3_a0; CHAR m3_b0; CHAR m3_a1; CHAR m3_b1; CHAR m3_a2; CHAR m3_b2; CHAR m3_a3; CHAR m3_b3;
+	CHAR m3_a4; CHAR m3_b4; CHAR m3_a5; CHAR m3_b5; CHAR m3_a6; CHAR m3_b6; CHAR m3_a7; CHAR m3_b7;
+	CHAR m3_a8; CHAR m3_b8; CHAR m3_a9; CHAR m3_b9;
+	CHAR m4_a0; CHAR m4_b0; CHAR m4_a1; CHAR m4_b1; CHAR m4_a2; CHAR m4_b2; CHAR m4_a3; CHAR m4_b3;
+	CHAR m4_a4; CHAR m4_b4; CHAR m4_a5; CHAR m4_b5; CHAR m4_a6; CHAR m4_b6; CHAR m4_a7; CHAR m4_b7;
+	CHAR m4_a8; CHAR m4_b8; CHAR m4_a9; CHAR m4_b9;
+	CHAR m5_a0; CHAR m5_b0; CHAR m5_a1; CHAR m5_b1; CHAR m5_a2; CHAR m5_b2; CHAR m5_a3; CHAR m5_b3;
+	CHAR m5_a4; CHAR m5_b4; CHAR m5_a5; CHAR m5_b5; CHAR m5_a6; CHAR m5_b6; CHAR m5_a7; CHAR m5_b7;
+	CHAR m5_a8; CHAR m5_b8; CHAR m5_a9; CHAR m5_b9;
+}
+''',
+    'helmetgrp': '''
+{
+	CHAR m0_a0; CHAR m0_b0; CHAR m0_a1; CHAR m0_b1; CHAR m0_a2; CHAR m0_b2; CHAR m0_a3; CHAR m0_b3;
+	CHAR m0_a4; CHAR m0_b4; CHAR m0_a5; CHAR m0_b5; CHAR m0_a6; CHAR m0_b6; CHAR m0_a7; CHAR m0_b7;
+	CHAR m0_a8; CHAR m0_b8; CHAR m0_a9; CHAR m0_b9;
+	CHAR m1_a0; CHAR m1_b0; CHAR m1_a1; CHAR m1_b1; CHAR m1_a2; CHAR m1_b2; CHAR m1_a3; CHAR m1_b3;
+	CHAR m1_a4; CHAR m1_b4; CHAR m1_a5; CHAR m1_b5; CHAR m1_a6; CHAR m1_b6; CHAR m1_a7; CHAR m1_b7;
+	CHAR m1_a8; CHAR m1_b8; CHAR m1_a9; CHAR m1_b9;
+	CHAR m2_a0; CHAR m2_b0; CHAR m2_a1; CHAR m2_b1; CHAR m2_a2; CHAR m2_b2; CHAR m2_a3; CHAR m2_b3;
+	CHAR m2_a4; CHAR m2_b4; CHAR m2_a5; CHAR m2_b5; CHAR m2_a6; CHAR m2_b6; CHAR m2_a7; CHAR m2_b7;
+	CHAR m2_a8; CHAR m2_b8; CHAR m2_a9; CHAR m2_b9;
+	CHAR m3_a0; CHAR m3_b0; CHAR m3_a1; CHAR m3_b1; CHAR m3_a2; CHAR m3_b2; CHAR m3_a3; CHAR m3_b3;
+	CHAR m3_a4; CHAR m3_b4; CHAR m3_a5; CHAR m3_b5; CHAR m3_a6; CHAR m3_b6; CHAR m3_a7; CHAR m3_b7;
+	CHAR m3_a8; CHAR m3_b8; CHAR m3_a9; CHAR m3_b9;
+	CHAR m4_a0; CHAR m4_b0; CHAR m4_a1; CHAR m4_b1; CHAR m4_a2; CHAR m4_b2; CHAR m4_a3; CHAR m4_b3;
+	CHAR m4_a4; CHAR m4_b4; CHAR m4_a5; CHAR m4_b5; CHAR m4_a6; CHAR m4_b6; CHAR m4_a7; CHAR m4_b7;
+	CHAR m4_a8; CHAR m4_b8; CHAR m4_a9; CHAR m4_b9;
+	CHAR m5_a0; CHAR m5_b0; CHAR m5_a1; CHAR m5_b1; CHAR m5_a2; CHAR m5_b2; CHAR m5_a3; CHAR m5_b3;
+	CHAR m5_a4; CHAR m5_b4; CHAR m5_a5; CHAR m5_b5; CHAR m5_a6; CHAR m5_b6; CHAR m5_a7; CHAR m5_b7;
+	CHAR m5_a8; CHAR m5_b8; CHAR m5_a9; CHAR m5_b9;
+}
+''',
+    # x/y/z/yaw в оригинальном DDF ошибочно помечены как INT — здесь исправлено на FLOAT
+    # (реальные данные — координаты, см. docstring выше). Byte-perfect не нарушается (те же
+    # 4 байта на поле).
+    'logongrp': '''
+{
+	FLOAT x;
+	FLOAT y;
+	FLOAT z;
+	FLOAT yaw;
+}
+''',
 }
 
 # Человекочитаемые названия полей (для фронтенда) — какие поля показывать как редактируемый
@@ -557,12 +633,16 @@ _EDITABLE_TEXT_FIELDS = {
     'sysstring': ['name'],
     'systemmsg': ['message', 'item_sound', 'sys_msg_ref'],
     'zonename': ['zone_name'],
-    # У этих трёх схем нет "человеческих" текстовых полей (названия/описания) — только
-    # технические пути к моделям/текстурам/звукам внутри MTX/MAT-полей и обычных строковых
-    # полей. Редактирование для них выполняется целиком через RAW_ONLY_SCHEMAS (см. ниже).
+    # У этих схем нет "человеческих" текстовых полей (названия/описания) — только технические
+    # пути к моделям/текстурам/звукам внутри MTX/MAT-полей, обычных строковых полей, либо чисто
+    # числовые индексы/координаты. Редактирование для них выполняется целиком через
+    # RAW_ONLY_SCHEMAS (см. ниже).
     'etcitemgrp': [],
     'armorgrp': [],
     'recipe': ['name'],
+    'hairgrp': [],
+    'helmetgrp': [],
+    'logongrp': [],
 }
 
 # Схемы без осмысленных "человеческих" editable-полей (или там, где текстовые поля — это лишь
@@ -570,7 +650,7 @@ _EDITABLE_TEXT_FIELDS = {
 # обычной формы редактирования отдельных полей показывается RAW-режим: вся запись одной строкой
 # значений через табуляцию (как в l2disasm TSV-экспорте, см. ddf_raw.py), редактируемой одним
 # textarea целиком.
-RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe'}
+RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe', 'hairgrp', 'helmetgrp', 'logongrp'}
 
 # armorgrp.dat: пользователь намеренно дописывает 2 нулевых байта в САМЫЙ конец файла (после
 # стандартного 20-байтного l2encdec-tail) как защиту от использования файла в чужом
@@ -585,6 +665,9 @@ ARMORGRP_TRAILING_QUIRK_BYTES = 2
 FIXED_RECORD_COUNTS = {
     'chargrp': 15,
     'eula': 1,
+    'hairgrp': 15,
+    'helmetgrp': 15,
+    'logongrp': 26,
 }
 
 _FIELDS_CACHE = {}

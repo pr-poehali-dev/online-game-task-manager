@@ -320,7 +320,11 @@ def _ddf_field_defs(fields, editable_names):
 
 def _ddf_row_label(row, fields):
     '''Собирает человекочитаемую подпись записи из первых 1-2 скалярных числовых полей
-    (обычно id [+ level/подуровень]) — для отображения в результатах поиска.'''
+    (обычно id [+ level/подуровень]) — для отображения в результатах поиска. Если у схемы вообще
+    нет UINT/INT/HEX-полей (например hairgrp/helmetgrp — только CHAR, logongrp — только FLOAT —
+    там записи идентифицируются исключительно порядковым номером, никакого id не существует),
+    возвращающий пустую строку caller (search_records) подставит вместо неё индекс записи —
+    см. вызов в action ddf_search.'''
     parts = []
     for f in fields:
         if f['array'] is not None:
@@ -501,7 +505,7 @@ def handler(event: dict, context) -> dict:
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')
         results = [
-            {'index': idx, 'label': _ddf_row_label(row, fields), 'preview': _ddf_row_preview_text(row, editable)}
+            {'index': idx, 'label': _ddf_row_label(row, fields) or f'#{idx}', 'preview': _ddf_row_preview_text(row, editable)}
             for idx, row in matches
         ]
         return _ok({

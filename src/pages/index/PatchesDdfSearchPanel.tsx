@@ -77,8 +77,8 @@ export default function PatchesDdfSearchPanel({
             className="w-full text-left px-3 py-2.5 rounded-lg hover:bg-secondary/50 transition-colors flex items-center gap-3 group"
           >
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">{r.preview || '(пусто)'}</div>
-              <div className="text-xs text-muted-foreground truncate">{r.label}</div>
+              <div className="text-sm font-medium truncate">{r.preview || r.label}</div>
+              {r.preview && <div className="text-xs text-muted-foreground truncate">{r.label}</div>}
             </div>
             <Icon name="ChevronRight" size={14} className="text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
