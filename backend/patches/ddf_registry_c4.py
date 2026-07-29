@@ -61,7 +61,17 @@ parse_ddf() в ddf_parser.py. Единственное отличие RAW-реж
 самосогласованность (row -> raw line -> row round-trip подтверждён 0 расхождений на всех 1134
 записях).
 
-Не поддерживается (дублирующееся имя поля tex1, отдельный этап): npcgrp.
+npcgrp ПОДДЕРЖИВАЕТСЯ через RAW-режим — оригинальный DDF содержит опечатку автора: ВТОРОЕ
+текстурное поле названо "tex1" вместо "tex2" (два разных поля с одинаковым именем — подтверждено
+на реальном TXT-экспорте l2disasm, где заголовок содержит "tex1[0]..tex1[4]" ЗАТЕМ СНОВА
+"tex1[0]..tex1[1]" для cnt_tex2). В самом БИНАРНИКЕ имени поля не существует вообще (это чисто
+текстовая метка DDF-схемы для читателя) — но в Python-словаре записи (row-dict) оно используется
+как ключ, поэтому дублирование ключа привело бы к тому, что второе значение поля затирает первое
+при disassemble, и файл собирался бы обратно НЕ byte-perfect. Опечатка исправлена здесь на "tex2"
+(аналогично исправлению INT->FLOAT в logongrp выше) — подтверждено byte-perfect на всех 6445
+реальных записях (disassemble+assemble и полный цикл шифрования), у npcgrp НЕТ ENBBY-полей
+(закомментированные unk0_cnt/unk0_tab в DDF пропускаются как комментарий — на бинарную структуру
+не влияют).
 '''
 import re
 
@@ -669,6 +679,41 @@ _DDF_TEXTS = {
 		ENBBY = [(wpn_mesh_cnt,2)];
 }
 ''',
+    # Оригинальный DDF называет ВТОРОЕ текстурное поле "tex1" (та же опечатка, что и первое) —
+    # здесь исправлено на "tex2", см. подробное объяснение в docstring выше.
+    'npcgrp': '''
+{
+	UINT tag;
+	UNICODE class;
+	UNICODE mesh;
+	UINT cnt_tex1;
+	UNICODE tex1[cnt_tex1];
+	UINT cnt_tex2;
+	UNICODE tex2[cnt_tex2];
+	CNTR cnt_dtab1;
+	UINT dtab1[cnt_dtab1];
+	FLOAT npc_speed;
+	UINT UNK_0;
+	UINT cnt_snd1;
+	UNICODE snd1[cnt_snd1];
+	UINT cnt_snd2;
+	UNICODE snd2[cnt_snd2];
+	UINT cnt_snd3;
+	UNICODE snd3[cnt_snd3];
+	UINT UNK_0a;
+	CNTR unk1_cnt;
+	UINT unk1_tab[unk1_cnt];
+	UINT level_lim_dn;
+	UINT level_lim_up;
+	UNICODE effect;
+	UINT UNK_2;
+	FLOAT sound_rad;
+	FLOAT sound_vol;
+	FLOAT sound_rnd;
+	UINT quest_be;
+	UINT class_lim_?;
+}
+''',
 }
 
 # Человекочитаемые названия полей (для фронтенда) — какие поля показывать как редактируемый
@@ -720,6 +765,7 @@ _EDITABLE_TEXT_FIELDS = {
     'helmetgrp': [],
     'logongrp': [],
     'weapongrp': [],
+    'npcgrp': [],
 }
 
 # Схемы без осмысленных "человеческих" editable-полей (или там, где текстовые поля — это лишь
@@ -727,7 +773,7 @@ _EDITABLE_TEXT_FIELDS = {
 # обычной формы редактирования отдельных полей показывается RAW-режим: вся запись одной строкой
 # значений через табуляцию (как в l2disasm TSV-экспорте, см. ddf_raw.py), редактируемой одним
 # textarea целиком.
-RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe', 'hairgrp', 'helmetgrp', 'logongrp', 'weapongrp'}
+RAW_ONLY_SCHEMAS = {'etcitemgrp', 'armorgrp', 'recipe', 'hairgrp', 'helmetgrp', 'logongrp', 'weapongrp', 'npcgrp'}
 
 # armorgrp.dat: пользователь намеренно дописывает 2 нулевых байта в САМЫЙ конец файла (после
 # стандартного 20-байтного l2encdec-tail) как защиту от использования файла в чужом
