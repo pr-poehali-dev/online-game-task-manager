@@ -49,12 +49,16 @@ export default function PatchesDdfEditor({
 
   const [createFields, setCreateFields] = useState<FieldDef[]>([]);
   const [createValues, setCreateValues] = useState<Record<string, string>>({});
+  const [createRawLine, setCreateRawLine] = useState('');
+  const [createRawColumns, setCreateRawColumns] = useState<RawColumn[]>([]);
   const [loadingCreate, setLoadingCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState('');
 
   const [bulkFields, setBulkFields] = useState<FieldDef[]>([]);
   const [bulkText, setBulkText] = useState('');
+  const [bulkTemplateLine, setBulkTemplateLine] = useState('');
+  const [bulkRawColumns, setBulkRawColumns] = useState<RawColumn[]>([]);
   const [loadingBulk, setLoadingBulk] = useState(false);
   const [submittingBulk, setSubmittingBulk] = useState(false);
   const [bulkError, setBulkError] = useState('');
@@ -229,14 +233,23 @@ export default function PatchesDdfEditor({
     setCreateError('');
     try {
       const data = await postJson({ action: 'ddf_new', server, path });
-      const flds: FieldDef[] = data.fields || [];
-      setCreateFields(flds);
-      const initial: Record<string, string> = {};
-      for (const f of flds) {
-        if (f.array) continue;
-        initial[f.name] = cleanText(data.row?.[f.name]);
+      if (data.isRawOnly) {
+        // raw-only схемы (armorgrp/etcitemgrp/recipe и т.п.) не имеют отдельных "человеческих"
+        // полей — форма создания показывает ту же таб-строку целиком, что и обычный просмотр
+        // записи (ddf_get_raw), стартуя с пустого шаблона по умолчанию (см. ddf_new в index.py).
+        setCreateRawLine(data.rawLine ?? '');
+        setCreateRawColumns(data.rawColumns || []);
+        setCreateFields([]);
+      } else {
+        const flds: FieldDef[] = data.fields || [];
+        setCreateFields(flds);
+        const initial: Record<string, string> = {};
+        for (const f of flds) {
+          if (f.array) continue;
+          initial[f.name] = cleanText(data.row?.[f.name]);
+        }
+        setCreateValues(initial);
       }
-      setCreateValues(initial);
     } catch {
       setCreateError('Не удалось загрузить форму создания');
     } finally {
@@ -248,12 +261,16 @@ export default function PatchesDdfEditor({
     setCreating(true);
     setCreateError('');
     try {
-      const rowPayload: Record<string, string> = {};
-      for (const f of createFields) {
-        if (f.array) continue;
-        rowPayload[f.name] = createValues[f.name] ?? '';
+      if (isRawOnlySchema) {
+        await postJson({ action: 'ddf_create', server, path, rawLines: [createRawLine] });
+      } else {
+        const rowPayload: Record<string, string> = {};
+        for (const f of createFields) {
+          if (f.array) continue;
+          rowPayload[f.name] = createValues[f.name] ?? '';
+        }
+        await postJson({ action: 'ddf_create', server, path, rows: [rowPayload] });
       }
-      await postJson({ action: 'ddf_create', server, path, rows: [rowPayload] });
       setMode('search');
       setQuery('');
       await runSearch('');
@@ -272,7 +289,15 @@ export default function PatchesDdfEditor({
     setBulkText('');
     try {
       const data = await postJson({ action: 'ddf_new', server, path });
-      setBulkFields(data.fields || []);
+      if (data.isRawOnly) {
+        // Шаблонная строка используется как подсказка/заготовка формата — каждая строка списка
+        // должна иметь ровно столько же таб-разделённых значений, в том же порядке.
+        setBulkTemplateLine(data.rawLine ?? '');
+        setBulkRawColumns(data.rawColumns || []);
+        setBulkFields([]);
+      } else {
+        setBulkFields(data.fields || []);
+      }
     } catch {
       setBulkError('Не удалось загрузить схему файла');
     } finally {
@@ -284,7 +309,7 @@ export default function PatchesDdfEditor({
   const bulkEditableFields = bulkFields.filter((f) => f.editable).map((f) => f.name);
 
   async function handleBulkSubmit() {
-    if (!bulkIdField) return;
+    if (!isRawOnlySchema && !bulkIdField) return;
     setSubmittingBulk(true);
     setBulkError('');
     setBulkAdded(null);
@@ -295,17 +320,24 @@ export default function PatchesDdfEditor({
         setSubmittingBulk(false);
         return;
       }
-      const hasTab = bulkText.includes('\t');
-      const rows = lines.map((line) => {
-        const parts = (hasTab ? line.split('\t') : line.split(',')).map((p) => p.trim());
-        const rowPayload: Record<string, string> = { [bulkIdField]: parts[0] ?? '' };
-        bulkEditableFields.forEach((name, i) => {
-          rowPayload[name] = parts[i + 1] ?? '';
+      let data;
+      if (isRawOnlySchema) {
+        // Каждая строка — уже готовая taб-разделённая запись целиком (пользователь копирует и
+        // правит несколько копий шаблонной строки) — отправляем как есть, без разбора на поля.
+        data = await postJson({ action: 'ddf_create', server, path, rawLines: lines });
+      } else {
+        const hasTab = bulkText.includes('\t');
+        const rows = lines.map((line) => {
+          const parts = (hasTab ? line.split('\t') : line.split(',')).map((p) => p.trim());
+          const rowPayload: Record<string, string> = { [bulkIdField!]: parts[0] ?? '' };
+          bulkEditableFields.forEach((name, i) => {
+            rowPayload[name] = parts[i + 1] ?? '';
+          });
+          return rowPayload;
         });
-        return rowPayload;
-      });
-      const data = await postJson({ action: 'ddf_create', server, path, rows });
-      setBulkAdded(data.added || rows.length);
+        data = await postJson({ action: 'ddf_create', server, path, rows });
+      }
+      setBulkAdded(data.added || lines.length);
       setBulkText('');
       runSearch(query);
     } catch {
@@ -412,9 +444,13 @@ export default function PatchesDdfEditor({
       {mode === 'create' && (
         <PatchesDdfCreatePanel
           loadingCreate={loadingCreate}
+          isRawOnly={isRawOnlySchema}
           createFields={createFields}
           createValues={createValues}
           setCreateValues={setCreateValues}
+          createRawLine={createRawLine}
+          setCreateRawLine={setCreateRawLine}
+          createRawColumns={createRawColumns}
           creating={creating}
           createError={createError}
           onSubmit={handleCreateSubmit}
@@ -424,8 +460,11 @@ export default function PatchesDdfEditor({
       {mode === 'bulk' && (
         <PatchesDdfBulkPanel
           loadingBulk={loadingBulk}
+          isRawOnly={isRawOnlySchema}
           bulkIdField={bulkIdField}
           bulkEditableFields={bulkEditableFields}
+          bulkTemplateLine={bulkTemplateLine}
+          bulkRawColumns={bulkRawColumns}
           bulkText={bulkText}
           setBulkText={setBulkText}
           submittingBulk={submittingBulk}

@@ -40,11 +40,11 @@ export default function PatchesDdfSearchPanel({
             <Icon name="Loader2" size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin" />
           )}
         </div>
-        {canManage && !isRawOnly && (
+        {canManage && (
           <>
             <button
               onClick={onOpenCreate}
-              title="Создать новую запись"
+              title={isRawOnly ? 'Создать новую запись (текстом, у файла сложная структура)' : 'Создать новую запись'}
               className="h-10 px-3 rounded-lg text-sm font-medium border border-border hover:bg-secondary transition-colors flex items-center gap-1.5 shrink-0"
             >
               <Icon name="Plus" size={15} />
@@ -52,7 +52,7 @@ export default function PatchesDdfSearchPanel({
             </button>
             <button
               onClick={onOpenBulk}
-              title="Добавить несколько записей списком"
+              title={isRawOnly ? 'Добавить несколько записей списком (текстом, у файла сложная структура)' : 'Добавить несколько записей списком'}
               className="h-10 px-3 rounded-lg text-sm font-medium border border-border hover:bg-secondary transition-colors flex items-center gap-1.5 shrink-0"
             >
               <Icon name="ListPlus" size={15} />

@@ -818,6 +818,10 @@ def handler(event: dict, context) -> dict:
         # Возвращает "пустой шаблон" записи (все поля — значения по умолчанию: 0 для чисел,
         # пустая строка для текста) для формы "создать новую запись с нуля". В отличие от
         # ddf_get не читает сам .dat файл — схема одна и та же для всех записей файла.
+        # Для raw_only схем (armorgrp/etcitemgrp/recipe и т.п. — без "человеческих" полей)
+        # дополнительно возвращает 'rawLine'/'rawColumns' — тот же пустой шаблон, но уже
+        # сериализованный в raw-строку (см. ddf_raw.row_to_raw_line) — фронтенд использует его
+        # как стартовое значение формы создания записи в raw-режиме (см. ddf_create action).
         server = _safe_server(body.get('server'))
         path = body.get('path')
         if not path:
@@ -830,30 +834,55 @@ def handler(event: dict, context) -> dict:
         key, fields, editable, _has_reccnt_prefix, _fixed_record_count, is_raw_only = match
         row = ddf_parser.default_row(fields)
         color_group_def = _ddf_color_group(server, path)
-        return _ok({
+        result = {
             'schema': key,
             'fields': _ddf_field_defs(fields, editable),
             'row': _ddf_serialize_row(row, fields),
             'isRawOnly': is_raw_only,
             'colorGroup': color_group_def,
             'colorHex': _ddf_color_hex(row, color_group_def),
-        })
+        }
+        if is_raw_only:
+            result['rawLine'] = ddf_raw.row_to_raw_line(row, fields)
+            result['rawColumns'] = ddf_raw.row_to_raw_columns(row, fields)
+        return _ok(result)
 
     if action == 'ddf_create':
         # Добавляет одну ИЛИ несколько новых записей в конец файла (пакетное добавление —
-        # для формы "вставить список текстом"). Каждый элемент body['rows'] — dict вида
-        # {fieldName: value, ...} со значениями ВСЕХ нужных полей схемы (не только текстовых —
-        # например id обязателен); отсутствующие поля берут значение по умолчанию (0/'').
-        # Файл расшифровывается, существующие записи переносятся как есть (потоково, без
-        # накопления в памяти), новые записи дописываются в конец, счётчик записей в
-        # заголовке обновляется, файл зашифровывается обратно и перезаписывается в S3.
+        # для формы "вставить список текстом"). Файл расшифровывается, существующие записи
+        # переносятся как есть (потоково, без накопления в памяти), новые записи дописываются
+        # в конец, счётчик записей в заголовке обновляется, файл зашифровывается обратно и
+        # перезаписывается в S3.
+        #
+        # Две формы входных данных (взаимоисключающие, различаются по схеме — is_raw_only):
+        # - body['rows'] — list[dict] вида {fieldName: value, ...} со значениями ВСЕХ нужных
+        #   полей схемы (не только текстовых — например id обязателен); отсутствующие поля
+        #   берут значение по умолчанию (0/''). Используется для обычных схем (не raw_only).
+        # - body['rawLines'] — list[str], каждая строка — ОДНА запись целиком в raw-формате
+        #   (таб-разделённые значения ВСЕХ полей схемы, включая развёрнутые MTX/MAT/массивы —
+        #   тот же формат, что возвращает ddf_get_raw и принимает ddf_save_raw, см. ddf_raw.py).
+        #   Используется ОБЯЗАТЕЛЬНО для raw_only схем (armorgrp/etcitemgrp/recipe и т.п.) — у
+        #   них нет отдельных "человеческих" полей для обычной формы; ddf_new для таких схем
+        #   дополнительно возвращает 'rawLine'/'rawColumns' (пустой шаблон записи, уже
+        #   сериализованный в raw-строку) — пользователь правит нужные поля прямо в этой
+        #   таб-строке (одну запись — на форме "создать", либо вставляет список из нескольких
+        #   таких строк построчно на форме "списком") и отправляет обратно.
         server = _safe_server(body.get('server'))
         path = body.get('path')
         new_rows_input = body.get('rows')
-        if not server or not path or not isinstance(new_rows_input, list) or not new_rows_input:
+        raw_lines_input = body.get('rawLines')
+        if not server or not path:
             cur.close(); conn.close()
             return _bad('bad_request')
-        if len(new_rows_input) > 500:
+        if not isinstance(new_rows_input, list) or not new_rows_input:
+            new_rows_input = None
+        if not isinstance(raw_lines_input, list) or not raw_lines_input:
+            raw_lines_input = None
+        if new_rows_input is None and raw_lines_input is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        row_count = len(new_rows_input or raw_lines_input)
+        if row_count > 500:
             cur.close(); conn.close()
             return _bad('too_many_rows')
         match = _ddf_match(server, path)
@@ -867,13 +896,12 @@ def handler(event: dict, context) -> dict:
             # добавление новых строк — это сломало бы предполагаемую клиентом структуру.
             cur.close(); conn.close()
             return _bad('fixed_schema_no_append')
-        if is_raw_only:
-            # Схемы с MTX/MAT-полями (armorgrp/etcitemgrp/recipe) не поддерживают создание
-            # через обычную форму "одно поле — один инпут" — она не умеет собирать сложные
-            # табличные значения. Для них создание/пакетное добавление недоступно вовсе —
-            # только просмотр/редактирование существующих записей через ddf_get_raw/ddf_save_raw.
+        if is_raw_only and raw_lines_input is None:
             cur.close(); conn.close()
-            return _bad('raw_only_schema_no_create')
+            return _bad('raw_only_schema_requires_raw_lines')
+        if not is_raw_only and raw_lines_input is not None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
         quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()
@@ -888,24 +916,37 @@ def handler(event: dict, context) -> dict:
         file_key, protocol, plain = loaded
 
         new_rows = []
-        for raw_row in new_rows_input:
-            if not isinstance(raw_row, dict):
-                cur.close(); conn.close()
-                return _bad('bad_request')
-            row = ddf_parser.default_row(fields)
-            texts = {k: v for k, v in raw_row.items() if k in editable}
-            row = ddf_parser.build_row_from_texts(fields, editable, row, texts)
-            for f in fields:
-                fname = f['name']
-                if fname in editable or f['array'] is not None:
-                    continue
-                if fname in raw_row and raw_row[fname] is not None:
-                    try:
-                        row[fname] = float(raw_row[fname]) if f['type'] == 'FLOAT' else int(raw_row[fname])
-                    except (TypeError, ValueError):
-                        cur.close(); conn.close()
-                        return _bad(f'bad_value_for_field_{fname}')
-            new_rows.append(row)
+        if raw_lines_input is not None:
+            template_row = ddf_parser.default_row(fields)
+            for line in raw_lines_input:
+                if not isinstance(line, str):
+                    cur.close(); conn.close()
+                    return _bad('bad_request')
+                try:
+                    row = ddf_raw.raw_line_to_row(line, fields, base_row=template_row)
+                except ddf_parser.DdfError as e:
+                    cur.close(); conn.close()
+                    return _bad(f'ddf_parse_error_{e}')
+                new_rows.append(row)
+        else:
+            for raw_row in new_rows_input:
+                if not isinstance(raw_row, dict):
+                    cur.close(); conn.close()
+                    return _bad('bad_request')
+                row = ddf_parser.default_row(fields)
+                texts = {k: v for k, v in raw_row.items() if k in editable}
+                row = ddf_parser.build_row_from_texts(fields, editable, row, texts)
+                for f in fields:
+                    fname = f['name']
+                    if fname in editable or f['array'] is not None:
+                        continue
+                    if fname in raw_row and raw_row[fname] is not None:
+                        try:
+                            row[fname] = float(raw_row[fname]) if f['type'] == 'FLOAT' else int(raw_row[fname])
+                        except (TypeError, ValueError):
+                            cur.close(); conn.close()
+                            return _bad(f'bad_value_for_field_{fname}')
+                new_rows.append(row)
 
         try:
             new_plain = ddf_parser.append_records(plain, fields, new_rows)
