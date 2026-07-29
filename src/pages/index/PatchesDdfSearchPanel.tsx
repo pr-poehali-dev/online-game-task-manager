@@ -9,6 +9,9 @@ export default function PatchesDdfSearchPanel({
   results,
   canManage,
   isRawOnly,
+  hasMore,
+  loadingMore,
+  onLoadMore,
   onOpenRow,
   onOpenCreate,
   onOpenBulk,
@@ -20,6 +23,9 @@ export default function PatchesDdfSearchPanel({
   results: SearchResult[];
   canManage: boolean;
   isRawOnly: boolean;
+  hasMore: boolean;
+  loadingMore: boolean;
+  onLoadMore: () => void;
   onOpenRow: (index: number) => void;
   onOpenCreate: () => void;
   onOpenBulk: () => void;
@@ -83,6 +89,16 @@ export default function PatchesDdfSearchPanel({
             <Icon name="ChevronRight" size={14} className="text-muted-foreground shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
         ))}
+        {hasMore && (
+          <button
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="w-full mt-1 h-9 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            <Icon name={loadingMore ? 'Loader2' : 'ChevronDown'} size={14} className={loadingMore ? 'animate-spin' : ''} />
+            {loadingMore ? 'Загружаю...' : 'Показать ещё'}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -516,14 +516,21 @@ def get_tail_bytes(binary: bytes, fields: list, has_reccnt_prefix: bool = True,
 
 
 def search_records(binary: bytes, fields: list, editable_names: list, query_lower: str, limit: int,
-                    has_reccnt_prefix: bool = True, fixed_record_count: int = None):
+                    has_reccnt_prefix: bool = True, fixed_record_count: int = None, offset: int = 0):
     '''Ищет записи, у которых хотя бы одно из editable_names текстовых полей содержит
-    query_lower (или, если query_lower пустой, возвращает первые limit записей). Читает файл
-    потоково — не накапливает список всех записей в памяти. Возвращает (matches, total_count),
-    где matches — список (index, row) для не более limit совпадений, total_count — реальное
-    количество записей в файле (из заголовка, O(1)).'''
+    query_lower (или, если query_lower пустой, возвращает записи подряд). Читает файл
+    потоково — не накапливает список всех записей в памяти. offset — сколько НАЙДЕННЫХ
+    совпадений пропустить с начала перед тем, как начать собирать (используется для подгрузки
+    "ещё" при прокрутке списка результатов на фронтенде — см. action ddf_search в index.py).
+    Записи variable-length (ASCF-строки переменной длины), поэтому смещение по байтам заранее
+    вычислить нельзя — offset всегда требует последовательного сканирования с начала файла, как
+    и обычный поиск по подстроке; это тот же порядок сложности, что был и раньше.
+    Возвращает (matches, total_count), где matches — список (index, row) для не более limit
+    совпадений НАЧИНАЯ С offset-го, total_count — реальное количество записей в файле (из
+    заголовка, O(1)).'''
     total_count = get_record_count(binary, has_reccnt_prefix, fixed_record_count)
     matches = []
+    skipped = 0
     for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
         if query_lower:
             found = str(idx) == query_lower or any(
@@ -532,6 +539,9 @@ def search_records(binary: bytes, fields: list, editable_names: list, query_lowe
             )
             if not found:
                 continue
+        if skipped < offset:
+            skipped += 1
+            continue
         matches.append((idx, row))
         if len(matches) >= limit:
             break

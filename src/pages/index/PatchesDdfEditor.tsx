@@ -30,6 +30,8 @@ export default function PatchesDdfEditor({
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [isRawOnlySchema, setIsRawOnlySchema] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [fields, setFields] = useState<FieldDef[]>([]);
@@ -72,16 +74,35 @@ export default function PatchesDdfEditor({
     setSearching(true);
     setSearchError('');
     try {
-      const data = await postJson({ action: 'ddf_search', server, path, query: q, limit: 50 });
+      const data = await postJson({ action: 'ddf_search', server, path, query: q, limit: 50, offset: 0 });
       setResults(data.results || []);
       setTotalRows(data.totalRows || 0);
       setIsRawOnlySchema(!!data.isRawOnly);
+      setHasMore(!!data.hasMore);
     } catch {
       setSearchError('Не удалось выполнить поиск');
     } finally {
       setSearching(false);
     }
   }, [server, path]);
+
+  // Список результатов поиска раньше был жёстко ограничен первыми 50 записями файла (при пустом
+  // запросе) — прокрутка "обрывалась" без явной причины, т.к. дальше просто не было загруженных
+  // данных (см. hasMore/offset в backend action ddf_search). Теперь по нажатию "Показать ещё"
+  // подгружаем следующую порцию, начиная с offset = текущее число уже показанных результатов —
+  // dозагруженные результаты ДОБАВЛЯЮТСЯ к уже отображённым (не заменяют их).
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const data = await postJson({ action: 'ddf_search', server, path, query, limit: 50, offset: results.length });
+      setResults((prev) => [...prev, ...(data.results || [])]);
+      setHasMore(!!data.hasMore);
+    } catch {
+      setSearchError('Не удалось загрузить ещё записи');
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   useEffect(() => {
     runSearch('');
@@ -441,6 +462,9 @@ export default function PatchesDdfEditor({
           results={results}
           canManage={canManage}
           isRawOnly={isRawOnlySchema}
+          hasMore={hasMore}
+          loadingMore={loadingMore}
+          onLoadMore={loadMore}
           onOpenRow={openRow}
           onOpenCreate={openCreate}
           onOpenBulk={openBulk}

@@ -562,6 +562,7 @@ def handler(event: dict, context) -> dict:
         path = body.get('path')
         query = (body.get('query') or '').strip()
         limit = min(int(body.get('limit') or 50), 200)
+        offset = max(int(body.get('offset') or 0), 0)
         if not server or not path:
             cur.close(); conn.close()
             return _bad('bad_request')
@@ -584,7 +585,7 @@ def handler(event: dict, context) -> dict:
         try:
             matches, total_rows = ddf_parser.search_records(
                 plain, fields, editable, query.lower(), limit,
-                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, offset=offset
             )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')
@@ -596,6 +597,12 @@ def handler(event: dict, context) -> dict:
             'schema': key,
             'totalRows': total_rows,
             'matched': len(results),
+            # hasMore=True означает, что найдено ровно limit совпадений — вполне возможно, что
+            # есть ещё (это НЕ равно "offset+matched < totalRows", т.к. totalRows — это общее
+            # число ЗАПИСЕЙ в файле, а не число найденных совпадений при непустом query;
+            # фронтенд использует этот флаг, чтобы решить, показывать ли кнопку/автоподгрузку
+            # "показать ещё" в конце списка результатов).
+            'hasMore': len(results) >= limit,
             'results': results,
             'isRawOnly': is_raw_only,
         })
