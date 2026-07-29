@@ -67,10 +67,17 @@ def _token_to_value(ftype: str, token: str):
     return text
 
 
-def row_to_raw_line(row: dict, fields: list) -> str:
-    '''Сериализует одну запись в единую таб-разделённую строку (без завершающего перевода
-    строки), в порядке полей схемы, разворачивая массивы/MTX/MAT поэлементно.'''
-    tokens = []
+def _row_to_pairs(row: dict, fields: list) -> list:
+    '''Общая внутренняя реализация для row_to_raw_line/row_to_raw_columns — возвращает список
+    (label, value) в порядке полей схемы, где value — уже экранированный текстовый токен, а
+    label — человекочитаемое имя колонки (само поле; "name[i]" для статических/динамических
+    массивов; "name_cntm"/"name_m[i]"/"name_cntt"/"name_t[i]" для MTX — совпадает с реальными
+    именами колонок в TSV-экспорте l2disasm, см. подтверждение в RESEARCH_NOTES.md;
+    "name_cnt"/"name_id[i]"/"name_amount[i]" для MAT — l2disasm-эталона для MAT не было, имя
+    подобрано по аналогии). Используется, чтобы гарантировать идентичный порядок/состав токенов
+    между текстовым (row_to_raw_line) и табличным (row_to_raw_columns, с подписями) представлением
+    — и не дублировать логику разбора схемы в двух местах.'''
+    pairs = []
     for field in fields:
         ftype = field['type']
         name = field['name']
@@ -80,26 +87,44 @@ def row_to_raw_line(row: dict, fields: list) -> str:
             value = row.get(name) or {}
             mesh = value.get('mesh') or []
             tex = value.get('tex') or []
-            tokens.append(str(len(mesh)))
-            tokens.extend(_escape(v or '') for v in mesh)
-            tokens.append(str(len(tex)))
-            tokens.extend(_escape(v or '') for v in tex)
+            pairs.append((f'{name}_cntm', str(len(mesh))))
+            for i, v in enumerate(mesh):
+                pairs.append((f'{name}_m[{i}]', _escape(v or '')))
+            pairs.append((f'{name}_cntt', str(len(tex))))
+            for i, v in enumerate(tex):
+                pairs.append((f'{name}_t[{i}]', _escape(v or '')))
             continue
         if ftype == 'MAT':
             items = row.get(name) or []
-            tokens.append(str(len(items)))
-            for item in items:
-                tokens.append(str(int(item.get('id', 0))))
-                tokens.append(str(int(item.get('amount', 0))))
+            pairs.append((f'{name}_cnt', str(len(items))))
+            for i, item in enumerate(items):
+                pairs.append((f'{name}_id[{i}]', str(int(item.get('id', 0)))))
+                pairs.append((f'{name}_amount[{i}]', str(int(item.get('amount', 0)))))
             continue
         count = _resolve_count(row, field['array'])
         if count is not None:
             values = row.get(name) or []
-            for v in values:
-                tokens.extend(_value_to_tokens(ftype, v))
+            for i, v in enumerate(values):
+                for tok in _value_to_tokens(ftype, v):
+                    pairs.append((f'{name}[{i}]', tok))
             continue
-        tokens.extend(_value_to_tokens(ftype, row.get(name)))
-    return '\t'.join(tokens)
+        for tok in _value_to_tokens(ftype, row.get(name)):
+            pairs.append((name, tok))
+    return pairs
+
+
+def row_to_raw_line(row: dict, fields: list) -> str:
+    '''Сериализует одну запись в единую таб-разделённую строку (без завершающего перевода
+    строки), в порядке полей схемы, разворачивая массивы/MTX/MAT поэлементно.'''
+    return '\t'.join(value for _label, value in _row_to_pairs(row, fields))
+
+
+def row_to_raw_columns(row: dict, fields: list) -> list:
+    '''Табличное представление той же записи для фронтенда: список {"label": ..., "value": ...}
+    в ТОМ ЖЕ порядке, что и токены row_to_raw_line — используется, чтобы показать под каждым
+    названием колонки соответствующее значение (см. row_to_raw_line за подробностями формата
+    имён колонок).'''
+    return [{'label': label, 'value': value} for label, value in _row_to_pairs(row, fields)]
 
 
 def raw_line_to_row(line: str, fields: list, base_row: dict = None) -> dict:

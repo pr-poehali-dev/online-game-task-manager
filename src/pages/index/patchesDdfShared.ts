@@ -11,6 +11,11 @@ export interface FieldDef {
   editable: boolean;
 }
 
+export interface RawColumn {
+  label: string;
+  value: string;
+}
+
 export type RowValue = string | number | (string | number)[] | null;
 export type Mode = 'search' | 'view' | 'create' | 'bulk' | 'raw';
 

@@ -1,9 +1,11 @@
 import Icon from '@/components/ui/icon';
+import type { RawColumn } from './patchesDdfShared';
 
 export default function PatchesDdfRawPanel({
   loadingRow,
   line,
   setLine,
+  columns,
   canManage,
   saving,
   saved,
@@ -17,6 +19,7 @@ export default function PatchesDdfRawPanel({
   loadingRow: boolean;
   line: string | null;
   setLine: (v: string) => void;
+  columns: RawColumn[];
   canManage: boolean;
   saving: boolean;
   saved: boolean;
@@ -27,6 +30,15 @@ export default function PatchesDdfRawPanel({
   deleting: boolean;
   onDelete: () => void;
 }) {
+  const tokens = line !== null ? line.split('\t') : [];
+  const labels = columns.length === tokens.length ? columns.map((c) => c.label) : tokens.map((_, i) => String(i));
+
+  function setTokenAt(index: number, value: string) {
+    const next = [...tokens];
+    next[index] = value;
+    setLine(next.join('\t'));
+  }
+
   return (
     <div className="p-5">
       {loadingRow ? (
@@ -36,18 +48,37 @@ export default function PatchesDdfRawPanel({
       ) : line !== null ? (
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            У этого файла сложная структура записи (модели/текстуры/материалы) — редактируйте её целиком одной строкой,
-            как в декомпилированном исходнике. Значения разделены табуляцией — не удаляйте и не добавляйте лишние табы.
+            У этого файла сложная структура записи (модели/текстуры/материалы) — под названием каждой колонки указано её значение.
+            Правьте значения по отдельности — структура строки сохраняется автоматически.
           </p>
-          <textarea
-            autoFocus
-            value={line}
-            onChange={(e) => setLine(e.target.value)}
-            disabled={!canManage}
-            rows={10}
-            spellCheck={false}
-            className="w-full px-3 py-2 rounded-lg border border-border bg-background text-xs font-mono resize-y min-h-[200px] disabled:opacity-70 whitespace-pre overflow-x-auto"
-          />
+
+          <div className="border border-border rounded-lg overflow-x-auto scrollbar-thin">
+            <table className="border-collapse">
+              <tbody>
+                <tr>
+                  {labels.map((label, i) => (
+                    <td key={i} className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground border-b border-r border-border last:border-r-0 whitespace-nowrap bg-secondary/40">
+                      {label}
+                    </td>
+                  ))}
+                </tr>
+                <tr>
+                  {tokens.map((token, i) => (
+                    <td key={i} className="p-0 border-r border-border last:border-r-0">
+                      <input
+                        value={token}
+                        onChange={(e) => setTokenAt(i, e.target.value)}
+                        disabled={!canManage}
+                        spellCheck={false}
+                        className="h-9 px-2 text-xs font-mono bg-background disabled:opacity-70 outline-none focus:bg-secondary/30 min-w-[60px]"
+                        style={{ width: `${Math.max(60, Math.min(240, token.length * 7 + 20))}px` }}
+                      />
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
 
           <div className="flex items-center gap-3 pt-2">
             {canManage && (

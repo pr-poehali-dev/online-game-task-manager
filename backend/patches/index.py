@@ -559,7 +559,10 @@ def handler(event: dict, context) -> dict:
         # — как в декомпилированном TSV-экспорте l2disasm. Используется для схем без
         # осмысленных отдельных текстовых полей (armorgrp/etcitemgrp/recipe — там основная
         # ценность записи в MTX/MAT-таблицах путей к моделям/звукам или списках материалов
-        # рецепта), где обычная форма "один инпут на editable-поле" неудобна.
+        # рецепта), где обычная форма "один инпут на editable-поле" неудобна. Дополнительно
+        # возвращает 'columns' — тот же набор значений с человекочитаемыми подписями колонок
+        # (совпадают по составу и порядку с l2disasm TSV-заголовком) для отображения на
+        # фронтенде подписи над каждым значением.
         server = _safe_server(body.get('server'))
         path = body.get('path')
         index = body.get('index')
@@ -589,6 +592,7 @@ def handler(event: dict, context) -> dict:
                 plain, fields, idx, has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
             )
             line = ddf_raw.row_to_raw_line(row, fields)
+            columns = ddf_raw.row_to_raw_columns(row, fields)
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}', 404 if 'index_out_of_range' in str(e) else 400)
         return _ok({
@@ -596,6 +600,7 @@ def handler(event: dict, context) -> dict:
             'index': idx,
             'totalRows': total_rows,
             'line': line,
+            'columns': columns,
         })
 
     if action == 'ddf_save':

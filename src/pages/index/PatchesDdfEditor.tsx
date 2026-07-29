@@ -3,7 +3,7 @@ import Icon from '@/components/ui/icon';
 import { ModalOverlay } from './shared';
 import type { ServerId } from './shared';
 import { postJson } from './patchesApi';
-import type { SearchResult, FieldDef, RowValue, Mode } from './patchesDdfShared';
+import type { SearchResult, FieldDef, RowValue, Mode, RawColumn } from './patchesDdfShared';
 import { cleanText } from './patchesDdfShared';
 import PatchesDdfSearchPanel from './PatchesDdfSearchPanel';
 import PatchesDdfViewPanel from './PatchesDdfViewPanel';
@@ -37,6 +37,7 @@ export default function PatchesDdfEditor({
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [isRawMode, setIsRawMode] = useState(false);
   const [rawLine, setRawLine] = useState<string | null>(null);
+  const [rawColumns, setRawColumns] = useState<RawColumn[]>([]);
   const [loadingRow, setLoadingRow] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -99,6 +100,7 @@ export default function PatchesDdfEditor({
         setMode('raw');
         const rawData = await postJson({ action: 'ddf_get_raw', server, path, index });
         setRawLine(rawData.line ?? '');
+        setRawColumns(rawData.columns || []);
       } else {
         setIsRawMode(false);
         setMode('view');
@@ -168,6 +170,7 @@ export default function PatchesDdfEditor({
     setEdits({});
     setIsRawMode(false);
     setRawLine(null);
+    setRawColumns([]);
     setSaveError('');
     setSaved(false);
     setConfirmDelete(false);
@@ -330,6 +333,7 @@ export default function PatchesDdfEditor({
           loadingRow={loadingRow}
           line={rawLine}
           setLine={setRawLine}
+          columns={rawColumns}
           canManage={canManage}
           saving={saving}
           saved={saved}
