@@ -103,6 +103,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_range without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_range", "server": "c4x1", "path": "System/itemname-e.dat", "idFrom": 1, "idTo": 10},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

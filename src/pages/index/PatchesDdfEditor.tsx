@@ -6,10 +6,12 @@ import PatchesDdfViewPanel from './PatchesDdfViewPanel';
 import PatchesDdfCreatePanel from './PatchesDdfCreatePanel';
 import PatchesDdfBulkPanel from './PatchesDdfBulkPanel';
 import PatchesDdfRawPanel from './PatchesDdfRawPanel';
+import PatchesDdfRangePanel from './PatchesDdfRangePanel';
 import { useDdfSearch } from './useDdfSearch';
 import { useDdfRow } from './useDdfRow';
 import { useDdfCreate } from './useDdfCreate';
 import { useDdfBulk } from './useDdfBulk';
+import { useDdfRange } from './useDdfRange';
 
 export default function PatchesDdfEditor({
   server,
@@ -25,7 +27,7 @@ export default function PatchesDdfEditor({
   const search = useDdfSearch(server, path);
   const {
     mode, setMode, query, setQuery, results, setResults, totalRows, setTotalRows,
-    searching, searchError, isRawOnlySchema, hasMore, loadingMore, runSearch, loadMore,
+    searching, searchError, isRawOnlySchema, hasMore, loadingMore, hasIdField, runSearch, loadMore,
   } = search;
 
   const rowState = useDdfRow(server, path, setMode, setResults, setTotalRows, query, runSearch);
@@ -49,6 +51,17 @@ export default function PatchesDdfEditor({
     bulkText, setBulkText, bulkTemplateLine, bulkRawColumns, loadingBulk, submittingBulk,
     bulkError, bulkAdded, bulkIdField, bulkEditableFields, openBulk, handleBulkSubmit,
   } = bulk;
+
+  const range = useDdfRange(server, path);
+  const {
+    idFrom, setIdFrom, idTo, setIdTo, rangeRows, rangeTruncated, loadingRange,
+    rangeError, rangeLoaded, loadRange, resetRange,
+  } = range;
+
+  function openRange() {
+    resetRange();
+    setMode('range');
+  }
 
   const fileName = path.split('/').pop() || path;
 
@@ -104,6 +117,24 @@ export default function PatchesDdfEditor({
           onOpenRow={openRow}
           onOpenCreate={openCreate}
           onOpenBulk={openBulk}
+          hasIdField={hasIdField}
+          onOpenRange={openRange}
+        />
+      )}
+
+      {mode === 'range' && (
+        <PatchesDdfRangePanel
+          idFrom={idFrom}
+          setIdFrom={setIdFrom}
+          idTo={idTo}
+          setIdTo={setIdTo}
+          rangeRows={rangeRows}
+          rangeTruncated={rangeTruncated}
+          loadingRange={loadingRange}
+          rangeError={rangeError}
+          rangeLoaded={rangeLoaded}
+          onLoadRange={loadRange}
+          onOpenRow={openRow}
         />
       )}
 

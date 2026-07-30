@@ -567,6 +567,53 @@ def search_records(binary: bytes, fields: list, editable_names: list, query_lowe
     return matches, total_count
 
 
+def find_by_exact_id(binary: bytes, fields: list, id_field_names: list, id_value: int,
+                      has_reccnt_prefix: bool = True, fixed_record_count: int = None):
+    '''Точный поиск ОДНОЙ записи по числовому значению её id-поля (первое имя из id_field_names —
+    для составных ключей типа dbdropdata (npc_id, item_id) ищем совпадение только по первому
+    полю, этого достаточно для однозначного поиска предмета/скилла/нпс по игровому id). В отличие
+    от search_records (поиск подстроки — "1" находит id=1,21,31,112...) здесь сравнивается ТОЧНОЕ
+    числовое значение, поэтому запрос "id=1" находит РОВНО одну запись с id==1, а не все записи,
+    чей id содержит цифру "1". Возвращает (index, row) первой найденной записи, либо None.'''
+    if not id_field_names:
+        return None
+    name = id_field_names[0]
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
+        val = row.get(name)
+        if val is not None and str(val).strip() == str(id_value):
+            return idx, row
+    return None
+
+
+def find_by_id_range(binary: bytes, fields: list, id_field_names: list, lo: int, hi: int, limit: int,
+                      has_reccnt_prefix: bool = True, fixed_record_count: int = None):
+    '''Возвращает (rows, truncated) — список (index, row) всех записей, чьё id-поле (первое имя
+    из id_field_names) попадает в диапазон [lo, hi] включительно, отсортированный по возрастанию
+    id (записи в файле физически могут идти не по порядку — см. find_by_exact_id/search_records
+    про "исторический беспорядок"). truncated=True означает, что найденных записей больше, чем
+    limit, и список обрезан (защита от случайно введённого гигантского диапазона на файле с
+    десятками тысяч записей).'''
+    if not id_field_names:
+        return [], False
+    name = id_field_names[0]
+    found = []
+    for idx, row in iter_records(binary, fields, has_reccnt_prefix, fixed_record_count):
+        val = row.get(name)
+        if val is None:
+            continue
+        try:
+            num = int(val)
+        except (TypeError, ValueError):
+            continue
+        if lo <= num <= hi:
+            found.append((num, idx, row))
+    found.sort(key=lambda t: t[0])
+    truncated = len(found) > limit
+    if truncated:
+        found = found[:limit]
+    return [(idx, row) for _num, idx, row in found], truncated
+
+
 def transform_single_row(binary: bytes, fields: list, index: int, mutate_fn,
                           has_reccnt_prefix: bool = True, fixed_record_count: int = None,
                           tail_bytes: bytes = None) -> bytes:

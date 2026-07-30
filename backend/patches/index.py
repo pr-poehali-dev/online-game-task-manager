@@ -558,6 +558,12 @@ def handler(event: dict, context) -> dict:
         # записи + подпись + короткий превью текста) — сама запись целиком запрашивается
         # отдельно через ddf_get, весь массив записей на фронтенд не отдаётся (некоторые файлы,
         # например skillname-e, содержат более 76 тысяч записей).
+        #
+        # Специальный синтаксис "id=<число>" (без пробелов вокруг "=") — ТОЧНЫЙ поиск по значению
+        # id-поля записи (см. _ddf_id_fields/_ID_FIELDS), в отличие от обычного поиска по
+        # подстроке: запрос "1" находит id=1,21,31,112... (подстрока "1" входит во все эти числа),
+        # а "id=1" находит РОВНО одну запись с id==1 — это то, чего не хватало при поиске
+        # конкретного предмета/скилла/нпс по известному игровому id в файлах с тысячами записей.
         server = _safe_server(body.get('server'))
         path = body.get('path')
         query = (body.get('query') or '').strip()
@@ -571,6 +577,8 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('ddf_not_supported')
         key, fields, editable, has_reccnt_prefix, fixed_record_count, is_raw_only = match
+        id_field_names = _ddf_id_fields(server, path)
+        exact_id_match = re.match(r'^id=(\d+)$', query, re.IGNORECASE)
         s3 = _s3_client()
         bucket = _bucket()
         try:
@@ -582,11 +590,29 @@ def handler(event: dict, context) -> dict:
         if not loaded:
             return _bad('not_found', 404)
         _file_key, protocol, plain = loaded
+        if exact_id_match:
+            try:
+                total_rows = ddf_parser.get_record_count(plain, has_reccnt_prefix, fixed_record_count)
+                found = ddf_parser.find_by_exact_id(
+                    plain, fields, id_field_names, int(exact_id_match.group(1)),
+                    has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+                )
+            except ddf_parser.DdfError as e:
+                return _bad(f'ddf_parse_error_{e}')
+            results = []
+            if found:
+                idx, row = found
+                results.append({'index': idx, 'label': _ddf_row_label(row, fields) or f'#{idx}', 'preview': _ddf_row_preview_text(row, editable)})
+            return _ok({
+                'schema': key, 'totalRows': total_rows, 'matched': len(results),
+                'hasMore': False, 'results': results, 'isRawOnly': is_raw_only,
+                'hasIdField': bool(id_field_names),
+            })
         try:
             matches, total_rows = ddf_parser.search_records(
                 plain, fields, editable, query.lower(), limit,
                 has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count, offset=offset,
-                id_field_names=_ddf_id_fields(server, path)
+                id_field_names=id_field_names
             )
         except ddf_parser.DdfError as e:
             return _bad(f'ddf_parse_error_{e}')
@@ -606,7 +632,65 @@ def handler(event: dict, context) -> dict:
             'hasMore': len(results) >= limit,
             'results': results,
             'isRawOnly': is_raw_only,
+            'hasIdField': bool(id_field_names),
         })
+
+    if action == 'ddf_range':
+        # Возвращает СРАЗУ НЕСКОЛЬКО записей одной таблицей — все записи, чьё id-поле (см.
+        # _ddf_id_fields/_ID_FIELDS) попадает в диапазон [idFrom, idTo] включительно. Нужно,
+        # чтобы можно было одним запросом посмотреть, например, "все предметы с id от 1 до 10",
+        # не открывая их по одной через ddf_get. Формат каждой строки — тот же список
+        # {"label", "value"} по всем полям схемы (см. ddf_raw.row_to_raw_columns), что и в
+        # ddf_get_raw — единое табличное представление годится для ЛЮБОЙ схемы (обычной и
+        # raw-only), не только для armorgrp/etcitemgrp. limit защищает от случайно введённого
+        # огромного диапазона на файле с десятками тысяч записей.
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        id_from = body.get('idFrom')
+        id_to = body.get('idTo')
+        limit = min(int(body.get('limit') or 200), 500)
+        if not server or not path or id_from is None or id_to is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        try:
+            id_from_i, id_to_i = int(id_from), int(id_to)
+        except (TypeError, ValueError):
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        if id_from_i > id_to_i:
+            id_from_i, id_to_i = id_to_i, id_from_i
+        match = _ddf_match(server, path)
+        if not match:
+            cur.close(); conn.close()
+            return _bad('ddf_not_supported')
+        key, fields, _editable, has_reccnt_prefix, fixed_record_count, _is_raw_only = match
+        id_field_names = _ddf_id_fields(server, path)
+        if not id_field_names:
+            cur.close(); conn.close()
+            return _bad('no_id_field')
+        s3 = _s3_client()
+        bucket = _bucket()
+        try:
+            loaded = _ddf_load_plain(s3, bucket, schema, cur, server, path, _ddf_quirk_bytes(server, key))
+        except l2encdec.L2CryptError as e:
+            cur.close(); conn.close()
+            return _bad(f'decrypt_error_{e}')
+        cur.close(); conn.close()
+        if not loaded:
+            return _bad('not_found', 404)
+        _file_key, protocol, plain = loaded
+        try:
+            found, truncated = ddf_parser.find_by_id_range(
+                plain, fields, id_field_names, id_from_i, id_to_i, limit,
+                has_reccnt_prefix=has_reccnt_prefix, fixed_record_count=fixed_record_count
+            )
+        except ddf_parser.DdfError as e:
+            return _bad(f'ddf_parse_error_{e}')
+        rows = [
+            {'index': idx, 'columns': ddf_raw.row_to_raw_columns(row, fields)}
+            for idx, row in found
+        ]
+        return _ok({'schema': key, 'rows': rows, 'truncated': truncated})
 
     if action == 'ddf_get':
         # Возвращает одну конкретную запись (по индексу) целиком — все поля схемы, с пометкой

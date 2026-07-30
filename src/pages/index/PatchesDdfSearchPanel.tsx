@@ -15,6 +15,8 @@ export default function PatchesDdfSearchPanel({
   onOpenRow,
   onOpenCreate,
   onOpenBulk,
+  hasIdField,
+  onOpenRange,
 }: {
   query: string;
   setQuery: (v: string) => void;
@@ -29,6 +31,8 @@ export default function PatchesDdfSearchPanel({
   onOpenRow: (index: number) => void;
   onOpenCreate: () => void;
   onOpenBulk: () => void;
+  hasIdField: boolean;
+  onOpenRange: () => void;
 }) {
   return (
     <div className="p-5">
@@ -46,6 +50,16 @@ export default function PatchesDdfSearchPanel({
             <Icon name="Loader2" size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground animate-spin" />
           )}
         </div>
+        {hasIdField && (
+          <button
+            onClick={onOpenRange}
+            title="Показать таблицей все записи в диапазоне ID"
+            className="h-10 px-3 rounded-lg text-sm font-medium border border-border hover:bg-secondary transition-colors flex items-center gap-1.5 shrink-0"
+          >
+            <Icon name="Table" size={15} />
+            <span className="hidden sm:inline">Диапазон</span>
+          </button>
+        )}
         {canManage && (
           <>
             <button
@@ -67,6 +81,12 @@ export default function PatchesDdfSearchPanel({
           </>
         )}
       </div>
+
+      {hasIdField && (
+        <p className="text-xs text-muted-foreground/80 -mt-2 mb-3">
+          Совет: чтобы найти запись строго по ID (а не по вхождению цифр), введите <code className="px-1 py-0.5 rounded bg-secondary">id=123</code>
+        </p>
+      )}
 
       {searchError && <p className="text-sm text-destructive mb-3">{searchError}</p>}
 

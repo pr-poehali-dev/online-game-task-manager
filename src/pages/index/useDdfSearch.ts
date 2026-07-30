@@ -14,6 +14,7 @@ export function useDdfSearch(server: ServerId, path: string) {
   const [isRawOnlySchema, setIsRawOnlySchema] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [hasIdField, setHasIdField] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -26,6 +27,7 @@ export function useDdfSearch(server: ServerId, path: string) {
       setTotalRows(data.totalRows || 0);
       setIsRawOnlySchema(!!data.isRawOnly);
       setHasMore(!!data.hasMore);
+      setHasIdField(!!data.hasIdField);
     } catch {
       setSearchError('Не удалось выполнить поиск');
     } finally {
@@ -77,6 +79,7 @@ export function useDdfSearch(server: ServerId, path: string) {
     isRawOnlySchema,
     hasMore,
     loadingMore,
+    hasIdField,
     runSearch,
     loadMore,
   };
