@@ -1,8 +1,34 @@
 import { useState, useMemo, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatMskDateTime } from './shared';
 import { fmtSize, collectDroppedFiles } from './patchesUtils';
 import type { TreeNode, DroppedFile } from './patchesUtils';
+import { describeFile, describeFolder } from './patchesFileDescriptions';
+
+// Кнопка-подсказка с описанием назначения файла/папки игрового клиента (см.
+// patchesFileDescriptions.ts — статический справочник, сопоставляется по ИМЕНИ файла/папки, а не
+// по конкретной загруженной записи, поэтому подсказка появляется автоматически даже для файла,
+// который будет залит только в будущем). Если для имени нет описания в справочнике — кнопка не
+// рендерится вовсе (никогда не показываем пустую/бесполезную подсказку).
+function InfoHint({ title, description }: { title: string; description: string }) {
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger asChild>
+        <button
+          onClick={(e) => e.stopPropagation()}
+          className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+        >
+          <Icon name="Info" size={13} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xs">
+        <p className="font-medium mb-0.5">{title}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
+      </TooltipContent>
+    </Tooltip>
+  );
+}
 
 // Проверяет, есть ли внутри папки (в т.ч. вложенных) файл, прикреплённый к задаче
 function containsTask(node: TreeNode, taskId: string): boolean {
@@ -68,6 +94,7 @@ export default function TreeFolder({
   if (node.isFile && node.file) {
     const f = node.file;
     const highlighted = !!highlightTaskId && f.taskIds.includes(highlightTaskId);
+    const fileInfo = describeFile(node.name);
     return (
       <div
         className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors group ${
@@ -77,6 +104,7 @@ export default function TreeFolder({
       >
         <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
         <span className="text-sm truncate flex-1">{node.name}</span>
+        {fileInfo && <InfoHint title={fileInfo.title} description={fileInfo.description} />}
         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{fmtSize(f.size)}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">{formatMskDateTime(f.updatedAt)}</span>
         <a
@@ -142,6 +170,7 @@ export default function TreeFolder({
   const isDragTarget = dragActive === node.path;
   const isCustomRoot = isRoot && !!customRootNames?.has(node.name);
   const canDeleteRoot = isCustomRoot && canManage && entries.length === 0 && !!onDeleteRoot;
+  const folderInfo = describeFolder(node.name);
 
   return (
     <div className="group/root">
@@ -166,10 +195,11 @@ export default function TreeFolder({
           <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
           <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
           <span className="text-sm font-medium truncate">{node.name}</span>
-          {canManage && (
-            <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
-          )}
         </button>
+        {folderInfo && <InfoHint title={folderInfo.title} description={folderInfo.description} />}
+        {canManage && (
+          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
+        )}
         {canDeleteRoot && (confirmRoot ? (
           <div className="shrink-0 flex items-center gap-1 pr-1">
             <button
