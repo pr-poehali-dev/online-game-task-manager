@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react';
 import KnowledgeBase from '@/components/KnowledgeBase';
 import type { KbCategoryId, KbArticleBrief } from '@/components/KnowledgeBase';
 import Board from './Board';
@@ -129,104 +130,141 @@ export default function IndexMain({
   reloadTasksWithPatchFiles: () => void;
   handleSetLauncherUploaded: (id: string, uploaded: boolean) => void;
 }) {
+  // ВАЖНО: разделы раньше монтировались/размонтировались условно ({view === 'x' && <X/>}) — при
+  // каждом переключении вкладки компонент создавался заново с нуля, что заново запускало ВСЕ его
+  // useEffect с загрузкой данных (см. Patches.tsx/Patchnotes.tsx/Ideas.tsx/KnowledgeBase.tsx —
+  // у каждого свой fetch при монтировании) — отсюда спиннер на 1-2 секунды при КАЖДОМ переходе
+  // между разделами, даже повторном.
+  //
+  // Теперь каждый раздел монтируется ОДИН РАЗ — при первом посещении за сессию — и дальше
+  // остаётся смонтированным навсегда (см. visited, пополняется по мере переключения view).
+  // Переключение вкладки лишь скрывает/показывает нужный div через CSS (display: none) — сам
+  // компонент и его загруженные данные никуда не деваются, повторные визиты мгновенные, без
+  // спиннера. При этом НЕ грузим сразу все 8 разделов при заходе в приложение — только те, что
+  // пользователь реально открыл (board — раздел по умолчанию, поэтому смонтирован сразу).
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([view]));
+  const seenView = useRef(view);
+  if (seenView.current !== view) {
+    seenView.current = view;
+    if (!visited.has(view)) setVisited((prev) => new Set(prev).add(view));
+  }
+
   return (
     <>
       <div className="flex-1 overflow-auto p-3 sm:p-6 scrollbar-thin">
-        {view === 'board' && (
-          <Board
-            tasks={filteredTasks}
-            team={team}
-            loading={tasksLoading}
-            onCardClick={(t) => handleOpenTaskById(t.id)}
-            onAddClick={setCreateFor}
-            onArchive={handleArchiveTask}
-            onMoveTask={handleMoveTask}
-            isAdmin={isAdmin}
-            can={can}
-            currentUserId={currentUserId}
-            tasksWithPatchFiles={tasksWithPatchFiles}
-          />
+        {visited.has('board') && (
+          <div className={view === 'board' ? '' : 'hidden'}>
+            <Board
+              tasks={filteredTasks}
+              team={team}
+              loading={tasksLoading}
+              onCardClick={(t) => handleOpenTaskById(t.id)}
+              onAddClick={setCreateFor}
+              onArchive={handleArchiveTask}
+              onMoveTask={handleMoveTask}
+              isAdmin={isAdmin}
+              can={can}
+              currentUserId={currentUserId}
+              tasksWithPatchFiles={tasksWithPatchFiles}
+            />
+          </div>
         )}
-        {view === 'sprints' && (
-          <Sprints
-            sprints={sprints}
-            tasks={activeTasks}
-            onUpdate={handleUpdateSprint}
-            onDelete={handleDeleteSprint}
-            onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
-            isAdmin={isAdmin}
-            can={can}
-          />
+        {visited.has('sprints') && (
+          <div className={view === 'sprints' ? '' : 'hidden'}>
+            <Sprints
+              sprints={sprints}
+              tasks={activeTasks}
+              onUpdate={handleUpdateSprint}
+              onDelete={handleDeleteSprint}
+              onFilterBoard={(sprintId) => { setSprintFilter(sprintId); setView('board'); }}
+              isAdmin={isAdmin}
+              can={can}
+            />
+          </div>
         )}
-        {view === 'archive' && (
-          <Archive
-            tasks={filteredArchive}
-            total={archivedTasks.length}
-            team={team}
-            outcomeFilter={outcomeFilter}
-            onOutcomeFilter={setOutcomeFilter}
-            onCardClick={(t) => handleOpenTaskById(t.id)}
-            onRestore={handleUnarchiveTask}
-            onDelete={handleDeleteArchivedTask}
-            isAdmin={isAdmin}
-            archivedSprints={archivedSprints}
-            onRestoreSprint={handleRestoreSprint}
-            onDeleteSprint={handleDeleteSprintPermanently}
-          />
+        {visited.has('archive') && (
+          <div className={view === 'archive' ? '' : 'hidden'}>
+            <Archive
+              tasks={filteredArchive}
+              total={archivedTasks.length}
+              team={team}
+              outcomeFilter={outcomeFilter}
+              onOutcomeFilter={setOutcomeFilter}
+              onCardClick={(t) => handleOpenTaskById(t.id)}
+              onRestore={handleUnarchiveTask}
+              onDelete={handleDeleteArchivedTask}
+              isAdmin={isAdmin}
+              archivedSprints={archivedSprints}
+              onRestoreSprint={handleRestoreSprint}
+              onDeleteSprint={handleDeleteSprintPermanently}
+            />
+          </div>
         )}
-        {view === 'knowledge' && (
-          <KnowledgeBase
-            category={category as KbCategoryId | 'all'}
-            initialArticleId={openArticleId}
-            can={can}
-            isAdmin={isAdmin}
-            onOpenArticleById={handleOpenArticle}
-            onBack={closeOverlay}
-            authors={team.map((m) => ({
-              id: m.id,
-              name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
-              photo_url: m.photo_url,
-            }))}
-          />
+        {visited.has('knowledge') && (
+          <div className={view === 'knowledge' ? '' : 'hidden'}>
+            <KnowledgeBase
+              category={category as KbCategoryId | 'all'}
+              initialArticleId={openArticleId}
+              can={can}
+              isAdmin={isAdmin}
+              onOpenArticleById={handleOpenArticle}
+              onBack={closeOverlay}
+              authors={team.map((m) => ({
+                id: m.id,
+                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
+                photo_url: m.photo_url,
+              }))}
+            />
+          </div>
         )}
-        {view === 'restart' && (
-          <Restart
-            tasks={tasks}
-            team={team}
-            loading={tasksLoading}
-            onCardClick={(t) => handleOpenTaskById(t.id)}
-            onAddClick={() => setCreateFor('restart')}
-            onToRestart={handleToRestart}
-            onFromRestart={handleFromRestart}
-            onToggleDone={handleToggleRestartDone}
-            onArchive={handleArchiveTask}
-            isAdmin={isAdmin}
-            can={can}
-            currentUserId={currentUserId}
-            tasksWithPatchFiles={tasksWithPatchFiles}
-          />
+        {visited.has('restart') && (
+          <div className={view === 'restart' ? '' : 'hidden'}>
+            <Restart
+              tasks={tasks}
+              team={team}
+              loading={tasksLoading}
+              onCardClick={(t) => handleOpenTaskById(t.id)}
+              onAddClick={() => setCreateFor('restart')}
+              onToRestart={handleToRestart}
+              onFromRestart={handleFromRestart}
+              onToggleDone={handleToggleRestartDone}
+              onArchive={handleArchiveTask}
+              isAdmin={isAdmin}
+              can={can}
+              currentUserId={currentUserId}
+              tasksWithPatchFiles={tasksWithPatchFiles}
+            />
+          </div>
         )}
-        {view === 'ideas' && (
-          <Ideas
-            initialTopicId={openTopicId}
-            onOpenTopicById={handleOpenIdeaById}
-            onBack={closeOverlay}
-            authors={team.map((m) => ({
-              id: m.id,
-              name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
-              photo_url: m.photo_url,
-            }))}
-          />
+        {visited.has('ideas') && (
+          <div className={view === 'ideas' ? '' : 'hidden'}>
+            <Ideas
+              initialTopicId={openTopicId}
+              onOpenTopicById={handleOpenIdeaById}
+              onBack={closeOverlay}
+              authors={team.map((m) => ({
+                id: m.id,
+                name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
+                photo_url: m.photo_url,
+              }))}
+            />
+          </div>
         )}
-        {view === 'patchnotes' && <Patchnotes />}
-        {view === 'patches' && (
-          <Patches
-            canManage={isAdmin || can('task_edit_own')}
-            tasks={activeTasks.map((t) => ({ id: t.id, title: t.title, server: t.server }))}
-            initialTaskId={patchesTaskId}
-            initialServerId={patchesServerId}
-            onFileTaskLinkChange={reloadTasksWithPatchFiles}
-          />
+        {visited.has('patchnotes') && (
+          <div className={view === 'patchnotes' ? '' : 'hidden'}>
+            <Patchnotes />
+          </div>
+        )}
+        {visited.has('patches') && (
+          <div className={view === 'patches' ? '' : 'hidden'}>
+            <Patches
+              canManage={isAdmin || can('task_edit_own')}
+              tasks={activeTasks.map((t) => ({ id: t.id, title: t.title, server: t.server }))}
+              initialTaskId={patchesTaskId}
+              initialServerId={patchesServerId}
+              onFileTaskLinkChange={reloadTasksWithPatchFiles}
+            />
+          </div>
         )}
       </div>
 
