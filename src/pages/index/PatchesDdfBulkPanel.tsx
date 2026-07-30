@@ -4,7 +4,7 @@ import type { RawColumn } from './patchesDdfShared';
 export default function PatchesDdfBulkPanel({
   loadingBulk,
   isRawOnly,
-  bulkIdField,
+  bulkIdFields,
   bulkEditableFields,
   bulkTemplateLine,
   bulkRawColumns,
@@ -17,7 +17,7 @@ export default function PatchesDdfBulkPanel({
 }: {
   loadingBulk: boolean;
   isRawOnly: boolean;
-  bulkIdField: string | undefined;
+  bulkIdFields: string[];
   bulkEditableFields: string[];
   bulkTemplateLine: string;
   bulkRawColumns: RawColumn[];
@@ -102,7 +102,7 @@ export default function PatchesDdfBulkPanel({
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             По одной записи на строку. Вставьте значения через табуляцию (как при копировании из Excel/Google Таблиц)
-            или через запятую — сначала <strong>{bulkIdField}</strong>, затем: {bulkEditableFields.join(', ') || '—'}.
+            или через запятую — сначала <strong>{bulkIdFields.join(', ')}</strong>, затем: {bulkEditableFields.join(', ') || '—'}.
           </p>
           <p className="text-xs text-muted-foreground/80">
             Пример: <code className="px-1 py-0.5 rounded bg-secondary">90001, Тестовый предмет, Описание предмета</code>
