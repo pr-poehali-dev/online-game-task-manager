@@ -112,6 +112,24 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST patch_desc_list without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "patch_desc_list"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST patch_desc_save without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "patch_desc_save", "nameKey": "itemname", "isFolder": false, "description": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

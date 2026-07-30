@@ -145,7 +145,11 @@ const FOLDER_DESCRIPTIONS: Record<string, string> = {
   textures: 'Общие текстуры игрового клиента',
 };
 
-function normalizeKey(name: string): string {
+// Экспортируется (не только используется внутри) — тот же нормализованный ключ используется как
+// nameKey при сохранении/поиске ПОЛЬЗОВАТЕЛЬСКОГО описания на backend (см. useDdfFileDescriptions
+// ниже и action patch_desc_save/patch_desc_list в backend/patches/index.py) — важно, чтобы
+// нормализация имени файла была одинаковой на фронте и при сопоставлении с сохранённым описанием.
+export function normalizeKey(name: string): string {
   // Отбрасываем расширение (.dat/.int/.ini/.dll/.utx/.gly и т.п.)
   let key = name.replace(/\.[a-zA-Z0-9]+$/, '');
   // Отбрасываем языковой/вариантный суффикс: -e, -ru, -eng, _classic и т.п. (1-3 буквы после - или _)
@@ -153,15 +157,19 @@ function normalizeKey(name: string): string {
   return key.toLowerCase();
 }
 
-export function describeFile(fileName: string): FileDescription | null {
+// custom — пользовательские описания, загруженные с backend (см. useDdfFileDescriptions), имеют
+// приоритет над встроенным статическим справочником (DAT_FILES/OTHER_FILES/FOLDER_DESCRIPTIONS) —
+// позволяет владельцу проекта переопределить/дополнить любое описание без правки кода.
+export function describeFile(fileName: string, custom?: Record<string, string>): FileDescription | null {
   const key = normalizeKey(fileName);
-  const desc = DAT_FILES[key] ?? OTHER_FILES[key];
+  const desc = custom?.[key] ?? DAT_FILES[key] ?? OTHER_FILES[key];
   if (!desc) return null;
   return { title: fileName, description: desc };
 }
 
-export function describeFolder(folderName: string): FileDescription | null {
-  const desc = FOLDER_DESCRIPTIONS[folderName.toLowerCase()];
+export function describeFolder(folderName: string, custom?: Record<string, string>): FileDescription | null {
+  const key = folderName.toLowerCase();
+  const desc = custom?.[key] ?? FOLDER_DESCRIPTIONS[key];
   if (!desc) return null;
   return { title: folderName, description: desc };
 }

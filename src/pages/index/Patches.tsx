@@ -8,6 +8,7 @@ import { postJson, uploadFileInChunks } from './patchesApi';
 import type { UploadQueueItem } from './patchesApi';
 import TreeFolder from './PatchesTreeFolder';
 import PatchesDdfEditor from './PatchesDdfEditor';
+import { useDdfFileDescriptions } from './useDdfFileDescriptions';
 
 export default function Patches({
   canManage,
@@ -45,6 +46,10 @@ export default function Patches({
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
   const uploading = uploadQueue !== null;
+  const {
+    customFiles, customFolders, isOwner, savingKey: savingDescKey,
+    saveError: descError, saveDescription, deleteDescription,
+  } = useDdfFileDescriptions();
 
   const load = useCallback(async (server: ServerId) => {
     setLoading(true);
@@ -432,11 +437,18 @@ export default function Patches({
                   onDeleteRoot={handleDeleteRoot}
                   deletingRoot={deletingRoot}
                   onEditDdf={setEditingDdfPath}
+                  isOwner={isOwner}
+                  customFileDescriptions={customFiles}
+                  customFolderDescriptions={customFolders}
+                  savingDescKey={savingDescKey}
+                  onSaveDescription={saveDescription}
+                  onDeleteDescription={deleteDescription}
                 />
               </div>
             ))}
           </div>
         )}
+        {descError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{descError}</p>}
       </div>
 
       {editingDdfPath && (

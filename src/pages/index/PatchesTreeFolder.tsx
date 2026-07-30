@@ -4,27 +4,105 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { formatMskDateTime } from './shared';
 import { fmtSize, collectDroppedFiles } from './patchesUtils';
 import type { TreeNode, DroppedFile } from './patchesUtils';
-import { describeFile, describeFolder } from './patchesFileDescriptions';
+import { describeFile, describeFolder, normalizeKey } from './patchesFileDescriptions';
 
 // Кнопка-подсказка с описанием назначения файла/папки игрового клиента (см.
-// patchesFileDescriptions.ts — статический справочник, сопоставляется по ИМЕНИ файла/папки, а не
-// по конкретной загруженной записи, поэтому подсказка появляется автоматически даже для файла,
-// который будет залит только в будущем). Если для имени нет описания в справочнике — кнопка не
-// рендерится вовсе (никогда не показываем пустую/бесполезную подсказку).
-function InfoHint({ title, description }: { title: string; description: string }) {
+// patchesFileDescriptions.ts — встроенный статический справочник + пользовательские описания с
+// backend, см. useDdfFileDescriptions — сопоставляется по ИМЕНИ файла/папки, а не по конкретной
+// загруженной записи, поэтому подсказка появляется автоматически даже для файла, который будет
+// залит только в будущем). Если для имени нет ни встроенного, ни пользовательского описания И
+// пользователь не владелец (isOwner=false, не может создать новое) — кнопка не рендерится вовсе.
+//
+// isOwner (см. OWNER_USER_ID в backend/patches/index.py) даёт доступ к режиму редактирования
+// прямо во всплывающей подсказке — textarea + Сохранить/Удалить. Реальная защита — на backend
+// (patch_desc_save/patch_desc_delete отклоняют запрос не от владельца с 403), это лишь UI.
+function InfoHint({
+  title,
+  description,
+  isOwner,
+  saving,
+  onSave,
+  onDelete,
+  hasCustom,
+}: {
+  title: string;
+  description: string;
+  isOwner: boolean;
+  saving: boolean;
+  onSave: (text: string) => void;
+  onDelete: () => void;
+  hasCustom: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(description);
+
+  useEffect(() => { setDraft(description); }, [description]);
+
   return (
-    <Tooltip delayDuration={150}>
+    <Tooltip open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(false); }} delayDuration={150}>
       <TooltipTrigger asChild>
         <button
           onClick={(e) => e.stopPropagation()}
-          className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+          className={`h-6 w-6 shrink-0 rounded-md flex items-center justify-center transition-colors ${
+            description ? 'text-muted-foreground hover:text-primary hover:bg-primary/10' : 'text-muted-foreground/40 hover:text-primary hover:bg-primary/10'
+          }`}
         >
           <Icon name="Info" size={13} />
         </button>
       </TooltipTrigger>
-      <TooltipContent side="top" align="start" className="max-w-xs">
-        <p className="font-medium mb-0.5">{title}</p>
-        <p className="text-xs text-muted-foreground">{description}</p>
+      <TooltipContent side="top" align="start" className="max-w-xs" onClick={(e) => e.stopPropagation()}>
+        <p className="font-medium mb-1">{title}</p>
+        {editing ? (
+          <div className="space-y-1.5" onClick={(e) => e.stopPropagation()}>
+            <textarea
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={3}
+              className="w-56 px-2 py-1.5 rounded-md border border-border bg-background text-xs resize-y"
+            />
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => { onSave(draft); setEditing(false); }}
+                disabled={saving || !draft.trim()}
+                className="h-6 px-2 rounded-md bg-primary text-primary-foreground text-[11px] font-medium hover:opacity-90 transition-opacity disabled:opacity-40"
+              >
+                {saving ? 'Сохраняю...' : 'Сохранить'}
+              </button>
+              <button
+                onClick={() => { setDraft(description); setEditing(false); }}
+                className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {description && <p className="text-xs text-muted-foreground mb-1.5">{description}</p>}
+            {isOwner && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setEditing(true)}
+                  className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1"
+                >
+                  <Icon name="Pencil" size={11} />
+                  {description ? 'Изменить' : 'Добавить описание'}
+                </button>
+                {hasCustom && (
+                  <button
+                    onClick={onDelete}
+                    disabled={saving}
+                    className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                  >
+                    Сбросить
+                  </button>
+                )}
+              </div>
+            )}
+          </>
+        )}
       </TooltipContent>
     </Tooltip>
   );
@@ -54,6 +132,12 @@ export default function TreeFolder({
   onDeleteRoot,
   deletingRoot,
   onEditDdf,
+  isOwner = false,
+  customFileDescriptions = {},
+  customFolderDescriptions = {},
+  savingDescKey = null,
+  onSaveDescription,
+  onDeleteDescription,
 }: {
   node: TreeNode;
   depth: number;
@@ -69,6 +153,12 @@ export default function TreeFolder({
   onDeleteRoot?: (name: string) => void;
   deletingRoot?: string | null;
   onEditDdf?: (path: string) => void;
+  isOwner?: boolean;
+  customFileDescriptions?: Record<string, string>;
+  customFolderDescriptions?: Record<string, string>;
+  savingDescKey?: string | null;
+  onSaveDescription: (name: string, isFolder: boolean, text: string) => void;
+  onDeleteDescription: (name: string, isFolder: boolean) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
@@ -94,7 +184,8 @@ export default function TreeFolder({
   if (node.isFile && node.file) {
     const f = node.file;
     const highlighted = !!highlightTaskId && f.taskIds.includes(highlightTaskId);
-    const fileInfo = describeFile(node.name);
+    const fileKey = normalizeKey(node.name);
+    const fileInfo = describeFile(node.name, customFileDescriptions);
     return (
       <div
         className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors group ${
@@ -104,7 +195,17 @@ export default function TreeFolder({
       >
         <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
         <span className="text-sm truncate flex-1">{node.name}</span>
-        {fileInfo && <InfoHint title={fileInfo.title} description={fileInfo.description} />}
+        {(fileInfo || isOwner) && (
+          <InfoHint
+            title={node.name}
+            description={fileInfo?.description || ''}
+            isOwner={isOwner}
+            saving={savingDescKey === fileKey}
+            hasCustom={fileKey in customFileDescriptions}
+            onSave={(text) => onSaveDescription(node.name, false, text)}
+            onDelete={() => onDeleteDescription(node.name, false)}
+          />
+        )}
         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{fmtSize(f.size)}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">{formatMskDateTime(f.updatedAt)}</span>
         <a
@@ -170,7 +271,8 @@ export default function TreeFolder({
   const isDragTarget = dragActive === node.path;
   const isCustomRoot = isRoot && !!customRootNames?.has(node.name);
   const canDeleteRoot = isCustomRoot && canManage && entries.length === 0 && !!onDeleteRoot;
-  const folderInfo = describeFolder(node.name);
+  const folderKey = node.name.toLowerCase();
+  const folderInfo = describeFolder(node.name, customFolderDescriptions);
 
   return (
     <div className="group/root">
@@ -196,7 +298,17 @@ export default function TreeFolder({
           <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
           <span className="text-sm font-medium truncate">{node.name}</span>
         </button>
-        {folderInfo && <InfoHint title={folderInfo.title} description={folderInfo.description} />}
+        {(folderInfo || (isOwner && isRoot)) && (
+          <InfoHint
+            title={node.name}
+            description={folderInfo?.description || ''}
+            isOwner={isOwner}
+            saving={savingDescKey === folderKey}
+            hasCustom={folderKey in customFolderDescriptions}
+            onSave={(text) => onSaveDescription(node.name, true, text)}
+            onDelete={() => onDeleteDescription(node.name, true)}
+          />
+        )}
         {canManage && (
           <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
         )}
@@ -250,6 +362,12 @@ export default function TreeFolder({
               onDeleteRoot={onDeleteRoot}
               deletingRoot={deletingRoot}
               onEditDdf={onEditDdf}
+              isOwner={isOwner}
+              customFileDescriptions={customFileDescriptions}
+              customFolderDescriptions={customFolderDescriptions}
+              savingDescKey={savingDescKey}
+              onSaveDescription={onSaveDescription}
+              onDeleteDescription={onDeleteDescription}
             />
           ))}
         </div>

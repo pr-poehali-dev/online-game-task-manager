@@ -136,6 +136,16 @@ FIXED_ROOTS = [
     'System', 'System_eng', 'systextures', 'textures',
 ]
 
+# id пользователя-владельца проекта (руководителя) — единственный, кому разрешено редактировать
+# пользовательские описания файлов/папок клиента в дереве патчей (см. actions
+# patch_desc_save/patch_desc_delete ниже). Это первый зарегистрированный администратор проекта
+# (new_era_l2, создан в db_migrations/V0002__add_admin_new_era_l2.sql) — единственный пользователь,
+# у которого сейчас реально включены все права, включая эксклюзивные launcher_notify/
+# private_notes_view_others (проверено по данным в БД). Обычная роль admin/permissions для этого
+# специально НЕ используется — по требованию пользователя доступ должен быть именно у него одного,
+# а не у всех администраторов проекта.
+OWNER_USER_ID = 1
+
 
 def _cors_headers():
     return {
@@ -489,7 +499,11 @@ def handler(event: dict, context) -> dict:
     целиком одной таб-разделённой строкой, как в декомпилированном TSV-экспорте l2disasm.
     Просмотр и скачивание доступны всем авторизованным участникам, загрузка/удаление/привязка к
     задаче/управление папками/сохранение правок и добавление новых записей в DDF-файлах —
-    администраторам и участникам с правом полного редактирования задач.'''
+    администраторам и участникам с правом полного редактирования задач.
+    Действия patch_desc_list (просмотр) / patch_desc_save / patch_desc_delete (редактирование)
+    управляют пользовательскими описаниями файлов/папок клиента (подсказки в дереве, переопределяют
+    встроенный статический справочник на фронте). Просмотр доступен всем авторизованным, а
+    РЕДАКТИРОВАНИЕ — эксклюзивно владельцу проекта (OWNER_USER_ID), не всем администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -544,6 +558,53 @@ def handler(event: dict, context) -> dict:
         task_ids = sorted({str(tid) for (row,) in cur.fetchall() for tid in (row or [])})
         cur.close(); conn.close()
         return _ok({'taskIds': task_ids})
+
+    if action == 'patch_desc_list':
+        # Возвращает ВСЕ пользовательские описания файлов/папок клиента (переопределяют встроенный
+        # статический справочник на фронте — см. src/pages/index/patchesFileDescriptions.ts).
+        # Доступно любому авторизованному участнику (просмотр подсказок — не привилегированное
+        # действие, привилегия только на РЕДАКТИРОВАНИЕ, см. patch_desc_save/patch_desc_delete).
+        cur.execute(
+            f"SELECT name_key, is_folder, description FROM {schema}.patch_file_descriptions ORDER BY name_key"
+        )
+        items = [{'nameKey': r[0], 'isFolder': r[1], 'description': r[2]} for r in cur.fetchall()]
+        cur.close(); conn.close()
+        # isOwner — единый источник истины для фронта (показывать ли UI редактирования), чтобы
+        # OWNER_USER_ID не пришлось дублировать константой на фронте и синхронизировать вручную.
+        return _ok({'items': items, 'isOwner': me['id'] == OWNER_USER_ID})
+
+    if action in ('patch_desc_save', 'patch_desc_delete'):
+        # Редактирование пользовательских описаний файлов/папок клиента — ЭКСКЛЮЗИВНО для
+        # владельца проекта (OWNER_USER_ID, см. константу выше), а НЕ для всех администраторов —
+        # по явному требованию пользователя ("привилегия должна быть только у меня —
+        # руководителя"). Обычная проверка can_manage/role=='admin' тут намеренно НЕ используется.
+        if me['id'] != OWNER_USER_ID:
+            cur.close(); conn.close()
+            return _forbidden()
+        name_key = (body.get('nameKey') or '').strip().lower()
+        is_folder = bool(body.get('isFolder'))
+        if not name_key:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        if action == 'patch_desc_save':
+            description = (body.get('description') or '').strip()
+            if not description:
+                cur.close(); conn.close()
+                return _bad('bad_request')
+            cur.execute(
+                f"INSERT INTO {schema}.patch_file_descriptions (name_key, is_folder, description, updated_by, updated_at) "
+                f"VALUES (%s, %s, %s, %s, now()) "
+                f"ON CONFLICT (name_key, is_folder) DO UPDATE SET description = EXCLUDED.description, "
+                f"updated_by = EXCLUDED.updated_by, updated_at = now()",
+                (name_key, is_folder, description, me['id'])
+            )
+        else:
+            cur.execute(
+                f"DELETE FROM {schema}.patch_file_descriptions WHERE name_key = %s AND is_folder = %s",
+                (name_key, is_folder)
+            )
+        cur.close(); conn.close()
+        return _ok({'ok': True})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
                   'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete',
