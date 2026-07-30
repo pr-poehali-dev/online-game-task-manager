@@ -125,27 +125,33 @@ _CYRILLIC_RANGE = range(0x0400, 0x0500)
 
 def looks_like_cp1251_mojibake(text: str) -> bool:
     '''True, если text похож на кириллицу, "испорченную" двойной интерпретацией кодировки
-    (физически cp1251, прочитана как latin-1) — то есть: минимум 2 буквенных символа, минимум
-    половина из них лежит в диапазоне 0x80-0xFF (типичном для mojibake из cp1251), и после
-    перекодировки latin-1-байтов обратно через cp1251 минимум 80% буквенных символов оказываются
-    кириллицей. Порог 80%, а не 100% — чтобы не спотыкаться на редких примесях типа "-"/цифр/
-    заимствованных латинских слов внутри в основном русской строки.'''
+    (физически cp1251, прочитана как latin-1) — то есть: минимум 2 буквенных символа лежат в
+    диапазоне 0x80-0xFF (типичном для mojibake из cp1251), эти символы составляют не менее 30%
+    ВСЕХ буквенных символов строки, и после перекодировки latin-1-байтов обратно через cp1251
+    минимум 80% ИМЕННО ЭТИХ high-byte символов (не всех буквенных символов строки!) оказываются
+    кириллицей. Порог считается только по high-byte символам (а не по всем alpha-символам
+    строки), т.к. в строке нередко перемешан испорченный кириллический текст с легитимной
+    латиницей (например английские игровые команды вида "Жест 'В атаку!'. (/socialcharge)") —
+    исходная версия эвристики сравнивала долю кириллицы среди ВСЕХ букв строки и из-за этого не
+    срабатывала на таких смешанных строках (см. RESEARCH_NOTES.md — найдено на реальном
+    actionname-e.dat, поле cmd/name с примесью английских команд). Порог 80% (не 100%) — чтобы
+    не спотыкаться на единичных совпадениях символов, которые случайно декодировались бы не в
+    кириллицу.'''
     alpha_chars = [c for c in text if c.isalpha()]
     if len(alpha_chars) < 2:
         return False
-    high_byte_alpha = [c for c in alpha_chars if ord(c) >= 0x80]
-    if len(high_byte_alpha) / len(alpha_chars) < 0.5:
+    high_byte_positions = [i for i, c in enumerate(text) if c.isalpha() and ord(c) >= 0x80]
+    if len(high_byte_positions) < 2:
+        return False
+    if len(high_byte_positions) / len(alpha_chars) < 0.3:
         return False
     try:
         raw = text.encode('latin-1')
         decoded = raw.decode('cp1251')
     except (UnicodeEncodeError, UnicodeDecodeError):
         return False
-    decoded_alpha = [c for c in decoded if c.isalpha()]
-    if not decoded_alpha:
-        return False
-    cyr_count = sum(1 for c in decoded_alpha if ord(c) in _CYRILLIC_RANGE)
-    return (cyr_count / len(decoded_alpha)) >= 0.8
+    cyr_count = sum(1 for i in high_byte_positions if ord(decoded[i]) in _CYRILLIC_RANGE)
+    return (cyr_count / len(high_byte_positions)) >= 0.8
 
 
 def fix_cp1251_mojibake(text: str) -> str:
