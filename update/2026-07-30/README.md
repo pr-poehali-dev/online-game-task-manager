@@ -146,7 +146,10 @@ src/pages/index/PatchesTreeFolder.tsx          (входит в список р�
 ### Миграция БД
 ```
 db_migrations/V0059__create_patch_file_descriptions.sql
+db_migrations/V0060__seed_faq_ddf_editor_and_file_descriptions.sql
 ```
+(вторая миграция добавляет 2 новых вопроса в FAQ личного кабинета — про
+редактор `.dat`-файлов из раздела 1 и про подсказки с описанием файлов)
 
 ### Проверка
 - В дереве «Патчей» рядом с любым файлом должна быть маленькая иконка ⓘ —
@@ -269,9 +272,11 @@ cp update/2026-07-30/src/pages/Admin.tsx src/pages/Admin.tsx
 cp update/2026-07-30/src/pages/admin/UserList.tsx src/pages/admin/UserList.tsx
 cp update/2026-07-30/src/pages/admin/adminShared.ts src/pages/admin/adminShared.ts
 
-# Миграция БД (см. раздел 6 про схему)
+# Миграции БД (см. раздел 6 про схему)
 psql "$DATABASE_URL" -c 'SET search_path TO "ВАША_СХЕМА", public;' \
   -f update/2026-07-30/db_migrations/V0059__create_patch_file_descriptions.sql
+psql "$DATABASE_URL" -c 'SET search_path TO "ВАША_СХЕМА", public;' \
+  -f update/2026-07-30/db_migrations/V0060__seed_faq_ddf_editor_and_file_descriptions.sql
 
 # Python-зависимости backend (см. раздел 6 про gmpy2/libgmp-dev)
 cd /var/www/era
