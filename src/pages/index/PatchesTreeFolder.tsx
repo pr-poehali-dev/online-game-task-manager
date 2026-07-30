@@ -193,8 +193,6 @@ export default function TreeFolder({
         }`}
         style={{ paddingLeft: `${depth * 18 + 24}px` }}
       >
-        <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
-        <span className="text-sm truncate flex-1">{node.name}</span>
         {(fileInfo || isOwner) && (
           <InfoHint
             title={node.name}
@@ -206,6 +204,8 @@ export default function TreeFolder({
             onDelete={() => onDeleteDescription(node.name, false)}
           />
         )}
+        <Icon name="File" size={14} className="text-muted-foreground shrink-0" />
+        <span className="text-sm truncate flex-1">{node.name}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{fmtSize(f.size)}</span>
         <span className="text-xs text-muted-foreground shrink-0 hidden md:inline">{formatMskDateTime(f.updatedAt)}</span>
         <a
@@ -288,16 +288,8 @@ export default function TreeFolder({
         className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors w-full ${
           isDragTarget ? 'bg-primary/15 ring-1 ring-primary/50' : 'hover:bg-secondary/40'
         }`}
+        style={{ paddingLeft: `${depth * 18 + 4}px` }}
       >
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
-          style={{ paddingLeft: `${depth * 18 + 4}px` }}
-        >
-          <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
-          <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
-          <span className="text-sm font-medium truncate">{node.name}</span>
-        </button>
         {(folderInfo || (isOwner && isRoot)) && (
           <InfoHint
             title={node.name}
@@ -309,6 +301,14 @@ export default function TreeFolder({
             onDelete={() => onDeleteDescription(node.name, true)}
           />
         )}
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+        >
+          <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
+          <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+          <span className="text-sm font-medium truncate">{node.name}</span>
+        </button>
         {canManage && (
           <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
         )}
