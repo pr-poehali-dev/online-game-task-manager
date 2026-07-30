@@ -23,8 +23,11 @@ tools, автор M.Soltys aka DStuff). Поддерживаются типы п
 
 MTX и MAT (используются в файлах вроде armorgrp.dat/etcitemgrp.dat/recipe-c.dat) ПОДДЕРЖИВАЮТСЯ
 (см. ниже) — бинарный формат восстановлен экспериментально на реальных данных и подтверждён
-сверкой с официальным TXT-экспортом l2disasm (побайтовое совпадение). MTX2/MTX3/MAT2 остаются
-НЕ поддержаны — ни одна из известных схем C4/HF их не использует, встретить не удалось.
+сверкой с официальным TXT-экспортом l2disasm (побайтовое совпадение). MTX3 и MAT2 (используются
+в HF-версии armorgrp.dat/weapongrp.dat и recipe-c.dat соответственно — расширенные варианты MTX/
+MAT с дополнительными полями) ТОЖЕ поддержаны (см. ниже) — раскрыты и подтверждены аналогично
+(побайтовая сверка расшифрованного .dat с официальным TXT-экспортом l2disasm HF-клиента). MTX2
+остаётся НЕ поддержан — ни одна из известных схем C4/HF его не использует, встретить не удалось.
 
 Формат MTX (подтверждено на etcitemgrp.dat/armorgrp.dat, сверено с l2disasm TXT-экспортом):
   ДВЕ последовательные подтаблицы UNICODE-строк:
@@ -35,9 +38,24 @@ MTX и MAT (используются в файлах вроде armorgrp.dat/etc
 Формат MAT (подтверждено на recipe-c.dat "materials" — список ингредиентов рецепта):
   UINT count, count x (UINT id, UINT amount) — пары "id предмета + количество".
 
-Оба типа не используют схемное поле `array` (в DDF всегда пишутся без `[...]`, например
-"MTX m_HumnFigh;") — счётчики целиком внутри самого значения поля, а не отдельным соседним
-полем схемы, поэтому обрабатываются отдельной веткой в _read_field/_write_field.
+Формат MTX3 (подтверждено на HF armorgrp.dat, 3751 записей — 0 расхождений с официальным TXT-
+экспортом l2disasm при полном постраничном разборе): расширенная версия MTX — mesh-подтаблица
+хранит ТРОЙКИ значений вместо простых строк (UNICODE-строка + 2 однобайтовых числа), а tex-
+подтаблица заканчивается ОДНИМ дополнительным UNICODE-полем:
+  UINT count1, count1 x (UNICODE, UCHAR, UCHAR) ("mesh", каждый элемент — mU[i]/mB[i][1]/mB[i][2]
+  в TXT-экспорте), UINT count2, count2 x UNICODE ("tex", как в обычном MTX), UNICODE (одно
+  дополнительное поле в самом конце, "tE" в TXT-экспорте).
+
+Формат MAT2 (подтверждено на HF recipe-c.dat, 1001 запись — 0 расхождений с официальным TXT-
+экспортом l2disasm): расширенная версия MAT — та же структура пар (id, amount), но с
+дополнительным UINT-полем СРАЗУ после счётчика (перед списком пар, "materials_extra" в TXT-
+экспорте, во всех проверенных записях наблюдалось значение 0 — назначение поля неизвестно, но
+формат хранения и байтовый размер подтверждены):
+  UINT count, UINT extra, count x (UINT id, UINT amount).
+
+Все четыре типа (MTX/MAT/MTX3/MAT2) не используют схемное поле `array` (в DDF всегда пишутся без
+`[...]`, например "MTX m_HumnFigh;") — счётчики целиком внутри самого значения поля, а не
+отдельным соседним полем схемы, поэтому обрабатываются отдельной веткой в _read_field/_write_field.
 '''
 import struct
 import re
@@ -189,24 +207,46 @@ def _strip_comments(text: str) -> str:
 _ENBBY_RE = re.compile(
     r'^ENBBY\s*=\s*\[\s*\(\s*(' + _IDENT_CHARS + r'+)\s*,\s*(-?\d+)\s*\)\s*\]$'
 )
+# Расширенный синтаксис ENBBY с "порогом" через двоеточие (подтверждено на mantleexception.dat,
+# HF-клиент, см. docstring parse_ddf ниже): "ENBBY = [(cond_field:threshold,N)];", часто НЕСКОЛЬКО
+# таких строк подряд для ОДНОГО поля с разными N. threshold игнорируется (назначение не раскрыто
+# — вероятно артефакт генератора DDF, никак не влияет на подтверждённое byte-perfect поведение).
+_ENBBY_THRESHOLD_RE = re.compile(
+    r'^ENBBY\s*=\s*\[\s*\(\s*(' + _IDENT_CHARS + r'+)\s*:\s*-?\d+\s*,\s*(\d+)\s*\)\s*\]$'
+)
 
 
 def parse_ddf(ddf_text: str) -> list:
     '''Разбирает DDF-файл и возвращает список полей (плоский, без учёта вложенности
-    MTX/MAT — поддерживаются отдельной веткой в disassemble/assemble, см. docstring выше).
-    Каждый элемент — dict с ключами:
+    MTX/MAT/MTX3/MAT2 — поддерживаются отдельной веткой в disassemble/assemble, см. docstring
+    выше). Каждый элемент — dict с ключами:
       type, name, array (имя поля-счётчика или число, либо None), filler_size,
       enbby_field (имя поля-условия, либо None), enbby_value (число, с которым сравнивается
-      enbby_field — поле присутствует в бинарнике ТОЛЬКО когда enbby_field == enbby_value)
+      enbby_field), enbby_gte (bool — режим сравнения: False означает "точное равенство"
+      enbby_field == enbby_value, True означает "порог" enbby_field >= enbby_value — см. ниже)
 
-    Формат ENBBY (подтверждено экспериментально byte-perfect на реальных данных weapongrp.dat,
-    сверено с официальным TXT-экспортом l2disasm — 0 расхождений на 1134 записях): свойство
-    "ENBBY = [(cond_field, N)];" идёт СРАЗУ после объявления поля в DDF и означает, что ЭТО поле
-    физически присутствует в бинарнике только если ранее прочитанное поле cond_field (в текущей
-    записи) равно N — иначе поле просто отсутствует (не занимает места в файле), и на фронтенде/
-    при сборке ему подставляется дефолтное значение. В известных схемах (weapongrp) встречается
-    только как "последнее поле каждой A/B-пары" — сама пара A всегда присутствует безусловно,
-    B-вариант условен (при wpn_mesh_cnt==2 — двуручное/парное оружие).'''
+    Формат ENBBY, простой вариант (подтверждено экспериментально byte-perfect на реальных данных
+    weapongrp.dat, сверено с официальным TXT-экспортом l2disasm — 0 расхождений на 1134 записях):
+    свойство "ENBBY = [(cond_field, N)];" идёт СРАЗУ после объявления поля в DDF и означает, что
+    ЭТО поле физически присутствует в бинарнике только если ранее прочитанное поле cond_field (в
+    текущей записи) РАВНО N — иначе поле просто отсутствует (не занимает места в файле), и на
+    фронтенде/при сборке ему подставляется дефолтное значение. В известных схемах (weapongrp)
+    встречается только как "последнее поле каждой A/B-пары" — сама пара A всегда присутствует
+    безусловно, B-вариант условен (при wpn_mesh_cnt==2 — двуручное/парное оружие).
+
+    Формат ENBBY, расширенный вариант с "порогом" (подтверждено экспериментально byte-perfect на
+    реальных данных HF mantleexception.dat — полный разбор всех 92 записей файла ЗАВЕРШИЛСЯ ровно
+    на границе служебного хвостового маркера "SafePackage", что возможно только при абсолютно
+    точном разборе каждого байта до этой точки): "ENBBY = [(cond_field:threshold,N)];" — часто
+    НЕСКОЛЬКО таких строк подряд для ОДНОГО поля с разными N (напр. rcid_5 имеет три строки с
+    N=5,6,8). Экспериментально установлено (см. RESEARCH_NOTES.md): поле активно, если
+    cond_field >= MIN(N) среди всех перечисленных для него условий — то есть каждая пара полей
+    "rcid_K"/"rctex_K" включается начиная с той записи, где счётчик достиг K (кумулятивно, не
+    как отдельный битовый флаг). Часть threshold (после двоеточия) экспериментально не влияет на
+    итоговое поведение (см. проверку: threshold почти всегда РАВЕН -N, но не для всех строк одного
+    поля — только для последней/наибольшей N в списке; тем не менее MIN(N)-правило подтверждено
+    независимо от threshold и даёт 100% byte-perfect результат) — сохраняется в enbby_value как
+    MIN(N), threshold отбрасывается.'''
     text = _strip_comments(ddf_text)
     body_match = re.search(r'\{(.*)\}', text, flags=re.DOTALL)
     if not body_match:
@@ -224,6 +264,24 @@ def parse_ddf(ddf_text: str) -> list:
                 continue
             fields[-1]['enbby_field'] = enbby_match.group(1)
             fields[-1]['enbby_value'] = int(enbby_match.group(2))
+            fields[-1]['enbby_gte'] = False
+            continue
+        enbby_threshold_match = _ENBBY_THRESHOLD_RE.match(line)
+        if enbby_threshold_match:
+            if not fields:
+                continue
+            cond_field = enbby_threshold_match.group(1)
+            n = int(enbby_threshold_match.group(2))
+            # Несколько ENBBY-строк для одного поля -> берём МИНИМАЛЬНОЕ N (см. docstring выше) —
+            # первая встреченная строка просто устанавливает значение, последующие уменьшают его,
+            # если встретится меньшее N.
+            prev_value = fields[-1].get('enbby_value')
+            if fields[-1].get('enbby_gte') and prev_value is not None:
+                fields[-1]['enbby_value'] = min(prev_value, n)
+            else:
+                fields[-1]['enbby_value'] = n
+            fields[-1]['enbby_field'] = cond_field
+            fields[-1]['enbby_gte'] = True
             continue
         # skip other property lines like SOFT = 5, SKIPIF = [...]
         if re.match(r'^[A-Z_]+\s*=', line):
@@ -236,7 +294,7 @@ def parse_ddf(ddf_text: str) -> list:
         if not m:
             continue
         ftype, fname, farray, _, ffiller = m.groups()
-        if ftype in ('MTX2', 'MTX3', 'MAT2'):
+        if ftype == 'MTX2':
             raise DdfError(f'unsupported_type_{ftype}')
         fields.append({
             'type': ftype,
@@ -245,6 +303,7 @@ def parse_ddf(ddf_text: str) -> list:
             'filler_size': int(ffiller) if ffiller else None,
             'enbby_field': None,
             'enbby_value': None,
+            'enbby_gte': False,
         })
     return fields
 
@@ -840,6 +899,12 @@ def default_row(fields: list) -> dict:
         if ftype == 'MAT':
             row[name] = []
             continue
+        if ftype == 'MTX3':
+            row[name] = {'mesh': [], 'tex': [], 'tail': ''}
+            continue
+        if ftype == 'MAT2':
+            row[name] = {'extra': 0, 'items': []}
+            continue
         if array_ref is not None:
             count = _resolve_count(row, array_ref) if not array_ref.isdigit() else int(array_ref)
             count = count or 0
@@ -931,13 +996,82 @@ def _write_mat(out: bytearray, value):
         out += struct.pack('<II', int(item.get('id', 0)), int(item.get('amount', 0)))
 
 
+def _read_mtx3(data: bytes, offset: int):
+    '''MTX3 = расширенный MTX (см. docstring модуля) — mesh-подтаблица хранит тройки
+    (UNICODE, UCHAR, UCHAR) вместо простых строк, tex-подтаблица как в обычном MTX плюс ОДНО
+    дополнительное UNICODE-поле в самом конце. Возвращает ({'mesh': [{'u','b1','b2'}, ...],
+    'tex': [...], 'tail': str}, new_offset).'''
+    c1 = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    mesh = []
+    for _ in range(c1):
+        u, offset = decode_unicode_field(data, offset)
+        b1 = data[offset]; offset += 1
+        b2 = data[offset]; offset += 1
+        mesh.append({'u': u, 'b1': b1, 'b2': b2})
+    c2 = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    tex = []
+    for _ in range(c2):
+        v, offset = decode_unicode_field(data, offset)
+        tex.append(v)
+    tail, offset = decode_unicode_field(data, offset)
+    return {'mesh': mesh, 'tex': tex, 'tail': tail}, offset
+
+
+def _write_mtx3(out: bytearray, value):
+    value = value or {}
+    mesh = value.get('mesh') or []
+    tex = value.get('tex') or []
+    tail = value.get('tail') or ''
+    out += struct.pack('<I', len(mesh))
+    for item in mesh:
+        out += encode_unicode_field((item or {}).get('u') or '')
+        out.append(int((item or {}).get('b1', 0)) & 0xFF)
+        out.append(int((item or {}).get('b2', 0)) & 0xFF)
+    out += struct.pack('<I', len(tex))
+    for v in tex:
+        out += encode_unicode_field(v or '')
+    out += encode_unicode_field(tail)
+
+
+def _read_mat2(data: bytes, offset: int):
+    '''MAT2 = расширенный MAT (см. docstring модуля) — тот же список пар (id, amount), но с
+    дополнительным UINT-полем "extra" сразу после счётчика (перед списком пар). Возвращает
+    ({'extra': int, 'items': [{'id','amount'}, ...]}, new_offset).'''
+    count = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    extra = struct.unpack_from('<I', data, offset)[0]
+    offset += 4
+    items = []
+    for _ in range(count):
+        item_id, amount = struct.unpack_from('<II', data, offset)
+        offset += 8
+        items.append({'id': item_id, 'amount': amount})
+    return {'extra': extra, 'items': items}, offset
+
+
+def _write_mat2(out: bytearray, value):
+    value = value or {}
+    items = value.get('items') or []
+    extra = int(value.get('extra', 0))
+    out += struct.pack('<I', len(items))
+    out += struct.pack('<I', extra)
+    for item in items:
+        out += struct.pack('<II', int(item.get('id', 0)), int(item.get('amount', 0)))
+
+
 def _enbby_active(field: dict, row: dict) -> bool:
-    '''Возвращает True, если поле не имеет ENBBY-условия, либо условие выполняется (ранее
-    прочитанное поле enbby_field в текущей записи равно enbby_value) — то есть поле физически
-    присутствует в бинарнике и должно читаться/записываться. См. docstring parse_ddf().'''
+    '''Возвращает True, если поле не имеет ENBBY-условия, либо условие выполняется — то есть поле
+    физически присутствует в бинарнике и должно читаться/записываться. См. docstring parse_ddf():
+    enbby_gte=False (простой синтаксис) — точное равенство (enbby_field == enbby_value);
+    enbby_gte=True (расширенный синтаксис с двоеточием, mantleexception.dat) — порог
+    (enbby_field >= enbby_value).'''
     cond_field = field.get('enbby_field')
     if cond_field is None:
         return True
+    if field.get('enbby_gte'):
+        return (row.get(cond_field) or 0) >= field.get('enbby_value')
     return row.get(cond_field) == field.get('enbby_value')
 
 
@@ -958,6 +1092,10 @@ def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
             row[name] = {'mesh': [], 'tex': []}
         elif ftype == 'MAT':
             row[name] = []
+        elif ftype == 'MTX3':
+            row[name] = {'mesh': [], 'tex': [], 'tail': ''}
+        elif ftype == 'MAT2':
+            row[name] = {'extra': 0, 'items': []}
         else:
             row[name] = _default_scalar(ftype)
         return offset
@@ -973,6 +1111,14 @@ def _read_field(data: bytes, offset: int, field: dict, row: dict) -> int:
 
     if ftype == 'MAT':
         row[name], offset = _read_mat(data, offset)
+        return offset
+
+    if ftype == 'MTX3':
+        row[name], offset = _read_mtx3(data, offset)
+        return offset
+
+    if ftype == 'MAT2':
+        row[name], offset = _read_mat2(data, offset)
         return offset
 
     count = _resolve_count(row, field['array'])
@@ -1053,6 +1199,14 @@ def _write_field(out: bytearray, field: dict, row: dict):
 
     if ftype == 'MAT':
         _write_mat(out, row.get(name))
+        return
+
+    if ftype == 'MTX3':
+        _write_mtx3(out, row.get(name))
+        return
+
+    if ftype == 'MAT2':
+        _write_mat2(out, row.get(name))
         return
 
     if array_ref is not None:

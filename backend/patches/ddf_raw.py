@@ -74,7 +74,11 @@ def _row_to_pairs(row: dict, fields: list) -> list:
     массивов; "name_cntm"/"name_m[i]"/"name_cntt"/"name_t[i]" для MTX — совпадает с реальными
     именами колонок в TSV-экспорте l2disasm, см. подтверждение в RESEARCH_NOTES.md;
     "name_cnt"/"name_id[i]"/"name_amount[i]" для MAT — l2disasm-эталона для MAT не было, имя
-    подобрано по аналогии). Используется, чтобы гарантировать идентичный порядок/состав токенов
+    подобрано по аналогии; "name_cntm"/"name_mU[i]"/"name_mB[i][1]"/"name_mB[i][2]"/"name_cntt"/
+    "name_t[i]"/"name_tE" для MTX3 — совпадает с реальными именами колонок в HF TSV-экспорте
+    l2disasm (armorgrp.txt), см. подтверждение в RESEARCH_NOTES.md; "name_cnt"/"name_extra"/
+    "name_id[i]"/"name_amount[i]" для MAT2 — совпадает с реальными именами колонок HF TSV-
+    экспорта (recipe-c.txt)). Используется, чтобы гарантировать идентичный порядок/состав токенов
     между текстовым (row_to_raw_line) и табличным (row_to_raw_columns, с подписями) представлением
     — и не дублировать логику разбора схемы в двух местах.'''
     pairs = []
@@ -97,6 +101,32 @@ def _row_to_pairs(row: dict, fields: list) -> list:
         if ftype == 'MAT':
             items = row.get(name) or []
             pairs.append((f'{name}_cnt', str(len(items))))
+            for i, item in enumerate(items):
+                pairs.append((f'{name}_id[{i}]', str(int(item.get('id', 0)))))
+                pairs.append((f'{name}_amount[{i}]', str(int(item.get('amount', 0)))))
+            continue
+        if ftype == 'MTX3':
+            value = row.get(name) or {}
+            mesh = value.get('mesh') or []
+            tex = value.get('tex') or []
+            tail = value.get('tail') or ''
+            pairs.append((f'{name}_cntm', str(len(mesh))))
+            for i, item in enumerate(mesh):
+                item = item or {}
+                pairs.append((f'{name}_mU[{i}]', _escape(item.get('u') or '')))
+                pairs.append((f'{name}_mB[{i}][1]', str(int(item.get('b1', 0)))))
+                pairs.append((f'{name}_mB[{i}][2]', str(int(item.get('b2', 0)))))
+            pairs.append((f'{name}_cntt', str(len(tex))))
+            for i, v in enumerate(tex):
+                pairs.append((f'{name}_t[{i}]', _escape(v or '')))
+            pairs.append((f'{name}_tE', _escape(tail)))
+            continue
+        if ftype == 'MAT2':
+            value = row.get(name) or {}
+            items = value.get('items') or []
+            extra = int(value.get('extra', 0))
+            pairs.append((f'{name}_cnt', str(len(items))))
+            pairs.append((f'{name}_extra', str(extra)))
             for i, item in enumerate(items):
                 pairs.append((f'{name}_id[{i}]', str(int(item.get('id', 0)))))
                 pairs.append((f'{name}_amount[{i}]', str(int(item.get('amount', 0)))))
@@ -168,6 +198,29 @@ def raw_line_to_row(line: str, fields: list, base_row: dict = None) -> dict:
                 amount = int(next_token() or 0)
                 items.append({'id': item_id, 'amount': amount})
             row[name] = items
+            continue
+        if ftype == 'MTX3':
+            c1 = int(next_token() or 0)
+            mesh = []
+            for _ in range(c1):
+                u = _unescape(next_token())
+                b1 = int(next_token() or 0)
+                b2 = int(next_token() or 0)
+                mesh.append({'u': u, 'b1': b1, 'b2': b2})
+            c2 = int(next_token() or 0)
+            tex = [_unescape(next_token()) for _ in range(c2)]
+            tail = _unescape(next_token())
+            row[name] = {'mesh': mesh, 'tex': tex, 'tail': tail}
+            continue
+        if ftype == 'MAT2':
+            count = int(next_token() or 0)
+            extra = int(next_token() or 0)
+            items = []
+            for _ in range(count):
+                item_id = int(next_token() or 0)
+                amount = int(next_token() or 0)
+                items.append({'id': item_id, 'amount': amount})
+            row[name] = {'extra': extra, 'items': items}
             continue
         count = _resolve_count(row, field['array'])
         if count is not None:

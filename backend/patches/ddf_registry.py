@@ -1284,7 +1284,312 @@ _DDF_TEXTS = {
 	UINT dupa;
 }
 ''',
+    # --- "Сложные" схемы (MTX/MAT/MTX3/MAT2/ENBBY), перенесённые с C4-реестра/раскрытые заново
+    # для HF-клиента в этой сессии — см. RESEARCH_NOTES.md ЭТАП 15 за подробностями раскрытия
+    # форматов MTX3/MAT2/расширенного ENBBY и подтверждением byte-perfect на реальных данных
+    # сервера hfx3old. Раньше были исключены из реестра (см. комментарий в начале файла).
+    'armorgrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE drop_extratex1;
+	UINT newdata[8];
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	HEX UNK_3;
+	UINT UNK_4_cnt;
+	UINT UNK_4_tab[UNK_4_cnt];
+	UINT UNK_5;
+	UNICODE timetab;
+	UINT body_part;
+	MTX m_HumnFigh;
+	MTX3 m_HumnFigh_add;
+	MTX f_HumnFigh;
+	MTX3 f_HumnFigh_add;
+	MTX m_DarkElf;
+	MTX3 m_DarkElf_add;
+	MTX f_DarkElf;
+	MTX3 f_DarkElf_add;
+	MTX m_Dorf;
+	MTX3 m_Dorf_add;
+	MTX f_Dorf;
+	MTX3 f_Dorf_add;
+	MTX m_Elf;
+	MTX3 m_Elf_add;
+	MTX f_Elf;
+	MTX3 f_Elf_add;
+	MTX m_HumnMyst;
+	MTX3 m_HumnMyst_add;
+	MTX f_HumnMyst;
+	MTX3 f_HumnMyst_add;
+	MTX m_OrcFigh;
+	MTX3 m_OrcFigh_add;
+	MTX f_OrcFigh;
+	MTX3 f_OrcFigh_add;
+	MTX m_OrcMage;
+	MTX3 m_OrcMage_add;
+	MTX f_OrcMage;
+	MTX3 f_OrcMage_add;
+	MTX m_Kamael;
+	MTX3 m_Kamael_add;
+	MTX f_Kamael;
+	MTX3 f_Kamael_add;
+	MTX NPC;
+	MTX3 NPC_add;
+	UNICODE att_eff;
+	UINT item_sound_cnt;
+	UNICODE item_sound[item_sound_cnt];
+	UNICODE drop_sound;
+	UNICODE equip_sound;
+	UINT UNK_6;
+	UINT UNK_7;
+	UINT armor_type;
+	UINT crystal_type;
+	INT avoid_mod;
+	UINT pdef;
+	UINT mdef;
+	UINT mpbonus;
+	UINT UNK_8;
 }
+''',
+    'etcitemgrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE drop_extratex1;
+	UINT newdata[8];
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	HEX UNK_1;
+	UINT UNK_2_cnt;
+	UINT UNK_2_tab[UNK_2_cnt];
+	UINT UNK_3;
+	UNICODE fort;
+	MTX mesh_tex_pair;
+	UNICODE item_sound;
+	UNICODE equip_sound;
+	UINT stackable;
+	UINT family;
+	UINT grade;
+}
+''',
+    'recipe': '''
+{
+	ASCF name;
+	UINT id_mk;
+	UINT id_recipe;
+	UINT level;
+	UINT id_item;
+	UINT count;
+	UINT mp_cost;
+	UINT success_rate;
+	MAT2 materials;
+}
+''',
+    'weapongrp': '''
+{
+	UINT tag;
+	UINT id;
+	UINT drop_type;
+	UINT drop_anim_type;
+	UINT drop_radius;
+	UINT drop_height;
+	UINT UNK_0;
+	UNICODE drop_mesh1;
+	UNICODE drop_mesh2;
+	UNICODE drop_mesh3;
+	UNICODE drop_tex1;
+	UNICODE drop_tex2;
+	UNICODE drop_tex3;
+	UNICODE drop_extratex1;
+	UINT newdata[8];
+	UNICODE icon[5];
+	INT durability;
+	UINT weight;
+	UINT material;
+	UINT crystallizable;
+	HEX UNK_1;
+	UINT UNK_2_cnt;
+	UINT UNK_2_tab[UNK_2_cnt];
+	UINT UNK_3;
+	UNICODE timetab;
+	UINT body_part;
+	UINT handness;
+	UINT wpn_mesh_cnt;
+	UNICODE wpn_mesh[wpn_mesh_cnt];
+	UINT wpn_unkval[wpn_mesh_cnt];
+	UINT wpn_tex_cnt;
+	UNICODE wpn_tex[wpn_tex_cnt];
+	UINT item_sound_cnt;
+	UNICODE item_sound[item_sound_cnt];
+	UNICODE drop_sound;
+	UNICODE equip_sound;
+	UNICODE effect;
+	UINT random_damage;
+	UINT patt;
+	UINT matt;
+	UINT weapon_type;
+	UINT crystal_type;
+	UINT critical;
+	INT hit_mod;
+	INT avoid_mod;
+	UINT shield_pdef;
+	UINT shield_rate;
+	UINT speed;
+	UINT mp_consume;
+	UINT SS_count;
+	UINT SPS_count;
+	UINT curvature;
+	UINT UNK_4;
+	INT is_hero;
+	UINT UNK_5;
+	UNICODE effA;
+	UNICODE effB;
+		ENBBY = [(wpn_mesh_cnt,2)];
+	FLOAT junk1A[5];
+	FLOAT junk1B[5];
+		ENBBY = [(wpn_mesh_cnt,2)];
+	UNICODE rangeA;
+	UNICODE rangeB;
+		ENBBY = [(wpn_mesh_cnt,2)];
+	FLOAT junk2A[6];
+	FLOAT junk2B[6];
+		ENBBY = [(wpn_mesh_cnt,2)];
+	INT junk3[6];
+	UNICODE icons[4];
+}
+''',
+    # Оригинальный DDF называет ВТОРОЕ текстурное поле "tex1" (та же опечатка, что и в C4-версии
+    # этого файла) — исправлено на "tex2", см. подробное объяснение в docstring выше и
+    # RESEARCH_NOTES.md ЭТАП 8. npcgrp_def.dat — не упомянутый в официальном DDF-паке файл,
+    # реально существующий на сервере hfx3old, структурно ИДЕНТИЧНЫЙ npcgrp.dat (подтверждено
+    # byte-perfect той же схемой) — вероятно резервная/дефолтная версия таблицы данных о мобах,
+    # см. RESEARCH_NOTES.md ЭТАП 15. Обе схемы используют один и тот же DDF-текст ('npcgrp'),
+    # npcgrp_def регистрируется отдельным ключом ниже через переиспользование строки.
+    'npcgrp': '''
+{
+	UINT tag;
+	UNICODE class;
+	UNICODE mesh;
+	UINT cnt_tex1;
+	UNICODE tex1[cnt_tex1];
+	UINT cnt_tex2;
+	UNICODE tex2[cnt_tex2];
+	CNTR cnt_dtab1;
+	UINT dtab1[cnt_dtab1];
+	FLOAT npc_speed;
+	UINT UNK_0;
+	UINT cnt_snd1;
+	UNICODE snd1[cnt_snd1];
+	UINT cnt_snd2;
+	UNICODE snd2[cnt_snd2];
+	UINT cnt_snd3;
+	UNICODE snd3[cnt_snd3];
+
+	UINT rb_effect_on;
+	UNICODE rb_effect;
+		ENBBY = [(rb_effect_on,1)];
+	FLOAT rb_effect_fl;
+		ENBBY = [(rb_effect_on,1)];
+
+	CNTR unk1_cnt;
+	UINT unk1_tab[unk1_cnt];
+
+	CNTR unk2_cnt;
+	UINT unk2_tab[unk2_cnt];
+
+	UNICODE effect;
+	UINT UNK_3;
+	FLOAT sound_rad;
+	FLOAT sound_vol;
+	FLOAT sound_rnd;
+	UINT quest_be;
+	UINT class_lim_?;
+	UINT npcend_cnt;
+	ASCF npcend[npcend_cnt];
+	UINT npcend_cnt2;
+}
+''',
+    'vehiclepartsgrp': '''
+{
+	UINT id;
+	UNICODE name;
+	CNTR cnt1;
+	INT tab1[cnt1];
+	CNTR cnt2;
+	INT tab2[cnt2];
+	UINT unk1;
+	UINT unk2;
+	MTX mshtex;
+	UNICODE sounds[5];
+	UINT snd2cnt;
+	UNICODE sounds2[snd2cnt];
+}
+''',
+    'mantleexception': '''
+{
+	UINT id;
+	UINT txt_cnt;
+	UINT rcid_1;ENBBY = [(txt_cnt:-1,1)];ENBBY = [(txt_cnt:-2,2)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_1;ENBBY = [(txt_cnt:-1,1)];ENBBY = [(txt_cnt:-2,2)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_2;ENBBY = [(txt_cnt:-2,2)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_2;ENBBY = [(txt_cnt:-2,2)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_3;ENBBY = [(txt_cnt:-1,3)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_3;ENBBY = [(txt_cnt:-1,3)];ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_4;ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_4;ENBBY = [(txt_cnt:-4,4)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_5;ENBBY = [(txt_cnt:-1,5)];ENBBY = [(txt_cnt:-2,6)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_5;ENBBY = [(txt_cnt:-1,5)];ENBBY = [(txt_cnt:-2,6)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_6;ENBBY = [(txt_cnt:-2,6)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_6;ENBBY = [(txt_cnt:-2,6)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_7;ENBBY = [(txt_cnt:-1,7)];ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_7;ENBBY = [(txt_cnt:-1,7)];ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_8;ENBBY = [(txt_cnt:-8,8)];
+	ASCF rctex_8;ENBBY = [(txt_cnt:-8,8)];
+	UINT rcid_9;ENBBY = [(txt_cnt:-1,9)];ENBBY = [(txt_cnt:-6,10)];ENBBY = [(txt_cnt:-4,12)];
+	ASCF rctex_9;ENBBY = [(txt_cnt:-1,9)];ENBBY = [(txt_cnt:-6,10)];ENBBY = [(txt_cnt:-4,12)];
+	UINT rcid_10;ENBBY = [(txt_cnt:-6,10)];ENBBY = [(txt_cnt:-4,12)];
+	ASCF rctex_10;ENBBY = [(txt_cnt:-6,10)];ENBBY = [(txt_cnt:-4,12)];
+	UINT rcid_11;ENBBY = [(txt_cnt:-1,11)];ENBBY = [(txt_cnt:-4,12)];
+	ASCF rctex_11;ENBBY = [(txt_cnt:-1,11)];ENBBY = [(txt_cnt:-4,12)];
+	UINT rcid_12;ENBBY = [(txt_cnt:-1,12)];ENBBY = [(txt_cnt:-1,13)];
+	ASCF rctex_12;ENBBY = [(txt_cnt:-1,12)];ENBBY = [(txt_cnt:-1,13)];
+	UINT rcid_13;ENBBY = [(txt_cnt:-1,13)];
+	ASCF rctex_13;ENBBY = [(txt_cnt:-1,13)];
+}
+''',
+}
+# npcgrp_def.dat — реальный файл на сервере (не упомянут в официальном DDF-паке), структурно
+# идентичен npcgrp.dat (см. комментарий выше и RESEARCH_NOTES.md ЭТАП 15).
+_DDF_TEXTS['npcgrp_def'] = _DDF_TEXTS['npcgrp']
 
 # Человекочитаемые названия полей (для фронтенда) — какие поля показывать как редактируемый
 # текст (все ASCF/UNICODE не-табличные поля из схемы), а какие как служебные (id/индексы/числа).
@@ -1363,6 +1668,17 @@ _EDITABLE_TEXT_FIELDS = {
     'warningnotice': ['Notice'],
     'zonename': ['zone_name', 'map'],
     'zonename_classic': ['zone_name', 'map'],
+    # "Сложные" схемы (см. RAW_ONLY_SCHEMAS ниже) — нет "человеческих" текстовых полей, вся
+    # ценность записи в MTX/MAT/MTX3/MAT2-таблицах путей к моделям/текстурам/звукам или списках
+    # материалов рецепта — редактируются целиком через RAW-режим, см. ddf_raw.py.
+    'armorgrp': [],
+    'etcitemgrp': [],
+    'recipe': ['name'],
+    'weapongrp': [],
+    'npcgrp': [],
+    'npcgrp_def': [],
+    'vehiclepartsgrp': ['name'],
+    'mantleexception': ['rctex_1', 'rctex_2', 'rctex_3', 'rctex_4', 'rctex_5', 'rctex_6', 'rctex_7', 'rctex_8', 'rctex_9', 'rctex_10', 'rctex_11', 'rctex_12', 'rctex_13'],
 }
 
 # Поля, образующие УНИКАЛЬНЫЙ идентификатор записи — используется для защиты от создания
@@ -1455,6 +1771,14 @@ _ID_FIELDS = {
     'transformdata': ['id', 'gender'],
     'zonename': ['nbr'],
     'zonename_classic': ['nbr'],
+    # "Сложные" схемы (MTX/MAT/MTX3/MAT2/ENBBY) — id_fields перенесены с C4-реестра, где применимо
+    # (см. RESEARCH_NOTES.md ЭТАП 15). npcgrp/npcgrp_def/vehiclepartsgrp/mantleexception НЕ имеют
+    # записи в этом словаре (как и в C4 для npcgrp) — у этих схем нет проверенного осмысленного
+    # понятия "уникальный id" (npcgrp вообще не содержит числового id-поля, только tag/class/mesh).
+    'armorgrp': ['id'],
+    'etcitemgrp': ['id'],
+    'recipe': ['id_recipe'],
+    'weapongrp': ['id'],
 }
 
 # Группы полей, которые физически хранят RGB(A)-цвет — либо один массив однобайтовых
@@ -1475,6 +1799,29 @@ _COLOR_FIELD_GROUPS = {
     'systemmsgpatch': {'fields': ['ColorR', 'ColorG', 'ColorB', 'ColorA'], 'array': False},
 }
 
+# Файлы с фиксированным числом записей, заданным самой схемой клиента (нет 4-байтного префикса-
+# счётчика в файле — RECCNT задаётся числом в самом DDF, а не "OFF"). Для этих файлов ddf_create
+# (добавление новых записей) заблокировано на backend — количество жёстко ожидается игровым
+# клиентом. Ни у одной из добавленных в этой сессии "сложных" HF-схем такого нет (все имеют
+# RECCNT = OFF в оригинальном DDF) — словарь пуст, но структура сохранена по аналогии с C4-
+# реестром (см. FIXED_RECORD_COUNTS в ddf_registry_c4.py) на случай будущих схем.
+FIXED_RECORD_COUNTS = {}
+
+# Схемы без осмысленных ОТДЕЛЬНЫХ "человеческих" текстовых полей (вся ценность записи в MTX/MAT/
+# MTX3/MAT2-таблицах путей к моделям/текстурам/звукам или в списках материалов рецепта) —
+# редактируются целиком одной таб-разделённой строкой через RAW-режим (см. ddf_raw.py), а не
+# обычной формой "один инпут на editable-поле". Перенесено с C4-реестра (см. RAW_ONLY_SCHEMAS в
+# ddf_registry_c4.py) + новые HF-специфичные схемы: vehiclepartsgrp (MTX, простые числовые/
+# текстовые поля без явного текстового смысла), mantleexception (только числа + короткие ASCF-
+# идентификаторы текстур rctex_N — технически editable, но структура записи с условными ENBBY-
+# полями удобнее для правки целиком, как и остальные raw-only схемы).
+RAW_ONLY_SCHEMAS = {'armorgrp', 'etcitemgrp', 'recipe', 'weapongrp', 'npcgrp', 'npcgrp_def', 'vehiclepartsgrp', 'mantleexception'}
+
+# 2-байтный "квирк" (защита пользователя от воровства файла — см. RESEARCH_NOTES.md ЭТАП 6),
+# найденный ТОЛЬКО у C4 armorgrp.dat одного конкретного пользователя. HF armorgrp.dat на сервере
+# hfx3old расшифровался БЕЗ такого страйпинга (подтверждено в этой сессии — l2encdec.decode
+# сработал сразу на полном файле без обрезки хвоста) — квирк здесь не нужен.
+
 _FIELDS_CACHE = {}
 
 
@@ -1489,8 +1836,12 @@ def _base_key(filename: str):
 
 
 def match_ddf(filename: str):
-    '''Возвращает (schema_key, fields, editable_field_names) для файла, если он поддерживается,
-    иначе None.'''
+    '''Возвращает (schema_key, fields, editable_field_names, has_reccnt_prefix,
+    fixed_record_count, is_raw_only) для файла, если он поддерживается, иначе None.
+    is_raw_only=True означает, что у схемы нет осмысленных текстовых полей для обычной формы
+    редактирования — фронтенд должен показывать RAW-режим (см. RAW_ONLY_SCHEMAS выше). Формат
+    возврата унифицирован с ddf_registry_c4.match_ddf() — _ddf_match() в index.py принимает оба
+    (также поддерживает старый 3-элементный кортеж для обратной совместимости, см. index.py).'''
     key = _base_key(filename)
     if key not in _DDF_TEXTS:
         return None
@@ -1498,7 +1849,10 @@ def match_ddf(filename: str):
         _FIELDS_CACHE[key] = parse_ddf(_DDF_TEXTS[key])
     fields = _FIELDS_CACHE[key]
     editable = _EDITABLE_TEXT_FIELDS.get(key, [])
-    return key, fields, editable
+    fixed_count = FIXED_RECORD_COUNTS.get(key)
+    has_reccnt_prefix = fixed_count is None
+    is_raw_only = key in RAW_ONLY_SCHEMAS
+    return key, fields, editable, has_reccnt_prefix, fixed_count, is_raw_only
 
 
 def is_supported(filename: str) -> bool:
