@@ -43,9 +43,35 @@ export function useDdfBulk(
     setBulkText('');
     try {
       const data = await postJson({ action: 'ddf_new', server, path });
-      setBulkIdFields(data.idFields || []);
-      setBulkTemplateLine(data.rawLine ?? '');
-      setBulkRawColumns(data.rawColumns || []);
+      const idFields: string[] = data.idFields || [];
+      setBulkIdFields(idFields);
+      // ddf_new отдаёт "пустой" шаблон (все поля — 0/''), собранный из значений по умолчанию —
+      // для схем с ДИНАМИЧЕСКИМИ МАССИВАМИ (actionname: cat2_cnt/c[cat2_cnt]) пустой шаблон
+      // имеет cat2_cnt=0, из-за чего связанный массив c[] оказывается пустым и колонка c[0]
+      // просто ИСЧЕЗАЕТ из шаблона — хотя у реальных записей файла cat2_cnt почти всегда 1, и
+      // c[0] присутствует. Подсказка "9 колонок" не совпадала с реальной структурой записи в
+      // raw-режиме (10 колонок) — см. скриншоты пользователя. Вместо пустого шаблона берём за
+      // основу ПЕРВУЮ РЕАЛЬНУЮ запись файла (тот же формат, что видно при просмотре/правке
+      // существующей записи текстом) — гарантированно правильное число колонок для количества
+      // элементов массивов, которое реально используется в файле. Id-поля в шаблоне очищаем
+      // (та же логика, что и в "Дублировать" — иначе шаблон стартовал бы с гарантированным
+      // конфликтом дубликата). Если в файле вообще нет записей — используем пустой шаблон
+      // от ddf_new как есть (первой реальной записи просто не существует).
+      try {
+        const sample = await postJson({ action: 'ddf_get_raw', server, path, index: 0 });
+        const columns: RawColumn[] = sample.columns || [];
+        const tokens = (sample.line as string).split('\t');
+        const labels = columns.map((c) => c.label);
+        for (const idName of idFields) {
+          const i = labels.indexOf(idName);
+          if (i !== -1) tokens[i] = '';
+        }
+        setBulkTemplateLine(tokens.join('\t'));
+        setBulkRawColumns(columns);
+      } catch {
+        setBulkTemplateLine(data.rawLine ?? '');
+        setBulkRawColumns(data.rawColumns || []);
+      }
     } catch {
       setBulkError('Не удалось загрузить схему файла');
     } finally {
