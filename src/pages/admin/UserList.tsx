@@ -1,5 +1,5 @@
 import Icon from '@/components/ui/icon';
-import { PERMISSION_GROUPS } from './adminShared';
+import { PERMISSION_GROUPS, OWNER_ONLY_PERMISSION_GROUPS } from './adminShared';
 import type { TeamUser, Permissions } from './adminShared';
 
 export default function UserList({
@@ -25,7 +25,9 @@ export default function UserList({
   permsDraft,
   setPermsDraft,
   permsSaving,
+  permsError,
   savePerms,
+  isOwner,
   openStats,
   setRole,
   toggleActive,
@@ -58,7 +60,9 @@ export default function UserList({
   permsDraft: Permissions;
   setPermsDraft: React.Dispatch<React.SetStateAction<Permissions>>;
   permsSaving: boolean;
+  permsError: string;
   savePerms: (id: number) => void;
+  isOwner: boolean;
   openStats: (u: TeamUser) => void;
   setRole: (id: number, role: 'member' | 'admin') => void;
   toggleActive: (u: TeamUser) => void;
@@ -284,6 +288,43 @@ export default function UserList({
                     </div>
                   </div>
                 ))}
+                {/* OWNER_ONLY_PERMISSION_GROUPS (сейчас — просмотр чужих приватных сообщений) —
+                    выдавать/отзывать может только владелец проекта (backend/admin/index.py,
+                    OWNER_USER_ID). Не-владельцу показываем те же чекбоксы, но заблокированными
+                    (disabled) с пояснением — честнее, чем скрыть совсем (видно, что право есть и
+                    кем управляется), и не даёт заполнить форму, которую backend всё равно
+                    отклонит только при сохранении. */}
+                {OWNER_ONLY_PERMISSION_GROUPS.map((group) => (
+                  <div key={group.title} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                    <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
+                      <Icon name={group.icon} size={13} className="text-amber-500" />
+                      {group.title}
+                      <span className="text-[10px] font-normal text-muted-foreground ml-auto flex items-center gap-1">
+                        <Icon name="Crown" size={10} />
+                        только руководитель
+                      </span>
+                    </div>
+                    <div className="space-y-1.5">
+                      {group.items.map((item) => (
+                        <label
+                          key={item.key}
+                          className={`flex items-center gap-2 text-xs text-muted-foreground ${isOwner ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={!!permsDraft[item.key]}
+                            disabled={!isOwner}
+                            onChange={(e) =>
+                              setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                            }
+                            className="h-3.5 w-3.5 rounded border-border accent-primary"
+                          />
+                          {item.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
                 <div className="rounded-lg border border-border/60 p-3">
                   <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
                     <Icon name="Send" size={13} className="text-primary" />
@@ -311,6 +352,13 @@ export default function UserList({
                   </div>
                 </div>
               </div>
+
+              {permsError && (
+                <p className="text-xs text-destructive flex items-center gap-1.5">
+                  <Icon name="AlertCircle" size={13} />
+                  {permsError}
+                </p>
+              )}
 
               <div className="flex justify-end gap-2">
                 <button

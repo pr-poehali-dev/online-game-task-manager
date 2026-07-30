@@ -61,6 +61,15 @@ ALL_PERMISSIONS = [
     'private_notes_view_others',
 ]
 
+# id пользователя-владельца проекта (руководителя) — тот же паттерн, что уже используется в
+# backend/patches/index.py для описаний файлов клиента (см. OWNER_USER_ID там за подробностями:
+# первый зарегистрированный администратор проекта, new_era_l2). Здесь используется, чтобы
+# ограничить выдачу/отзыв права 'private_notes_view_others' (просмотр чужих приватных заметок) —
+# по требованию пользователя эту привилегию должен раздавать только он сам, а не любой
+# администратор с доступом к разделу "Команда".
+OWNER_USER_ID = 1
+PRIVILEGED_PERMISSIONS = {'private_notes_view_others'}
+
 
 def _effective_perms(role, raw):
     '''Индивидуальные права (если заданы явно) имеют приоритет выше роли. Если право не задано — берётся значение по умолчанию для роли.'''
@@ -178,7 +187,15 @@ def handler(event: dict, context) -> dict:
             'show_tg_contact': r[17] if r[17] is not None else True,
         } for r in rows]
         cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'users': users, 'permissionKeys': ALL_PERMISSIONS})}
+        # isOwner — единый источник истины для фронта (показывать ли UI редактирования владельческих
+        # прав из PRIVILEGED_PERMISSIONS), чтобы OWNER_USER_ID не пришлось дублировать константой
+        # на фронте и синхронизировать вручную (тот же паттерн, что уже используется в
+        # backend/patches/index.py для patch_desc_list/isOwner).
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({
+            'users': users, 'permissionKeys': ALL_PERMISSIONS,
+            'privilegedPermissionKeys': sorted(PRIVILEGED_PERMISSIONS),
+            'isOwner': admin_id == OWNER_USER_ID,
+        })}
 
     # POST: обновление роли / активности / приглашение по username / права / статистика
     action = body.get('action')
@@ -444,6 +461,28 @@ def handler(event: dict, context) -> dict:
         for key in ALL_PERMISSIONS:
             if key in raw and raw[key] is not None:
                 clean[key] = bool(raw[key])
+        # PRIVILEGED_PERMISSIONS (private_notes_view_others) может менять ТОЛЬКО владелец проекта
+        # (OWNER_USER_ID) — не любой администратор с доступом к разделу "Команда". Если запрос
+        # пришёл не от владельца и пытается ИЗМЕНИТЬ значение такого права относительно текущего —
+        # отклоняем весь запрос целиком (403), чтобы не создавать иллюзию частичного сохранения
+        # (фронт должен показать ошибку и не сбрасывать несохранённый черновик остальных прав).
+        #
+        # ВАЖНО: сравниваем именно с ЭФФЕКТИВНЫМ значением (_effective_perms — то же самое, что
+        # видит фронтенд в TeamUser.permissions и с чего копируется permsDraft при открытии панели
+        # прав, см. UserList.tsx openPerms), а НЕ с сырым permissions-JSON из БД. Если сравнивать
+        # с сырым — сработает ложное срабатывание: право, не заданное явно (raw=None), у
+        # администратора эффективно равно True (роль admin по умолчанию даёт все права), фронт
+        # покажет чекбокс отмеченным и включит его в permsDraft как True при простом сохранении
+        # ДРУГИХ полей (без касания этого чекбокса) — сравнение с raw (False по умолчанию) ложно
+        # посчитало бы это изменением и заблокировало бы весь запрос.
+        if admin_id != OWNER_USER_ID and PRIVILEGED_PERMISSIONS:
+            cur.execute(f"SELECT role, permissions FROM {schema}.users WHERE id = %s", (target,))
+            urow = cur.fetchone()
+            current_effective = _effective_perms(urow[0], urow[1]) if urow else {}
+            for key in PRIVILEGED_PERMISSIONS:
+                if key in clean and clean[key] != current_effective.get(key, False):
+                    cur.close(); conn.close()
+                    return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'owner_only_permission', 'key': key})}
         cur.execute(
             f"UPDATE {schema}.users SET permissions = %s, updated_at = NOW() WHERE id = %s",
             (json.dumps(clean), target)

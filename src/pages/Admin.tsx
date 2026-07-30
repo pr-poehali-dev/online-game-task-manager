@@ -18,6 +18,11 @@ export default function Admin() {
   const { user, logout, applySession } = useAuth();
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [loading, setLoading] = useState(true);
+  // isOwner приходит с backend (единый источник истины — OWNER_USER_ID захардкожен только там,
+  // см. backend/admin/index.py) — управляет выдачей/отзывом привилегированных прав из
+  // OWNER_ONLY_PERMISSION_GROUPS (сейчас — просмотр чужих приватных сообщений).
+  const [isOwner, setIsOwner] = useState(false);
+  const [permsError, setPermsError] = useState('');
   const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
   const [inviteName, setInviteName] = useState('');
   const [inviteRole, setInviteRole] = useState<'member' | 'admin'>('member');
@@ -61,6 +66,7 @@ export default function Admin() {
     if (res.ok) {
       const data = await res.json();
       setUsers(data.users);
+      setIsOwner(!!data.isOwner);
     }
     setLoading(false);
   }, []);
@@ -184,12 +190,27 @@ export default function Admin() {
   function openPerms(u: TeamUser) {
     setPermsForId(u.id);
     setPermsDraft({ ...u.permissions });
+    setPermsError('');
   }
 
   async function savePerms(id: number) {
     setPermsSaving(true);
-    await authFetch({ action: 'set_permissions', user_id: id, permissions: permsDraft });
+    setPermsError('');
+    const res = await authFetch({ action: 'set_permissions', user_id: id, permissions: permsDraft });
     setPermsSaving(false);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      // owner_only_permission — попытка изменить привилегированное право (см.
+      // OWNER_ONLY_PERMISSION_GROUPS/PRIVILEGED_PERMISSIONS) не от владельца проекта. Панель
+      // прав НЕ закрывается — пользователь может снять галочку с привилегированного поля и
+      // сохранить остальные изменения повторно, не вводя всё заново.
+      setPermsError(
+        err.error === 'owner_only_permission'
+          ? 'Изменять привилегию просмотра чужих приватных сообщений может только руководитель проекта'
+          : 'Не удалось сохранить права — попробуйте ещё раз'
+      );
+      return;
+    }
     setPermsForId(null);
     load();
   }
@@ -361,7 +382,9 @@ export default function Admin() {
           permsDraft={permsDraft}
           setPermsDraft={setPermsDraft}
           permsSaving={permsSaving}
+          permsError={permsError}
           savePerms={savePerms}
+          isOwner={isOwner}
           openStats={openStats}
           setRole={setRole}
           toggleActive={toggleActive}
