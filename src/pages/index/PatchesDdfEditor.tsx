@@ -49,7 +49,7 @@ export default function PatchesDdfEditor({
   const bulk = useDdfBulk(server, path, setMode, query, runSearch, isRawOnlySchema);
   const {
     bulkText, setBulkText, bulkTemplateLine, bulkRawColumns, loadingBulk, submittingBulk,
-    bulkError, bulkAdded, bulkIdFields, bulkEditableFields, openBulk, handleBulkSubmit,
+    bulkError, bulkAdded, bulkIdFields, bulkPlainFields, bulkEditableFields, openBulk, handleBulkSubmit,
   } = bulk;
 
   const range = useDdfRange(server, path);
@@ -209,6 +209,7 @@ export default function PatchesDdfEditor({
           loadingBulk={loadingBulk}
           isRawOnly={isRawOnlySchema}
           bulkIdFields={bulkIdFields}
+          bulkPlainFields={bulkPlainFields}
           bulkEditableFields={bulkEditableFields}
           bulkTemplateLine={bulkTemplateLine}
           bulkRawColumns={bulkRawColumns}

@@ -5,6 +5,7 @@ export default function PatchesDdfBulkPanel({
   loadingBulk,
   isRawOnly,
   bulkIdFields,
+  bulkPlainFields,
   bulkEditableFields,
   bulkTemplateLine,
   bulkRawColumns,
@@ -18,6 +19,7 @@ export default function PatchesDdfBulkPanel({
   loadingBulk: boolean;
   isRawOnly: boolean;
   bulkIdFields: string[];
+  bulkPlainFields: string[];
   bulkEditableFields: string[];
   bulkTemplateLine: string;
   bulkRawColumns: RawColumn[];
@@ -94,19 +96,21 @@ export default function PatchesDdfBulkPanel({
 
   // Пример/placeholder раньше был статичным текстом ("90001, Тестовый предмет, Описание
   // предмета") одинаковым для ЛЮБОГО файла — вводило в заблуждение, если у файла другой набор
-  // полей (или их вообще нет, как у actionname: tag,id,cmd,icon,name,desc) либо нет понятия id
-  // вовсе. Теперь пример строится из РЕАЛЬНЫХ полей открытого файла — по одному демонстрационному
-  // значению на колонку, в правильном порядке (сначала id-поля, затем editable).
-  const allColumnNames = [...bulkIdFields, ...bulkEditableFields];
-  const exampleRow = allColumnNames.map((name, i) => (
-    bulkIdFields.includes(name) ? String(90001 + i) : `${name} 1`
+  // полей либо нет понятия id вовсе. Затем колонки примера считались как id-поля + editable-поля
+  // — тоже неверно: у схем с ДОПОЛНИТЕЛЬНЫМИ нередактируемыми скалярными полями (например
+  // creditgrp: id, html[editable], image[editable], time, align) колонки time/align не попадали
+  // ни в подсказку, ни в реально отправляемые данные — они молча становились нулём в каждой
+  // добавленной записи. Теперь пример строится из bulkPlainFields — ПОЛНОГО списка скалярных
+  // полей схемы в порядке DDF-описания (ровно то же, что реально требует и отправляет форма).
+  const exampleRow = bulkPlainFields.map((name, i) => (
+    bulkIdFields.includes(name) ? String(90001 + i) : bulkEditableFields.includes(name) ? `${name} 1` : '0'
   ));
   const exampleLine = exampleRow.join(', ');
-  const placeholderLine1 = allColumnNames.map((name) => (
-    bulkIdFields.includes(name) ? '90001' : `${name} 1`
+  const placeholderLine1 = bulkPlainFields.map((name) => (
+    bulkIdFields.includes(name) ? '90001' : bulkEditableFields.includes(name) ? `${name} 1` : '0'
   )).join('\t');
-  const placeholderLine2 = allColumnNames.map((name) => (
-    bulkIdFields.includes(name) ? '90002' : `${name} 2`
+  const placeholderLine2 = bulkPlainFields.map((name) => (
+    bulkIdFields.includes(name) ? '90002' : bulkEditableFields.includes(name) ? `${name} 2` : '0'
   )).join('\t');
 
   return (
@@ -119,10 +123,9 @@ export default function PatchesDdfBulkPanel({
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             По одной записи на строку. Вставьте значения через табуляцию (как при копировании из Excel/Google Таблиц)
-            или через запятую — {bulkIdFields.length > 0 && <>сначала <strong>{bulkIdFields.join(', ')}</strong>, затем: </>}
-            {bulkEditableFields.join(', ') || (bulkIdFields.length === 0 ? 'у этого файла нет текстовых полей для правки' : '—')}.
+            или через запятую — по одному значению на каждую колонку, в этом порядке: <strong>{bulkPlainFields.join(', ') || '—'}</strong>.
           </p>
-          {allColumnNames.length > 0 && (
+          {bulkPlainFields.length > 0 && (
             <p className="text-xs text-muted-foreground/80">
               Пример: <code className="px-1 py-0.5 rounded bg-secondary">{exampleLine}</code>
             </p>
@@ -132,7 +135,7 @@ export default function PatchesDdfBulkPanel({
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             rows={10}
-            placeholder={allColumnNames.length > 0 ? `${placeholderLine1}\n${placeholderLine2}` : ''}
+            placeholder={bulkPlainFields.length > 0 ? `${placeholderLine1}\n${placeholderLine2}` : ''}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono resize-y min-h-[200px]"
           />
           <div className="flex items-center gap-3">

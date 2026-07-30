@@ -53,10 +53,20 @@ export function useDdfBulk(
     }
   }
 
+  // ВСЕ скалярные (не табличные — f.array=false) поля схемы, в порядке DDF-описания — не только
+  // id и editable-текстовые. Раньше форма собирала запись ТОЛЬКО из id-поля(ей) + editable-полей
+  // (bulkEditableFields), полностью игнорируя прочие нередактируемые скалярные поля схемы —
+  // например у creditgrp это id, html(editable), image(editable), time, align: колонки time и
+  // align вообще не запрашивались у пользователя и молча становились нулём в каждой добавленной
+  // записи (см. реальный скриншот пользователя: raw-режим существующей записи показывает 5
+  // значений — id/html/image/time/align, а форма "Списком" просила заполнить только 3). Табличные
+  // поля (f.array=true, счётчики вроде cat2_cnt/c[] у actionname) по-прежнему не запрашиваются —
+  // они получают значения по умолчанию, донастроить их можно позже через обычное редактирование.
+  const bulkPlainFields = bulkFields.filter((f) => !f.array).map((f) => f.name);
   const bulkEditableFields = bulkFields.filter((f) => f.editable).map((f) => f.name);
 
   async function handleBulkSubmit() {
-    if (!isRawOnlySchema && bulkIdFields.length === 0) return;
+    if (!isRawOnlySchema && bulkPlainFields.length === 0) return;
     setSubmittingBulk(true);
     setBulkError('');
     setBulkAdded(null);
@@ -77,14 +87,11 @@ export function useDdfBulk(
         const rows = lines.map((line) => {
           const parts = (hasTab ? line.split('\t') : line.split(',')).map((p) => p.trim());
           const rowPayload: Record<string, string> = {};
-          // Первые bulkIdFields.length значений строки — это id-поле(я) в том же порядке, что
-          // вернул backend (обычно одно, но для составных ключей типа skillname (id, level) —
-          // несколько), остальные значения — editable-поля.
-          bulkIdFields.forEach((name, i) => {
+          // Значения строки — по одному на КАЖДОЕ скалярное поле схемы, в том же порядке, что и
+          // bulkPlainFields (id-поля, прочие нередактируемые числа, затем editable-текст) —
+          // backend (ddf_create) сам разберёт, какие из них текстовые, а какие числовые/float.
+          bulkPlainFields.forEach((name, i) => {
             rowPayload[name] = parts[i] ?? '';
-          });
-          bulkEditableFields.forEach((name, i) => {
-            rowPayload[name] = parts[bulkIdFields.length + i] ?? '';
           });
           return rowPayload;
         });
@@ -107,6 +114,7 @@ export function useDdfBulk(
     bulkTemplateLine,
     bulkRawColumns,
     bulkIdFields,
+    bulkPlainFields,
     loadingBulk,
     submittingBulk,
     bulkError,
