@@ -11,8 +11,13 @@ export default function PatchesDdfRangePanel({
   loadingRange,
   rangeError,
   rangeLoaded,
+  canManage,
+  savingRows,
+  savedRows,
+  rowErrors,
   onLoadRange,
-  onOpenRow,
+  onCellChange,
+  onSaveRow,
 }: {
   idFrom: string;
   setIdFrom: (v: string) => void;
@@ -23,15 +28,21 @@ export default function PatchesDdfRangePanel({
   loadingRange: boolean;
   rangeError: string;
   rangeLoaded: boolean;
+  canManage: boolean;
+  savingRows: Record<number, boolean>;
+  savedRows: Record<number, boolean>;
+  rowErrors: Record<number, string>;
   onLoadRange: () => void;
-  onOpenRow: (index: number) => void;
+  onCellChange: (recordIndex: number, colIndex: number, value: string) => void;
+  onSaveRow: (recordIndex: number) => void;
 }) {
   const labels = rangeRows[0]?.columns.map((c) => c.label) || [];
 
   return (
     <div className="p-5 space-y-4">
       <p className="text-sm text-muted-foreground">
-        Покажет таблицей все записи, чей ID попадает в указанный диапазон.
+        Покажет таблицей все записи, чей ID попадает в указанный диапазон — правьте значения прямо в ячейках,
+        изменения сохраняются автоматически.
       </p>
       <div className="flex items-end gap-2 flex-wrap">
         <div>
@@ -81,6 +92,7 @@ export default function PatchesDdfRangePanel({
           <table className="border-collapse w-full">
             <thead>
               <tr>
+                <th className="w-8 border-b border-r border-border bg-secondary/40 sticky top-0" />
                 {labels.map((label, i) => (
                   <th
                     key={i}
@@ -92,19 +104,38 @@ export default function PatchesDdfRangePanel({
               </tr>
             </thead>
             <tbody>
-              {rangeRows.map((r) => (
-                <tr
-                  key={r.index}
-                  onClick={() => onOpenRow(r.index)}
-                  className="cursor-pointer hover:bg-secondary/40 transition-colors"
-                >
-                  {r.columns.map((c, i) => (
-                    <td key={i} className="px-2 py-1.5 text-xs font-mono border-b border-r border-border last:border-r-0 whitespace-nowrap">
-                      {c.value}
+              {rangeRows.map((r) => {
+                const saving = !!savingRows[r.index];
+                const saved = !!savedRows[r.index];
+                const rowError = rowErrors[r.index];
+                return (
+                  <tr key={r.index}>
+                    <td className="p-0 border-r border-border text-center align-middle" title={rowError || (saved ? 'Сохранено' : '')}>
+                      {saving ? (
+                        <Icon name="Loader2" size={12} className="animate-spin text-muted-foreground mx-auto" />
+                      ) : rowError ? (
+                        <Icon name="AlertCircle" size={12} className="text-destructive mx-auto" />
+                      ) : saved ? (
+                        <Icon name="Check" size={12} className="text-emerald-500 mx-auto" />
+                      ) : null}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    {r.columns.map((c, i) => (
+                      <td key={i} className="p-0 border-r border-border last:border-r-0">
+                        <input
+                          value={c.value}
+                          onChange={(e) => onCellChange(r.index, i, e.target.value)}
+                          onBlur={() => onSaveRow(r.index)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                          disabled={!canManage || saving}
+                          spellCheck={false}
+                          className="h-9 px-2 text-xs font-mono bg-background disabled:opacity-70 outline-none focus:bg-secondary/30 min-w-[60px]"
+                          style={{ width: `${Math.max(60, Math.min(240, c.value.length * 7 + 20))}px` }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
