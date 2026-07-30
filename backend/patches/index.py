@@ -1037,9 +1037,14 @@ def handler(event: dict, context) -> dict:
             # попытки сохранить.
             'canAppend': has_reccnt_prefix,
         }
-        if is_raw_only:
-            result['rawLine'] = ddf_raw.row_to_raw_line(row, fields)
-            result['rawColumns'] = ddf_raw.row_to_raw_columns(row, fields)
+        # rawLine/rawColumns раньше отдавались ТОЛЬКО для is_raw_only схем — теперь всегда,
+        # независимо от схемы: форма массового добавления ("Списком") использует raw-формат для
+        # ЛЮБОЙ схемы (см. ddf_create ниже — rawLines теперь принимается универсально), это
+        # единственный способ гарантированно охватить ВСЕ поля записи, включая динамические
+        # массивы (например actionname: cat2_cnt/c[cat2_cnt]) — обычная форма rows поддерживает
+        # только id-поля и editable-текст, что для схем со значимыми массивами теряет данные.
+        result['rawLine'] = ddf_raw.row_to_raw_line(row, fields)
+        result['rawColumns'] = ddf_raw.row_to_raw_columns(row, fields)
         return _ok(result)
 
     if action == 'ddf_create':
@@ -1094,9 +1099,17 @@ def handler(event: dict, context) -> dict:
         if is_raw_only and raw_lines_input is None:
             cur.close(); conn.close()
             return _bad('raw_only_schema_requires_raw_lines')
-        if not is_raw_only and raw_lines_input is not None:
-            cur.close(); conn.close()
-            return _bad('bad_request')
+        # Раньше rawLines разрешался ТОЛЬКО для raw_only схем (armorgrp/etcitemgrp/recipe), а
+        # обычные схемы обязаны были идти через rows — набор {fieldName: value} только по
+        # id-полям и editable-текстовым полям. Из-за этого форма массового добавления ("Списком")
+        # для обычных схем с ДИНАМИЧЕСКИМИ МАССИВАМИ (например actionname: cat2_cnt/c[cat2_cnt] —
+        # счётчик + связанный с ним массив, значение которого реально используется игрой, не
+        # всегда 0) не могла передать значения этих полей вообще — они получали значение по
+        # умолчанию независимо от того, что ввёл пользователь. rawLines (тот же формат, что
+        # возвращает ddf_get_raw/принимает ddf_save_raw — таб-строка со ВСЕМИ полями схемы,
+        # включая развёрнутые массивы/MTX/MAT) теперь разрешён для ЛЮБОЙ схемы — это единственный
+        # способ гарантированно передать значения абсолютно всех полей записи без риска что-то
+        # потерять.
         quirk_bytes = _ddf_quirk_bytes(server, key)
         s3 = _s3_client()
         bucket = _bucket()

@@ -1,12 +1,23 @@
 import Icon from '@/components/ui/icon';
 import type { RawColumn } from './patchesDdfShared';
 
+// Раньше форма массового добавления по-разному собирала данные для isRawOnly-схем (armorgrp/
+// etcitemgrp/recipe — целая таб-строка, отправлялась как rawLines) и обычных схем (только
+// id-поля + editable-текстовые поля, собирались в {fieldName: value} и отправлялись как rows).
+// Второй путь ломался на ЛЮБОЙ обычной схеме, у которой есть ДРУГИЕ значимые поля помимо
+// id/editable-текста — нередактируемые скаляры (creditgrp: time/align) или динамические массивы
+// (actionname: cat2_cnt + связанный c[cat2_cnt], значение которого реально используется игрой) —
+// эти поля молча получали 0, а подсказка на экране не совпадала с реальной структурой записи
+// (см. реальные скриншоты пользователя: raw-режим показывает 10 колонок, включая c[0], форма
+// "Списком" просила заполнить только 9 — без c[0]).
+//
+// Теперь ОБЕ ветки используют один и тот же raw-формат (тот же, что ddf_get_raw/ddf_save_raw —
+// таб-разделённые значения ВСЕХ полей схемы, включая развёрнутые массивы/MTX/MAT, см. ddf_raw.py)
+// — гарантированно совпадает 1:1 со структурой, которую видно при просмотре существующей записи
+// в raw-режиме, для любой схемы без исключений.
 export default function PatchesDdfBulkPanel({
   loadingBulk,
-  isRawOnly,
   bulkIdFields,
-  bulkPlainFields,
-  bulkEditableFields,
   bulkTemplateLine,
   bulkRawColumns,
   bulkText,
@@ -17,10 +28,7 @@ export default function PatchesDdfBulkPanel({
   onSubmit,
 }: {
   loadingBulk: boolean;
-  isRawOnly: boolean;
   bulkIdFields: string[];
-  bulkPlainFields: string[];
-  bulkEditableFields: string[];
   bulkTemplateLine: string;
   bulkRawColumns: RawColumn[];
   bulkText: string;
@@ -30,88 +38,8 @@ export default function PatchesDdfBulkPanel({
   bulkError: string;
   onSubmit: () => void;
 }) {
-  if (isRawOnly) {
-    // raw-only схемы — нет отдельных "человеческих" полей, каждая строка списка это ГОТОВАЯ
-    // запись целиком (таб-разделённые значения всех полей схемы в фиксированном порядке).
-    // Даём пользователю стартовую строку-шаблон (со значениями по умолчанию), которую удобно
-    // скопировать нужное число раз и точечно поправить значения в каждой копии.
-    const columnNames = bulkRawColumns.map((c) => c.label).join('  ·  ');
-    return (
-      <div className="p-5">
-        {loadingBulk ? (
-          <div className="flex justify-center py-16">
-            <Icon name="Loader2" size={24} className="animate-spin text-primary" />
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              По одной записи на строку. У этого файла сложная структура — каждая строка должна содержать
-              все значения через табуляцию, в том же порядке, что и колонки ниже. Проще всего скопировать
-              строку-шаблон нужное число раз и поправить в каждой копии только нужные значения.
-            </p>
-            {columnNames && (
-              <p className="text-xs text-muted-foreground/80 leading-relaxed">
-                Порядок колонок: {columnNames}
-              </p>
-            )}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setBulkText((bulkText ? bulkText + '\n' : '') + bulkTemplateLine)}
-                className="h-8 px-3 rounded-md text-xs font-medium border border-border hover:bg-secondary transition-colors flex items-center gap-1.5"
-              >
-                <Icon name="Copy" size={12} />
-                Добавить строку-шаблон
-              </button>
-            </div>
-            <textarea
-              autoFocus
-              value={bulkText}
-              onChange={(e) => setBulkText(e.target.value)}
-              rows={10}
-              spellCheck={false}
-              placeholder={bulkTemplateLine}
-              className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono resize-y min-h-[200px]"
-            />
-            <div className="flex items-center gap-3">
-              <button
-                onClick={onSubmit}
-                disabled={submittingBulk || !bulkText.trim()}
-                className="h-9 px-4 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:opacity-90 transition-opacity disabled:opacity-40 flex items-center gap-2"
-              >
-                <Icon name={submittingBulk ? 'Loader2' : 'ListPlus'} size={14} className={submittingBulk ? 'animate-spin' : ''} />
-                {submittingBulk ? 'Добавляю...' : 'Добавить все'}
-              </button>
-              {bulkAdded !== null && (
-                <span className="text-sm text-emerald-500 flex items-center gap-1.5">
-                  <Icon name="Check" size={14} /> Добавлено записей: {bulkAdded}
-                </span>
-              )}
-              {bulkError && <span className="text-sm text-destructive">{bulkError}</span>}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Пример/placeholder раньше был статичным текстом ("90001, Тестовый предмет, Описание
-  // предмета") одинаковым для ЛЮБОГО файла — вводило в заблуждение, если у файла другой набор
-  // полей либо нет понятия id вовсе. Затем колонки примера считались как id-поля + editable-поля
-  // — тоже неверно: у схем с ДОПОЛНИТЕЛЬНЫМИ нередактируемыми скалярными полями (например
-  // creditgrp: id, html[editable], image[editable], time, align) колонки time/align не попадали
-  // ни в подсказку, ни в реально отправляемые данные — они молча становились нулём в каждой
-  // добавленной записи. Теперь пример строится из bulkPlainFields — ПОЛНОГО списка скалярных
-  // полей схемы в порядке DDF-описания (ровно то же, что реально требует и отправляет форма).
-  const exampleRow = bulkPlainFields.map((name, i) => (
-    bulkIdFields.includes(name) ? String(90001 + i) : bulkEditableFields.includes(name) ? `${name} 1` : '0'
-  ));
-  const exampleLine = exampleRow.join(', ');
-  const placeholderLine1 = bulkPlainFields.map((name) => (
-    bulkIdFields.includes(name) ? '90001' : bulkEditableFields.includes(name) ? `${name} 1` : '0'
-  )).join('\t');
-  const placeholderLine2 = bulkPlainFields.map((name) => (
-    bulkIdFields.includes(name) ? '90002' : bulkEditableFields.includes(name) ? `${name} 2` : '0'
-  )).join('\t');
+  const columnNames = bulkRawColumns.map((c) => c.label).join('  ·  ');
+  const idLabels = new Set(bulkIdFields);
 
   return (
     <div className="p-5">
@@ -122,20 +50,36 @@ export default function PatchesDdfBulkPanel({
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            По одной записи на строку. Вставьте значения через табуляцию (как при копировании из Excel/Google Таблиц)
-            или через запятую — по одному значению на каждую колонку, в этом порядке: <strong>{bulkPlainFields.join(', ') || '—'}</strong>.
+            По одной записи на строку. Каждая строка должна содержать все значения через табуляцию,
+            в том же порядке, что и колонки ниже. Проще всего скопировать строку-шаблон нужное число раз
+            и поправить в каждой копии только нужные значения.
           </p>
-          {bulkPlainFields.length > 0 && (
-            <p className="text-xs text-muted-foreground/80">
-              Пример: <code className="px-1 py-0.5 rounded bg-secondary">{exampleLine}</code>
+          {columnNames && (
+            <p className="text-xs text-muted-foreground/80 leading-relaxed">
+              Порядок колонок: {bulkRawColumns.map((c, i) => (
+                <span key={i} className={idLabels.has(c.label) ? 'text-amber-500 font-medium' : ''}>
+                  {i > 0 && '  ·  '}{c.label}
+                </span>
+              ))}
+              {bulkIdFields.length > 0 && ' (выделено — идентификатор записи, должен быть уникальным)'}
             </p>
           )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setBulkText((bulkText ? bulkText + '\n' : '') + bulkTemplateLine)}
+              className="h-8 px-3 rounded-md text-xs font-medium border border-border hover:bg-secondary transition-colors flex items-center gap-1.5"
+            >
+              <Icon name="Copy" size={12} />
+              Добавить строку-шаблон
+            </button>
+          </div>
           <textarea
             autoFocus
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             rows={10}
-            placeholder={bulkPlainFields.length > 0 ? `${placeholderLine1}\n${placeholderLine2}` : ''}
+            spellCheck={false}
+            placeholder={bulkTemplateLine}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono resize-y min-h-[200px]"
           />
           <div className="flex items-center gap-3">
