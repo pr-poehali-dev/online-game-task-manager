@@ -32,14 +32,14 @@ export default function PatchesDdfEditor({
 
   const rowState = useDdfRow(server, path, setMode, setResults, setTotalRows, query, runSearch);
   const {
-    fields, row, edits, setEdits, colorGroup, colorHex, setColorHex,
+    selectedIndex, fields, row, edits, setEdits, colorGroup, colorHex, setColorHex,
     isRawMode, rawLine, setRawLine, rawColumns, idFields, loadingRow, saving, saveError,
     saved, confirmDelete, setConfirmDelete, deleting, openRow, toggleRawView, handleSave,
     handleDelete, backToSearch,
   } = rowState;
 
   const create = useDdfCreate(
-    server, path, setMode, setQuery, runSearch, idFields, rawColumns, rawLine
+    server, path, setMode, setQuery, runSearch, idFields, selectedIndex
   );
   const {
     createRawLine, setCreateRawLine, createRawColumns,
