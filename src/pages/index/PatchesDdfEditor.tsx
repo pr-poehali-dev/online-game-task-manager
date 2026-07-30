@@ -39,10 +39,10 @@ export default function PatchesDdfEditor({
   } = rowState;
 
   const create = useDdfCreate(
-    server, path, setMode, setQuery, runSearch, isRawOnlySchema, idFields, rawColumns, rawLine, row, fields
+    server, path, setMode, setQuery, runSearch, idFields, rawColumns, rawLine
   );
   const {
-    createFields, createValues, setCreateValues, createRawLine, setCreateRawLine, createRawColumns,
+    createRawLine, setCreateRawLine, createRawColumns,
     createIdFields, loadingCreate, creating, createError, openCreate, openDuplicate, handleCreateSubmit,
   } = create;
 
@@ -190,10 +190,6 @@ export default function PatchesDdfEditor({
       {mode === 'create' && (
         <PatchesDdfCreatePanel
           loadingCreate={loadingCreate}
-          isRawOnly={isRawOnlySchema}
-          createFields={createFields}
-          createValues={createValues}
-          setCreateValues={setCreateValues}
           createRawLine={createRawLine}
           setCreateRawLine={setCreateRawLine}
           createRawColumns={createRawColumns}
