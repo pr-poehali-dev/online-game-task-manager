@@ -2,7 +2,7 @@
 
 ⚠️ ВСЕГДА проверять и заменять `poehali.dev`/`cdn.poehali.dev`/
 `bucket.poehali.dev` на боевые значения проекта, прежде чем класть файлы
-в `update/`:
+в `update/ДАТА/`:
 
 - `endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev')`
   → `endpoint_url=os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000')`
