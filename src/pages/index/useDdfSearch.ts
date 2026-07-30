@@ -15,6 +15,7 @@ export function useDdfSearch(server: ServerId, path: string) {
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasIdField, setHasIdField] = useState(false);
+  const [canAppend, setCanAppend] = useState(true);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -28,6 +29,11 @@ export function useDdfSearch(server: ServerId, path: string) {
       setIsRawOnlySchema(!!data.isRawOnly);
       setHasMore(!!data.hasMore);
       setHasIdField(!!data.hasIdField);
+      // canAppend=false — у файла фиксированное схемой число записей (eula — ровно 1,
+      // chargrp/hairgrp/helmetgrp — по числу игровых классов, logongrp — по числу локаций
+      // экрана логина), добавление новых записей клиент игры не поддерживает вообще — кнопки
+      // "Создать"/"Списком" в этом случае скрываются (см. PatchesDdfSearchPanel).
+      setCanAppend(data.canAppend !== false);
     } catch {
       setSearchError('Не удалось выполнить поиск');
     } finally {
@@ -80,6 +86,7 @@ export function useDdfSearch(server: ServerId, path: string) {
     hasMore,
     loadingMore,
     hasIdField,
+    canAppend,
     runSearch,
     loadMore,
   };

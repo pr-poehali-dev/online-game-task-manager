@@ -27,7 +27,7 @@ export default function PatchesDdfEditor({
   const search = useDdfSearch(server, path);
   const {
     mode, setMode, query, setQuery, results, setResults, totalRows, setTotalRows,
-    searching, searchError, isRawOnlySchema, hasMore, loadingMore, hasIdField, runSearch, loadMore,
+    searching, searchError, isRawOnlySchema, hasMore, loadingMore, hasIdField, canAppend, runSearch, loadMore,
   } = search;
 
   const rowState = useDdfRow(server, path, setMode, setResults, setTotalRows, query, runSearch);
@@ -120,6 +120,7 @@ export default function PatchesDdfEditor({
           onOpenBulk={openBulk}
           hasIdField={hasIdField}
           onOpenRange={openRange}
+          canAppend={canAppend}
         />
       )}
 

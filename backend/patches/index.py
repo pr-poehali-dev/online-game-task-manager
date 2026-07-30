@@ -606,7 +606,7 @@ def handler(event: dict, context) -> dict:
             return _ok({
                 'schema': key, 'totalRows': total_rows, 'matched': len(results),
                 'hasMore': False, 'results': results, 'isRawOnly': is_raw_only,
-                'hasIdField': bool(id_field_names),
+                'hasIdField': bool(id_field_names), 'canAppend': has_reccnt_prefix,
             })
         try:
             matches, total_rows = ddf_parser.search_records(
@@ -633,6 +633,7 @@ def handler(event: dict, context) -> dict:
             'results': results,
             'isRawOnly': is_raw_only,
             'hasIdField': bool(id_field_names),
+            'canAppend': has_reccnt_prefix,
         })
 
     if action == 'ddf_range':
@@ -1016,7 +1017,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         if not match:
             return _bad('ddf_not_supported')
-        key, fields, editable, _has_reccnt_prefix, _fixed_record_count, is_raw_only = match
+        key, fields, editable, has_reccnt_prefix, _fixed_record_count, is_raw_only = match
         row = ddf_parser.default_row(fields)
         color_group_def = _ddf_color_group(server, path)
         result = {
@@ -1027,6 +1028,14 @@ def handler(event: dict, context) -> dict:
             'colorGroup': color_group_def,
             'colorHex': _ddf_color_hex(row, color_group_def),
             'idFields': _ddf_id_fields(server, path),
+            # Файлы с фиксированным числом записей, заданным самой схемой клиента (eula — ровно
+            # 1, chargrp/hairgrp/helmetgrp — ровно 15, logongrp — ровно 26; см.
+            # FIXED_RECORD_COUNTS в ddf_registry_c4.py), физически не поддерживают добавление
+            # НОВЫХ записей — количество жёстко ожидается игровым клиентом. ddf_create для таких
+            # схем всегда возвращает ошибку fixed_schema_no_append (см. ниже) — canAppend=False
+            # позволяет фронтенду скрыть кнопки "Создать"/"Списком" ЗАРАНЕЕ, а не после неудачной
+            # попытки сохранить.
+            'canAppend': has_reccnt_prefix,
         }
         if is_raw_only:
             result['rawLine'] = ddf_raw.row_to_raw_line(row, fields)

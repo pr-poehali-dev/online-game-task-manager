@@ -92,6 +92,23 @@ export default function PatchesDdfBulkPanel({
     );
   }
 
+  // Пример/placeholder раньше был статичным текстом ("90001, Тестовый предмет, Описание
+  // предмета") одинаковым для ЛЮБОГО файла — вводило в заблуждение, если у файла другой набор
+  // полей (или их вообще нет, как у actionname: tag,id,cmd,icon,name,desc) либо нет понятия id
+  // вовсе. Теперь пример строится из РЕАЛЬНЫХ полей открытого файла — по одному демонстрационному
+  // значению на колонку, в правильном порядке (сначала id-поля, затем editable).
+  const allColumnNames = [...bulkIdFields, ...bulkEditableFields];
+  const exampleRow = allColumnNames.map((name, i) => (
+    bulkIdFields.includes(name) ? String(90001 + i) : `${name} 1`
+  ));
+  const exampleLine = exampleRow.join(', ');
+  const placeholderLine1 = allColumnNames.map((name) => (
+    bulkIdFields.includes(name) ? '90001' : `${name} 1`
+  )).join('\t');
+  const placeholderLine2 = allColumnNames.map((name) => (
+    bulkIdFields.includes(name) ? '90002' : `${name} 2`
+  )).join('\t');
+
   return (
     <div className="p-5">
       {loadingBulk ? (
@@ -102,17 +119,20 @@ export default function PatchesDdfBulkPanel({
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
             По одной записи на строку. Вставьте значения через табуляцию (как при копировании из Excel/Google Таблиц)
-            или через запятую — сначала <strong>{bulkIdFields.join(', ')}</strong>, затем: {bulkEditableFields.join(', ') || '—'}.
+            или через запятую — {bulkIdFields.length > 0 && <>сначала <strong>{bulkIdFields.join(', ')}</strong>, затем: </>}
+            {bulkEditableFields.join(', ') || (bulkIdFields.length === 0 ? 'у этого файла нет текстовых полей для правки' : '—')}.
           </p>
-          <p className="text-xs text-muted-foreground/80">
-            Пример: <code className="px-1 py-0.5 rounded bg-secondary">90001, Тестовый предмет, Описание предмета</code>
-          </p>
+          {allColumnNames.length > 0 && (
+            <p className="text-xs text-muted-foreground/80">
+              Пример: <code className="px-1 py-0.5 rounded bg-secondary">{exampleLine}</code>
+            </p>
+          )}
           <textarea
             autoFocus
             value={bulkText}
             onChange={(e) => setBulkText(e.target.value)}
             rows={10}
-            placeholder={`90001\tНазвание 1\tОписание 1\n90002\tНазвание 2\tОписание 2`}
+            placeholder={allColumnNames.length > 0 ? `${placeholderLine1}\n${placeholderLine2}` : ''}
             className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm font-mono resize-y min-h-[200px]"
           />
           <div className="flex items-center gap-3">

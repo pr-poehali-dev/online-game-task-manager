@@ -17,6 +17,7 @@ export default function PatchesDdfSearchPanel({
   onOpenBulk,
   hasIdField,
   onOpenRange,
+  canAppend,
 }: {
   query: string;
   setQuery: (v: string) => void;
@@ -33,6 +34,7 @@ export default function PatchesDdfSearchPanel({
   onOpenBulk: () => void;
   hasIdField: boolean;
   onOpenRange: () => void;
+  canAppend: boolean;
 }) {
   return (
     <div className="p-5">
@@ -60,7 +62,7 @@ export default function PatchesDdfSearchPanel({
             <span className="hidden sm:inline">Диапазон</span>
           </button>
         )}
-        {canManage && (
+        {canManage && canAppend && (
           <>
             <button
               onClick={onOpenCreate}
@@ -85,6 +87,12 @@ export default function PatchesDdfSearchPanel({
       {hasIdField && (
         <p className="text-xs text-muted-foreground/80 -mt-2 mb-3">
           Совет: чтобы найти запись строго по ID (а не по вхождению цифр), введите <code className="px-1 py-0.5 rounded bg-secondary">id=123</code>
+        </p>
+      )}
+
+      {canManage && !canAppend && (
+        <p className="text-xs text-muted-foreground/80 -mt-2 mb-3">
+          У этого файла жёстко фиксированное число записей (задано игровым клиентом) — добавление новых записей недоступно, можно только редактировать существующие.
         </p>
       )}
 
