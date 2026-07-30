@@ -43,14 +43,19 @@ ALL_PERMISSIONS = [
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
+    'patch_edit',
 ]
 
 
 def _effective_perms(role, raw):
+    '''patch_edit по умолчанию False даже для role == 'admin' (см. backend/admin/index.py) —
+    изначально есть только у OWNER_USER_ID через миграцию.'''
     result = {}
     for key in ALL_PERMISSIONS:
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
+        elif key == 'patch_edit':
+            result[key] = False
         else:
             result[key] = (role == 'admin')
     return result

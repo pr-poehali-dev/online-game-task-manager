@@ -226,15 +226,20 @@ ALL_PERMISSIONS = [
     'sprint_create', 'sprint_edit',
     'launcher_notify',
     'private_notes_view_others',
+    'patch_edit',
 ]
 
 
 def _effective_perms(role, raw):
-    '''Индивидуальные права (если заданы явно) приоритетнее роли. Не заданные — берутся из роли.'''
+    '''Индивидуальные права (если заданы явно) приоритетнее роли. Не заданные — берутся из роли,
+    КРОМЕ patch_edit — по умолчанию False даже для role == 'admin' (см. backend/admin/index.py за
+    подробностями), изначально есть только у OWNER_USER_ID через миграцию.'''
     result = {}
     for key in ALL_PERMISSIONS:
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
+        elif key == 'patch_edit':
+            result[key] = False
         else:
             result[key] = (role == 'admin')
     return result

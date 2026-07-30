@@ -258,7 +258,7 @@ export default function IndexMain({
         {visited.has('patches') && (
           <div className={view === 'patches' ? '' : 'hidden'}>
             <Patches
-              canManage={isAdmin || can('task_edit_own')}
+              canManage={can('patch_edit')}
               tasks={activeTasks.map((t) => ({ id: t.id, title: t.title, server: t.server }))}
               initialTaskId={patchesTaskId}
               initialServerId={patchesServerId}

@@ -70,6 +70,13 @@ export const OWNER_ONLY_PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'private_notes_view_others', label: 'Просмотр чужих приватных сообщений (без этого права виден только текст своих сообщений — отправленных или адресованных лично)' },
     ],
   },
+  {
+    title: 'Патчи',
+    icon: 'FolderTree',
+    items: [
+      { key: 'patch_edit', label: 'Редактирование раздела «Патчи» (загрузка/удаление файлов и папок, создание/изменение/удаление записей внутри .dat-файлов — без этого права доступен только просмотр)' },
+    ],
+  },
 ];
 
 export interface TeamUser {

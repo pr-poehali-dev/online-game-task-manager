@@ -167,6 +167,35 @@ def _db():
     return conn
 
 
+# patch_edit — привилегия на РЕДАКТИРОВАНИЕ раздела "Патчи" целиком (загрузка/удаление файлов и
+# папок, привязка к задачам, а также создание/изменение/удаление записей внутри .dat-файлов) —
+# в отличие от private_notes_view_others/patch_desc_save (эксклюзивно OWNER_USER_ID), это ОБЫЧНАЯ
+# привилегия из ALL_PERMISSIONS с эффективным значением по роли (по умолчанию есть у admin, нет у
+# member — см. _effective_perms), но выдавать/отзывать её у КОНКРЕТНОГО пользователя, как и
+# private_notes_view_others, может только владелец проекта (см. PRIVILEGED_PERMISSIONS в
+# backend/admin/index.py) — это ограничение проверяется ТАМ (в set_permissions), а не здесь.
+# Здесь просто читаем эффективное значение права: просмотр (tree/ddf_search/ddf_get и т.п.)
+# доступен любому авторизованному участнику, а вот загрузка/удаление файлов и любая запись
+# внутри .dat-файлов (ddf_save/ddf_create/ddf_delete/ddf_save_raw и т.д., см. ниже) — только
+# тем, у кого patch_edit=true.
+ALL_PERMISSIONS = ['task_edit_own', 'patch_edit']
+
+
+def _effective_perms(role, raw):
+    '''См. одноимённую функцию в backend/admin/index.py за полным описанием — patch_edit по
+    умолчанию False (даже для role == 'admin'), пока не выдано явно (изначально есть только у
+    OWNER_USER_ID через миграцию), остальные права — по умолчанию role == 'admin' как обычно.'''
+    result = {}
+    for key in ALL_PERMISSIONS:
+        if isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        elif key == 'patch_edit':
+            result[key] = False
+        else:
+            result[key] = (role == 'admin')
+    return result
+
+
 def _current_user(cur, schema, token):
     if not token:
         return None
@@ -178,10 +207,8 @@ def _current_user(cur, schema, token):
     row = cur.fetchone()
     if not row:
         return None
-    perms = row[2] if isinstance(row[2], dict) else {}
-    task_edit_own = perms.get('task_edit_own')
-    can_manage = row[1] == 'admin' if task_edit_own is None else bool(task_edit_own)
-    return {'id': row[0], 'role': row[1], 'can_manage': can_manage}
+    perms = _effective_perms(row[1], row[2])
+    return {'id': row[0], 'role': row[1], 'can_manage': perms['patch_edit']}
 
 
 def _tg_send(chat_id, text, button_url=None):
