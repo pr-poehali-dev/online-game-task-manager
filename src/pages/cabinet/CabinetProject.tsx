@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import CabinetServers from './CabinetServers';
+import CabinetCategories from './CabinetCategories';
 
-type ProjectSubsection = 'menu' | 'servers';
+type ProjectSubsection = 'menu' | 'servers' | 'categories';
 
-// Остальные подразделы (Категории, Хранилище/MinIO, Лаунчер, Служебные ключи) — заглушки, по
-// требованию пользователя будут наполнены отдельными этапами. "Серверы" уже реализован полностью
-// (см. CabinetServers.tsx) и открывается отдельным экраном внутри этого раздела.
+// Остальные подразделы (Хранилище/MinIO, Лаунчер, Служебные ключи) — заглушки, по требованию
+// пользователя будут наполнены отдельными этапами. "Серверы" и "Категории" уже реализованы
+// полностью (см. CabinetServers.tsx / CabinetCategories.tsx) и открываются отдельным экраном
+// внутри этого раздела.
 const PLACEHOLDER_ITEMS = [
-  { icon: 'Tag', label: 'Категории', description: 'Категории задач и статей' },
   { icon: 'Cloud', label: 'Хранилище (MinIO)', description: 'Адреса и ключи для файлового хранилища' },
   { icon: 'UploadCloud', label: 'Лаунчер', description: 'Настройки заливки патчей и лаунчера' },
   { icon: 'KeyRound', label: 'Служебные ключи', description: 'Прочая служебная информация для работы проекта' },
@@ -17,7 +18,7 @@ const PLACEHOLDER_ITEMS = [
 export default function CabinetProject() {
   const [sub, setSub] = useState<ProjectSubsection>('menu');
 
-  if (sub === 'servers') {
+  if (sub === 'servers' || sub === 'categories') {
     return (
       <div>
         <button
@@ -27,7 +28,7 @@ export default function CabinetProject() {
           <Icon name="ArrowLeft" size={14} />
           Управление проектом
         </button>
-        <CabinetServers />
+        {sub === 'servers' ? <CabinetServers /> : <CabinetCategories />}
       </div>
     );
   }
@@ -35,7 +36,7 @@ export default function CabinetProject() {
   return (
     <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-1">Управление проектом</h1>
-      <p className="text-sm text-muted-foreground mb-6">Настройка серверов и служебной информации проекта.</p>
+      <p className="text-sm text-muted-foreground mb-6">Настройка серверов, категорий и служебной информации проекта.</p>
 
       <div className="space-y-2">
         <button
@@ -48,6 +49,20 @@ export default function CabinetProject() {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Серверы</div>
             <div className="text-xs text-muted-foreground">Добавление серверов и их настройка</div>
+          </div>
+          <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
+        </button>
+
+        <button
+          onClick={() => setSub('categories')}
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+        >
+          <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+            <Icon name="Tag" size={17} className="text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Категории</div>
+            <div className="text-xs text-muted-foreground">Категории задач и статей</div>
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
         </button>

@@ -5,7 +5,7 @@ import AttachmentsField from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
-import { categories, deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
+import { deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -17,7 +17,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   onCreate: (t: Task) => void;
   sprints: Sprint[];
 }) {
-  const { servers } = useCatalog();
+  const { servers, categories } = useCatalog();
   const initialDeployStatus = (deployStatuses.find((ds) => ds.column === column)?.id ?? 'none') as DeployStatus;
   const [form, setForm] = useState({
     title: preset?.title ?? '',

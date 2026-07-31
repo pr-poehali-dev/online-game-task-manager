@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
-import { deployStatuses, priorityMap, categoryMeta } from './sharedConstants';
+import { deployStatuses, priorityMap } from './sharedConstants';
 import { formatDeadline, deadlineState, resolveAssignee } from './sharedHelpers';
 import type { Priority, DeployStatus, CategoryId, ServerId, DeadlineState, AssigneeView, TeamMember } from './sharedTypes';
 
@@ -60,6 +60,7 @@ export function LauncherBadge({ uploaded }: { uploaded: boolean }) {
 }
 
 export function CategoryBadge({ id }: { id: CategoryId }) {
+  const { categoryMeta } = useCatalog();
   const c = categoryMeta(id);
   return (
     <span

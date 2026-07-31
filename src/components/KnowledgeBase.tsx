@@ -7,7 +7,7 @@ import ArticleEditor from './knowledge-base/ArticleEditor';
 import type { ArticleListItem, Article, KbCategoryId, KbAttachment, KbVisibility, Author } from './knowledge-base/shared';
 import { articleCache } from './knowledge-base/articleCache';
 
-export { KNOWLEDGE_URL, kbAuthHeaders, kbCategories } from './knowledge-base/shared';
+export { KNOWLEDGE_URL, kbAuthHeaders } from './knowledge-base/shared';
 export type { KbArticleBrief, KbCategoryId, KbAttachment } from './knowledge-base/shared';
 
 export default function KnowledgeBase({ category, authors, initialArticleId, can, isAdmin, onOpenArticleById, onBack }: {

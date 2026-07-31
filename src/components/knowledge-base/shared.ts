@@ -15,24 +15,11 @@ export interface KbArticleBrief {
   category: string;
 }
 
-export type KbCategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
-
-export const kbCategories: { id: KbCategoryId; label: string; icon: string; color: string }[] = [
-  { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
-  { id: 'launcher', label: 'Лаунчер', icon: 'MonitorDown', color: '270 65% 65%' },
-  { id: 'client', label: 'Клиент', icon: 'Gamepad2', color: '35 85% 58%' },
-  { id: 'social', label: 'Соцсети и форум', icon: 'MessagesSquare', color: '330 70% 62%' },
-  { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
-  { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
-  { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
-  { id: 'logs', label: 'Логи', icon: 'ScrollText', color: '25 80% 55%' },
-  { id: 'events', label: 'Эвенты', icon: 'PartyPopper', color: '300 65% 62%' },
-  { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
-];
-
-export function kbCatMeta(id: string) {
-  return kbCategories.find((c) => c.id === id) ?? kbCategories[kbCategories.length - 1];
-}
+// KbCategoryId — идентификатор категории из динамического справочника (см. useCatalog() в
+// src/lib/catalog.tsx, backend/catalog/index.py, таблица categories в БД) — общий справочник для
+// задач и статей базы знаний. kbCategories/kbCatMeta УДАЛЕНЫ отсюда — используйте
+// useCatalog().categories / useCatalog().categoryMeta вместо них.
+export type KbCategoryId = string;
 
 export type KbVisibility = 'public' | 'private';
 

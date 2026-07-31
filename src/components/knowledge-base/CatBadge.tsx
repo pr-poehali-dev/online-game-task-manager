@@ -1,8 +1,9 @@
 import Icon from '@/components/ui/icon';
-import { kbCatMeta } from './shared';
+import { useCatalog } from '@/lib/catalog';
 
 export default function CatBadge({ id }: { id: string }) {
-  const c = kbCatMeta(id);
+  const { categoryMeta } = useCatalog();
+  const c = categoryMeta(id);
   return (
     <span
       className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md"

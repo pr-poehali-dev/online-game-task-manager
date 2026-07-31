@@ -2,7 +2,7 @@ import Icon from '@/components/ui/icon';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Sprint } from './shared';
-import { taskAssigneeIds, resolveAssignee, categories, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
+import { taskAssigneeIds, resolveAssignee, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
 
 export default function TaskModalMeta({
@@ -36,7 +36,7 @@ export default function TaskModalMeta({
   deadlineLocal: string;
   setDeadlineLocal: (v: string) => void;
 }) {
-  const { servers } = useCatalog();
+  const { servers, categories } = useCatalog();
   return (
     <>
       {/* Title */}

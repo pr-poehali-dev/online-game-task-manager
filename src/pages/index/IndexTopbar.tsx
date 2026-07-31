@@ -9,7 +9,6 @@ import { SidebarContent } from './IndexSidebar';
 import { useCatalog } from '@/lib/catalog';
 import {
   resolveAssignee,
-  categoryMeta,
 } from './shared';
 import type {
   TeamMember,
@@ -70,7 +69,7 @@ export default function IndexTopbar({
   kbArticles: KbArticleBrief[];
 }) {
   const navigate = useNavigate();
-  const { servers } = useCatalog();
+  const { servers, categoryMeta } = useCatalog();
   const restartCount = activeTasks.filter((t) => t.column === 'restart').length;
   const [menuOpen, setMenuOpen] = useState(false);
 

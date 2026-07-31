@@ -1,10 +1,8 @@
 import type {
   Priority,
   ColumnId,
-  CategoryId,
   DeployStatus,
   TaskOutcome,
-  Category,
   Sprint,
 } from './sharedTypes';
 
@@ -36,26 +34,9 @@ export function outcomeMeta(id: TaskOutcome) {
   return outcomes.find((o) => o.id === id) ?? outcomes[0];
 }
 
-// servers/serverMeta — УДАЛЕНЫ отсюда: список серверов теперь динамический, приходит из БД
-// через useCatalog() (см. src/lib/catalog.tsx, backend/catalog/index.py, таблица servers).
-// Используйте useCatalog().servers / useCatalog().serverMeta вместо этих констант.
-
-export const categories: Category[] = [
-  { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
-  { id: 'launcher', label: 'Лаунчер', icon: 'MonitorDown', color: '270 65% 65%' },
-  { id: 'client', label: 'Клиент', icon: 'Gamepad2', color: '35 85% 58%' },
-  { id: 'social', label: 'Соцсети и форум', icon: 'MessagesSquare', color: '330 70% 62%' },
-  { id: 'ads', label: 'Реклама', icon: 'Megaphone', color: '45 90% 55%' },
-  { id: 'server-ext', label: 'Сервер · Экст', icon: 'Database', color: '0 65% 60%' },
-  { id: 'server-scripts', label: 'Сервер · Скрипты', icon: 'Code2', color: '152 55% 50%' },
-  { id: 'logs', label: 'Логи', icon: 'ScrollText', color: '25 80% 55%' },
-  { id: 'events', label: 'Эвенты', icon: 'PartyPopper', color: '300 65% 62%' },
-  { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
-];
-
-export function categoryMeta(id: CategoryId) {
-  return categories.find((c) => c.id === id) ?? categories[categories.length - 1];
-}
+// servers/serverMeta и categories/categoryMeta — УДАЛЕНЫ отсюда: оба списка теперь динамические,
+// приходят из БД через useCatalog() (см. src/lib/catalog.tsx, backend/catalog/index.py, таблицы
+// servers/categories). Используйте useCatalog().categories / useCatalog().categoryMeta.
 
 export const columns: { id: ColumnId; title: string; icon: string }[] = [
   { id: 'todo', title: 'To Do', icon: 'Circle' },

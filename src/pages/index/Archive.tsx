@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { resolveAssignee, taskAssigneeIds, categoryMeta, outcomes, outcomeMeta, AssigneeStack } from './shared';
+import { resolveAssignee, taskAssigneeIds, outcomes, outcomeMeta, AssigneeStack } from './shared';
 
 type ArchiveTab = 'tasks' | 'sprints';
 
@@ -32,6 +33,7 @@ export default function Archive({
   onRestoreSprint: (id: string) => void;
   onDeleteSprint: (id: string) => void;
 }) {
+  const { categoryMeta } = useCatalog();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmSprintId, setConfirmSprintId] = useState<string | null>(null);
   const [tab, setTab] = useState<ArchiveTab>('tasks');

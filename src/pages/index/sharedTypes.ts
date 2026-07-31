@@ -26,7 +26,12 @@ export type ColumnId = 'todo' | 'progress' | 'done' | 'restart' | 'hold';
 // union-типом из 3 конкретных ID, теперь любая строка, т.к. администратор может добавлять новые
 // серверы через кабинет (раздел "Управление проектом → Серверы", см. CabinetProject.tsx).
 export type ServerId = string;
-export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
+// CategoryId — идентификатор категории из динамического справочника (см. useCatalog() в
+// src/lib/catalog.tsx, backend/catalog/index.py, таблица categories в БД) — раньше был
+// фиксированным union-типом, теперь любая строка, т.к. администратор может добавлять/переименовывать
+// категории через кабинет (раздел "Управление проектом → Категории", см. CabinetProject.tsx).
+// Категории общие для задач и статей базы знаний (одна и та же таблица/справочник).
+export type CategoryId = string;
 export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas' | 'patchnotes' | 'patches';

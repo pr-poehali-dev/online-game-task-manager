@@ -1,8 +1,8 @@
 import Icon from '@/components/ui/icon';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
+import { useCatalog } from '@/lib/catalog';
 import {
   taskAssigneeIds,
-  categories,
   hueFor,
   initials,
 } from './shared';
@@ -38,6 +38,7 @@ export function SidebarContent({
   setView,
   showLogo = true,
 }: SidebarContentProps) {
+  const { categories } = useCatalog();
   return (
     <>
       {/* Logo — L2 style */}

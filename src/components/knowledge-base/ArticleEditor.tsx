@@ -2,7 +2,8 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import UserMultiSelect from './UserMultiSelect';
-import { KNOWLEDGE_URL, authHeaders, kbCategories, inputCls, fmtSize, fileIconFor } from './shared';
+import { useCatalog } from '@/lib/catalog';
+import { KNOWLEDGE_URL, authHeaders, inputCls, fmtSize, fileIconFor } from './shared';
 import type { Article, KbCategoryId, KbAttachment, KbVisibility, Author } from './shared';
 
 export default function ArticleEditor({ article, defaultCategory, authors, onCancel, onSave }: {
@@ -12,6 +13,7 @@ export default function ArticleEditor({ article, defaultCategory, authors, onCan
   onCancel: () => void;
   onSave: (p: { id?: string; title: string; category: KbCategoryId; excerpt: string; content: string; attachments: KbAttachment[]; visibility: KbVisibility; allowedUserIds: number[] }) => void;
 }) {
+  const { categories } = useCatalog();
   const [title, setTitle] = useState(article?.title ?? '');
   const [category, setCategory] = useState<KbCategoryId>(article?.category ?? defaultCategory);
   const [excerpt, setExcerpt] = useState(article?.excerpt ?? '');
@@ -114,7 +116,7 @@ export default function ArticleEditor({ article, defaultCategory, authors, onCan
               onChange={(e) => setCategory(e.target.value as KbCategoryId)}
               className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
             >
-              {kbCategories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              {categories.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
             </select>
           </div>
           <div>
