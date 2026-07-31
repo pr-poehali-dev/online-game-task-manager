@@ -6,6 +6,7 @@ export default function UserList({
   users,
   loading,
   currentUserId,
+  isRealAdmin,
   editSpecId,
   setEditSpecId,
   editSpecValue,
@@ -41,6 +42,12 @@ export default function UserList({
   users: TeamUser[];
   loading: boolean;
   currentUserId: number | undefined;
+  // isRealAdmin — true только для настоящей роли admin (не для участника с делегированным правом
+  // team_manage) — управляет видимостью действий из ADMIN_ONLY_ACTIONS на backend (impersonate,
+  // изменение индивидуальных прав, смена роли): backend всё равно отклонит эти действия от имени
+  // делегата (403 admin_only_action), но честнее не показывать элементы управления, которые всё
+  // равно не сработают, а не давать нажать и получить ошибку.
+  isRealAdmin: boolean;
   editSpecId: number | null;
   setEditSpecId: (id: number | null) => void;
   editSpecValue: string;
@@ -175,16 +182,18 @@ export default function UserList({
               {u.active_sessions > 0 && <span>{u.active_sessions}</span>}
             </button>
 
-            <button
-              onClick={() => (permsForId === u.id ? setPermsForId(null) : openPerms(u))}
-              title="Индивидуальные права"
-              className={`h-8 px-2 rounded-lg flex items-center gap-1 text-xs transition-colors ${
-                permsForId === u.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-              }`}
-            >
-              <Icon name="KeySquare" size={15} />
-              <Icon name={permsForId === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} />
-            </button>
+            {isRealAdmin && (
+              <button
+                onClick={() => (permsForId === u.id ? setPermsForId(null) : openPerms(u))}
+                title="Индивидуальные права"
+                className={`h-8 px-2 rounded-lg flex items-center gap-1 text-xs transition-colors ${
+                  permsForId === u.id ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+              >
+                <Icon name="KeySquare" size={15} />
+                <Icon name={permsForId === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} />
+              </button>
+            )}
 
             <button
               onClick={() => openStats(u)}
@@ -194,7 +203,10 @@ export default function UserList({
               <Icon name="BarChart3" size={15} />
             </button>
 
-            {u.is_active && u.id !== currentUserId && (
+            {/* impersonate/смена роли — только для настоящих администраторов (см. isRealAdmin
+                выше): backend отклонит эти действия от участника с делегированным team_manage
+                (403 admin_only_action, см. ADMIN_ONLY_ACTIONS в backend/admin/index.py). */}
+            {isRealAdmin && u.is_active && u.id !== currentUserId && (
               <button
                 onClick={() => impersonate(u)}
                 disabled={impersonatingId !== null}
@@ -209,15 +221,21 @@ export default function UserList({
               </button>
             )}
 
-            <select
-              value={u.role}
-              onChange={(e) => setRole(u.id, e.target.value as 'member' | 'admin')}
-              disabled={u.id === currentUserId}
-              className="rounded-lg border border-border bg-secondary/60 px-2 py-1.5 text-xs focus:outline-none disabled:opacity-50"
-            >
-              <option value="member">Участник</option>
-              <option value="admin">Администратор</option>
-            </select>
+            {isRealAdmin ? (
+              <select
+                value={u.role}
+                onChange={(e) => setRole(u.id, e.target.value as 'member' | 'admin')}
+                disabled={u.id === currentUserId}
+                className="rounded-lg border border-border bg-secondary/60 px-2 py-1.5 text-xs focus:outline-none disabled:opacity-50"
+              >
+                <option value="member">Участник</option>
+                <option value="admin">Администратор</option>
+              </select>
+            ) : (
+              <span className="rounded-lg border border-border bg-secondary/30 px-2 py-1.5 text-xs text-muted-foreground">
+                {u.role === 'admin' ? 'Администратор' : 'Участник'}
+              </span>
+            )}
 
             <button
               onClick={() => toggleShowInTeam(u)}
@@ -249,7 +267,7 @@ export default function UserList({
             )}
           </div>
 
-          {permsForId === u.id && (
+          {isRealAdmin && permsForId === u.id && (
             <div className="mt-1.5 rounded-xl border border-border bg-card/60 p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <p className="text-xs text-muted-foreground">
@@ -288,12 +306,12 @@ export default function UserList({
                     </div>
                   </div>
                 ))}
-                {/* OWNER_ONLY_PERMISSION_GROUPS (сейчас — просмотр чужих приватных сообщений) —
-                    выдавать/отзывать может только владелец проекта (backend/admin/index.py,
-                    OWNER_USER_ID). Не-владельцу показываем те же чекбоксы, но заблокированными
-                    (disabled) с пояснением — честнее, чем скрыть совсем (видно, что право есть и
-                    кем управляется), и не даёт заполнить форму, которую backend всё равно
-                    отклонит только при сохранении. */}
+                {/* OWNER_ONLY_PERMISSION_GROUPS (сейчас — просмотр чужих приватных сообщений,
+                    редактирование патчей) — выдавать/отзывать может только владелец проекта
+                    (backend/admin/index.py, OWNER_USER_ID). Не-владельцу показываем те же
+                    чекбоксы, но заблокированными (disabled) с пояснением — честнее, чем скрыть
+                    совсем (видно, что право есть и кем управляется), и не даёт заполнить форму,
+                    которую backend всё равно отклонит только при сохранении. */}
                 {OWNER_ONLY_PERMISSION_GROUPS.map((group) => (
                   <div key={group.title} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
                     <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">

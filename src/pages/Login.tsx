@@ -12,7 +12,7 @@ export default function Login() {
   const [error, setError] = useState<string | null>(null);
   const { applySession } = useAuth();
 
-  function handleSuccess(user: AuthUser) {
+  function handleSuccess(_user: AuthUser) {
     setError(null);
     // Если пришли по прямой ссылке (например из уведомления в Telegram) — возвращаемся туда
     const next = searchParams.get('next');
@@ -20,7 +20,7 @@ export default function Login() {
       navigate(decodeURIComponent(next), { replace: true });
       return;
     }
-    navigate(user.role === 'admin' ? '/admin' : '/cabinet', { replace: true });
+    navigate('/cabinet', { replace: true });
   }
 
   return (

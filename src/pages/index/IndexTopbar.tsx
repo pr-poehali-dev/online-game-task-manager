@@ -163,8 +163,8 @@ export default function IndexTopbar({
           )}
           {user ? (
             <button
-              onClick={() => navigate(isAdmin ? '/admin' : '/cabinet')}
-              title={isAdmin ? 'Админка' : 'Личный кабинет'}
+              onClick={() => navigate('/cabinet')}
+              title="Личный кабинет"
               className="h-8 px-2.5 rounded-lg bg-secondary/60 flex items-center gap-2 hover:bg-secondary transition-colors"
             >
               {user.photo_url ? (
