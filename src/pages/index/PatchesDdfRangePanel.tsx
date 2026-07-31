@@ -15,6 +15,7 @@ export default function PatchesDdfRangePanel({
   savingRows,
   savedRows,
   rowErrors,
+  dirtyRows,
   onLoadRange,
   onCellChange,
   onSaveRow,
@@ -32,6 +33,7 @@ export default function PatchesDdfRangePanel({
   savingRows: Record<number, boolean>;
   savedRows: Record<number, boolean>;
   rowErrors: Record<number, string>;
+  dirtyRows: Record<number, boolean>;
   onLoadRange: () => void;
   onCellChange: (recordIndex: number, colIndex: number, value: string) => void;
   onSaveRow: (recordIndex: number) => void;
@@ -41,8 +43,8 @@ export default function PatchesDdfRangePanel({
   return (
     <div className="p-5 space-y-4">
       <p className="text-sm text-muted-foreground">
-        Покажет таблицей все записи, чей ID попадает в указанный диапазон — правьте значения прямо в ячейках,
-        изменения сохраняются автоматически.
+        Покажет таблицей все записи, чей ID попадает в указанный диапазон — правьте значения прямо в ячейках
+        и сохраняйте строку кнопкой в конце ряда.
       </p>
       <div className="flex items-end gap-2 flex-wrap">
         <div>
@@ -101,6 +103,9 @@ export default function PatchesDdfRangePanel({
                     {label}
                   </th>
                 ))}
+                {canManage && (
+                  <th className="w-10 border-b border-border bg-secondary/40 sticky top-0" />
+                )}
               </tr>
             </thead>
             <tbody>
@@ -108,6 +113,7 @@ export default function PatchesDdfRangePanel({
                 const saving = !!savingRows[r.index];
                 const saved = !!savedRows[r.index];
                 const rowError = rowErrors[r.index];
+                const dirty = !!dirtyRows[r.index];
                 return (
                   <tr key={r.index}>
                     <td className="p-0 border-r border-border text-center align-middle" title={rowError || (saved ? 'Сохранено' : '')}>
@@ -124,8 +130,7 @@ export default function PatchesDdfRangePanel({
                         <input
                           value={c.value}
                           onChange={(e) => onCellChange(r.index, i, e.target.value)}
-                          onBlur={() => onSaveRow(r.index)}
-                          onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+                          onKeyDown={(e) => e.key === 'Enter' && onSaveRow(r.index)}
                           disabled={!canManage || saving}
                           spellCheck={false}
                           className="h-9 px-2 text-xs font-mono bg-background disabled:opacity-70 outline-none focus:bg-secondary/30 min-w-[60px]"
@@ -133,6 +138,18 @@ export default function PatchesDdfRangePanel({
                         />
                       </td>
                     ))}
+                    {canManage && (
+                      <td className="p-0 text-center align-middle">
+                        <button
+                          onClick={() => onSaveRow(r.index)}
+                          disabled={saving || !dirty}
+                          title="Сохранить строку"
+                          className="h-9 w-9 flex items-center justify-center text-muted-foreground hover:text-primary disabled:opacity-30 disabled:hover:text-muted-foreground transition-colors"
+                        >
+                          <Icon name={saving ? 'Loader2' : 'Save'} size={14} className={saving ? 'animate-spin' : ''} />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

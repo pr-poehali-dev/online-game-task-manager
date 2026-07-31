@@ -19,6 +19,10 @@ export function useDdfRange(server: ServerId, path: string) {
   const [savingRows, setSavingRows] = useState<Record<number, boolean>>({});
   const [savedRows, setSavedRows] = useState<Record<number, boolean>>({});
   const [rowErrors, setRowErrors] = useState<Record<number, string>>({});
+  // dirtyRows — строки с несохранёнными правками (изменена хотя бы одна ячейка после
+  // загрузки/последнего сохранения) — используется, чтобы кнопка "Сохранить" в конце ряда была
+  // активна только когда есть что сохранять (см. PatchesDdfRangePanel.tsx).
+  const [dirtyRows, setDirtyRows] = useState<Record<number, boolean>>({});
 
   async function loadRange() {
     const from = parseInt(idFrom, 10);
@@ -36,6 +40,7 @@ export function useDdfRange(server: ServerId, path: string) {
       setRangeLoaded(true);
       setSavedRows({});
       setRowErrors({});
+      setDirtyRows({});
     } catch (e) {
       const code = (e as { code?: string })?.code;
       setRangeError(code === 'no_id_field' ? 'У этого файла нет понятия "ID" — диапазон недоступен' : 'Не удалось загрузить диапазон записей');
@@ -56,13 +61,14 @@ export function useDdfRange(server: ServerId, path: string) {
     setSavingRows({});
     setSavedRows({});
     setRowErrors({});
+    setDirtyRows({});
   }
 
   // Редактирование прямо в ячейке таблицы диапазона (без перехода на отдельный экран
-  // просмотра/редактирования записи) — пользователь правит значение колонки, оно тут же
-  // сохраняется на сервер тем же способом, что и raw-режим одной записи (ddf_save_raw:
-  // таб-разделённая строка всех значений схемы), просто по клику вне поля (onBlur), а не по
-  // отдельной кнопке "Сохранить".
+  // просмотра/редактирования записи) — пользователь правит значение колонки, но сохранение на
+  // сервер происходит ТОЛЬКО по явному нажатию кнопки "Сохранить" в конце ряда (см. saveRow),
+  // не автоматически по потере фокуса — правка лишь помечает строку как "несохранённую"
+  // (dirtyRows), чтобы кнопка "Сохранить" стала активной.
   function updateCell(recordIndex: number, colIndex: number, value: string) {
     setRangeRows((prev) => prev.map((r) => (
       r.index === recordIndex
@@ -70,6 +76,7 @@ export function useDdfRange(server: ServerId, path: string) {
         : r
     )));
     setSavedRows((prev) => ({ ...prev, [recordIndex]: false }));
+    setDirtyRows((prev) => ({ ...prev, [recordIndex]: true }));
   }
 
   async function saveRow(recordIndex: number) {
@@ -87,6 +94,7 @@ export function useDdfRange(server: ServerId, path: string) {
         await loadRange();
       } else {
         setSavedRows((prev) => ({ ...prev, [recordIndex]: true }));
+        setDirtyRows((prev) => ({ ...prev, [recordIndex]: false }));
       }
     } catch {
       setRowErrors((prev) => ({ ...prev, [recordIndex]: 'Не удалось сохранить строку' }));
@@ -108,6 +116,7 @@ export function useDdfRange(server: ServerId, path: string) {
     savingRows,
     savedRows,
     rowErrors,
+    dirtyRows,
     loadRange,
     resetRange,
     updateCell,
