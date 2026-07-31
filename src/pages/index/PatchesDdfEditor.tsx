@@ -55,8 +55,8 @@ export default function PatchesDdfEditor({
   const range = useDdfRange(server, path);
   const {
     idFrom, setIdFrom, idTo, setIdTo, rangeRows, rangeTruncated, loadingRange,
-    rangeError, rangeLoaded, savingRows, savedRows, rowErrors, dirtyRows,
-    loadRange, resetRange, updateCell, saveRow,
+    rangeError, rangeLoaded, savingRows, savedRows, rowErrors, dirtyRows, savingAll, saveAllError,
+    loadRange, resetRange, updateCell, saveAllDirty,
   } = range;
 
   function openRange() {
@@ -140,9 +140,11 @@ export default function PatchesDdfEditor({
           savedRows={savedRows}
           rowErrors={rowErrors}
           dirtyRows={dirtyRows}
+          savingAll={savingAll}
+          saveAllError={saveAllError}
           onLoadRange={loadRange}
           onCellChange={updateCell}
-          onSaveRow={saveRow}
+          onSaveAll={saveAllDirty}
         />
       )}
 
