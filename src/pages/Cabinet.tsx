@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
@@ -25,6 +25,25 @@ export default function Cabinet() {
   const { user, isAdmin, logout, applySession } = useAuth();
   const [section, setSection] = useState<CabinetSection>('profile');
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // ВАЖНО: разделы раньше монтировались/размонтировались условно ({section === 'x' && <X/>}) —
+  // при каждом переключении вкладки компонент создавался заново с нуля, что заново запускало его
+  // useEffect с загрузкой данных (см. Faq.tsx/CabinetStats.tsx — у каждого свой fetch при
+  // монтировании) — отсюда спиннер при КАЖДОМ переходе между разделами, даже повторном (тот же
+  // паттерн проблемы уже был решён для доски задач, см. IndexMain.tsx).
+  //
+  // Теперь каждый раздел монтируется ОДИН РАЗ — при первом посещении за сессию — и дальше
+  // остаётся смонтированным навсегда (см. visited, пополняется по мере переключения section).
+  // Переключение вкладки лишь скрывает/показывает нужный div через CSS (display: none) — сам
+  // компонент и его загруженные данные никуда не деваются, повторные визиты мгновенные, без
+  // спиннера. При этом НЕ грузим сразу все 7 разделов при заходе в кабинет — только те, что
+  // пользователь реально открыл (profile — раздел по умолчанию, поэтому смонтирован сразу).
+  const [visited, setVisited] = useState<Set<string>>(() => new Set([section]));
+  const seenSection = useRef(section);
+  if (seenSection.current !== section) {
+    seenSection.current = section;
+    if (!visited.has(section)) setVisited((prev) => new Set(prev).add(section));
+  }
 
   const team = useTeamManagement(user, navigate, applySession);
   const sessionsAndStats = useSessionsAndStats();
@@ -74,18 +93,32 @@ export default function Cabinet() {
         </header>
 
         <main className="flex-1 min-h-0 overflow-auto p-4 sm:p-6">
-          {section === 'profile' && <CabinetProfile user={user} />}
-
-          {section === 'project' && team.hasTeamAccess && <CabinetProject />}
-
-          {section === 'stats' && (
-            <CabinetStats user={user} hasTeamAccess={team.hasTeamAccess} users={team.users} usersLoading={team.usersLoading} />
+          {visited.has('profile') && (
+            <div className={section === 'profile' ? '' : 'hidden'}>
+              <CabinetProfile user={user} />
+            </div>
           )}
 
-          {section === 'faq' && <Faq isAdmin={isAdmin} />}
+          {visited.has('project') && team.hasTeamAccess && (
+            <div className={section === 'project' ? '' : 'hidden'}>
+              <CabinetProject />
+            </div>
+          )}
 
-          {section === 'team' && team.hasTeamAccess && (
-            <div className="max-w-4xl">
+          {visited.has('stats') && (
+            <div className={section === 'stats' ? '' : 'hidden'}>
+              <CabinetStats user={user} hasTeamAccess={team.hasTeamAccess} users={team.users} usersLoading={team.usersLoading} />
+            </div>
+          )}
+
+          {visited.has('faq') && (
+            <div className={section === 'faq' ? '' : 'hidden'}>
+              <Faq isAdmin={isAdmin} />
+            </div>
+          )}
+
+          {visited.has('team') && team.hasTeamAccess && (
+            <div className={section === 'team' ? 'max-w-4xl' : 'hidden'}>
               <h1 className="text-xl font-semibold mb-1">Управление командой</h1>
               <p className="text-sm text-muted-foreground mb-6">Выдавайте доступ и назначайте администраторов. Приглашённый войдёт через Telegram.</p>
 
@@ -140,8 +173,8 @@ export default function Cabinet() {
             </div>
           )}
 
-          {section === 'activity' && team.hasTeamAccess && (
-            <div className="max-w-3xl">
+          {visited.has('activity') && team.hasTeamAccess && (
+            <div className={section === 'activity' ? 'max-w-3xl' : 'hidden'}>
               <h1 className="text-xl font-semibold mb-1">Журнал</h1>
               <p className="text-sm text-muted-foreground mb-6">
                 {filesAndActivity.activityLoading ? 'Загрузка...' : `${filesAndActivity.activityEntries.length} записей · хранится 7 дней`}
@@ -158,8 +191,8 @@ export default function Cabinet() {
             </div>
           )}
 
-          {section === 'storage' && team.hasTeamAccess && (
-            <div className="max-w-3xl">
+          {visited.has('storage') && team.hasTeamAccess && (
+            <div className={section === 'storage' ? 'max-w-3xl' : 'hidden'}>
               <h1 className="text-xl font-semibold mb-1">Хранилище</h1>
               <p className="text-sm text-muted-foreground mb-6">Все файлы, залитые в базу знаний, идеи и задачи.</p>
               <FilesList loading={filesAndActivity.filesLoading} files={filesAndActivity.files} onDelete={filesAndActivity.deleteFile} />
