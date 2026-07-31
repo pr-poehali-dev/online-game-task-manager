@@ -5,6 +5,7 @@ import ArticleList from './knowledge-base/ArticleList';
 import ArticleView from './knowledge-base/ArticleView';
 import ArticleEditor from './knowledge-base/ArticleEditor';
 import type { ArticleListItem, Article, KbCategoryId, KbAttachment, KbVisibility, Author } from './knowledge-base/shared';
+import { articleCache } from './knowledge-base/articleCache';
 
 export { KNOWLEDGE_URL, kbAuthHeaders, kbCategories } from './knowledge-base/shared';
 export type { KbArticleBrief, KbCategoryId, KbAttachment } from './knowledge-base/shared';
@@ -52,7 +53,10 @@ export default function KnowledgeBase({ category, authors, initialArticleId, can
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.article) setCurrent(data.article);
+        if (data.article) {
+          articleCache.set(id, data.article);
+          setCurrent(data.article);
+        }
       }
     } catch {
       /* ignore */
@@ -60,10 +64,17 @@ export default function KnowledgeBase({ category, authors, initialArticleId, can
   }, []);
 
   // Открытие/закрытие статьи синхронизировано с адресом в браузере (initialArticleId приходит из
-  // URL /kb/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую статью.
+  // URL /kb/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую статью. Если статья
+  // уже открывалась в этой сессии — показываем закешированную версию без повторного запроса и
+  // спиннера (см. articleCache.ts за подробностями).
   useEffect(() => {
-    if (initialArticleId) openArticle(initialArticleId);
-    else setCurrent(null);
+    if (initialArticleId) {
+      const cached = articleCache.get(initialArticleId);
+      if (cached) setCurrent(cached);
+      else openArticle(initialArticleId);
+    } else {
+      setCurrent(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialArticleId]);
 
@@ -78,6 +89,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, can
       if (res.ok) {
         const data = await res.json();
         setEditing(null);
+        articleCache.set(data.article.id, data.article);
         setCurrent(data.article);
         loadList();
       }
@@ -96,6 +108,7 @@ export default function KnowledgeBase({ category, authors, initialArticleId, can
     } catch {
       /* ignore */
     }
+    articleCache.delete(id);
     setCurrent(null);
     onBack();
     setList((prev) => prev.filter((a) => a.id !== id));
@@ -103,7 +116,12 @@ export default function KnowledgeBase({ category, authors, initialArticleId, can
 
   async function toggleFavorite(id: string) {
     setList((prev) => prev.map((a) => (a.id === id ? { ...a, isFavorite: !a.isFavorite } : a)));
-    setCurrent((prev) => (prev && prev.id === id ? { ...prev, isFavorite: !prev.isFavorite } : prev));
+    setCurrent((prev) => {
+      if (!prev || prev.id !== id) return prev;
+      const next = { ...prev, isFavorite: !prev.isFavorite };
+      articleCache.set(id, next);
+      return next;
+    });
     try {
       await fetch(KNOWLEDGE_URL, {
         method: 'POST',

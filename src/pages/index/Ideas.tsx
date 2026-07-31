@@ -6,6 +6,7 @@ import { extractMentions } from './MentionInput';
 import IdeasList, { CreateTopic } from './ideas/IdeasList';
 import IdeaDetail from './ideas/IdeaDetail';
 import type { Author, TopicListItem, IdeaComment, IdeaStatus } from './ideas/shared';
+import { ideaCache } from './ideas/ideaCache';
 
 export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack }: {
   authors: Author[];
@@ -60,8 +61,10 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
       if (res.ok) {
         const data = await res.json();
         if (data.topic) {
+          const loadedComments = data.comments || [];
+          ideaCache.set(id, { topic: data.topic, comments: loadedComments });
           setCurrent(data.topic);
-          setComments(data.comments || []);
+          setComments(loadedComments);
         }
       }
     } catch {
@@ -70,10 +73,21 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
   }, []);
 
   // Открытие/закрытие темы синхронизировано с адресом в браузере (initialTopicId приходит из URL
-  // /idea/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую тему.
+  // /idea/:id) — поэтому кнопка «назад» тоже корректно закрывает открытую тему. Если тема уже
+  // открывалась в этой сессии — показываем закешированную версию без повторного запроса и
+  // спиннера (см. ideas/ideaCache.ts за подробностями).
   useEffect(() => {
-    if (initialTopicId) openTopic(initialTopicId);
-    else setCurrent(null);
+    if (initialTopicId) {
+      const cached = ideaCache.get(initialTopicId);
+      if (cached) {
+        setCurrent(cached.topic);
+        setComments(cached.comments);
+      } else {
+        openTopic(initialTopicId);
+      }
+    } else {
+      setCurrent(null);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialTopicId]);
 
@@ -125,6 +139,7 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
       if (res.ok) {
         const data = await res.json();
         setCurrent(data.topic);
+        ideaCache.set(data.topic.id, { topic: data.topic, comments });
         setEditingTopic(false);
         loadList();
       }
@@ -144,7 +159,11 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
       });
       if (res.ok) {
         const data = await res.json();
-        setComments((prev) => [...prev, data.comment]);
+        setComments((prev) => {
+          const next = [...prev, data.comment];
+          if (current) ideaCache.set(current.id, { topic: current, comments: next });
+          return next;
+        });
         setNewComment('');
         setNewCommentAttachments([]);
         setReplyTo(null);
@@ -155,7 +174,11 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
   }
 
   async function deleteComment(id: string) {
-    setComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id));
+    setComments((prev) => {
+      const next = prev.filter((c) => c.id !== id && c.parentId !== id);
+      if (current) ideaCache.set(current.id, { topic: current, comments: next });
+      return next;
+    });
     try {
       await fetch(IDEAS_URL, {
         method: 'POST',
@@ -178,6 +201,7 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
       if (res.ok) {
         const data = await res.json();
         setCurrent(data.topic);
+        ideaCache.set(data.topic.id, { topic: data.topic, comments });
         loadList();
       }
     } catch {
@@ -196,6 +220,7 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
     } catch {
       /* ignore */
     }
+    ideaCache.delete(current.id);
     setCurrent(null);
     onBack();
     loadList();

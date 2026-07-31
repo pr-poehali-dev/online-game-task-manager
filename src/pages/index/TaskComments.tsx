@@ -8,13 +8,17 @@ import MentionInput, { extractMentions } from './MentionInput';
 import type { TaskComment } from './TaskModalShared';
 import { renderMentionText, PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
 import usePrivateNotes from './usePrivateNotes';
+import { commentsCache } from './taskDataCache';
 
 export default function TaskComments({ taskId, team }: {
   taskId: string;
   team: TeamMember[];
 }) {
   const { user, isAdmin } = useAuth();
-  const [comments, setComments] = useState<TaskComment[]>([]);
+  // Первичное значение — из кеша (если задачу уже открывали в этой сессии), чтобы повторное
+  // открытие карточки задачи показывало комментарии мгновенно, без спиннера и пустого списка на
+  // время фонового fetch (см. taskDataCache.ts за подробностями).
+  const [comments, setComments] = useState<TaskComment[]>(() => commentsCache.get(taskId) ?? []);
   const [newComment, setNewComment] = useState('');
   const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
   const [attachError, setAttachError] = useState('');
@@ -34,14 +38,22 @@ export default function TaskComments({ taskId, team }: {
       });
       if (res.ok) {
         const data = await res.json();
-        setComments(data.comments || []);
+        const loaded = data.comments || [];
+        commentsCache.set(taskId, loaded);
+        setComments(loaded);
       }
     } catch {
       /* ignore */
     }
   }, [taskId]);
 
-  useEffect(() => { loadComments(); }, [loadComments]);
+  useEffect(() => {
+    // Если для этой задачи уже есть кеш — не блокируем интерфейс повторным запросом: комментарии
+    // уже показаны из кеша выше, обновление в фоне (на случай новых комментариев от других
+    // участников) не критично для UX.
+    if (!commentsCache.has(taskId)) loadComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
 
   async function addComment() {
     if (!newComment.trim() && newAttachments.length === 0 && !pendingNote) return;
@@ -54,7 +66,11 @@ export default function TaskComments({ taskId, team }: {
       });
       if (res.ok) {
         const data = await res.json();
-        setComments((prev) => [...prev, data.comment]);
+        setComments((prev) => {
+          const next = [...prev, data.comment];
+          commentsCache.set(taskId, next);
+          return next;
+        });
         if (pendingNote) {
           await addPrivateNote(pendingNote.targetUserId, pendingNote.text, data.comment.id);
           setPendingNote(null);
@@ -69,7 +85,11 @@ export default function TaskComments({ taskId, team }: {
   }
 
   async function removeComment(id: string) {
-    setComments((prev) => prev.filter((c) => c.id !== id && c.parentId !== id));
+    setComments((prev) => {
+      const next = prev.filter((c) => c.id !== id && c.parentId !== id);
+      commentsCache.set(taskId, next);
+      return next;
+    });
     try {
       await fetch(TASKS_URL, {
         method: 'POST',
