@@ -22,10 +22,14 @@ export interface ServerItem {
   label: string;
   color: string;
   sortOrder: number;
+  // protocol определяет ddf-схему при редактировании файлов в разделе "Патчи" (см.
+  // backend/patches/index.py, _ddf_registry_for) — 'c4' (Chronicle 4) или 'hf' (High Five).
+  protocol: 'c4' | 'hf';
+  description: string | null;
 }
 
 const FALLBACK_CATEGORY: CategoryItem = { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%', sortOrder: 0 };
-const FALLBACK_SERVER: ServerItem = { id: 'default', label: 'Сервер', color: '215 15% 55%', sortOrder: 0 };
+const FALLBACK_SERVER: ServerItem = { id: 'default', label: 'Сервер', color: '215 15% 55%', sortOrder: 0, protocol: 'hf', description: null };
 
 interface CatalogContextValue {
   categories: CategoryItem[];
