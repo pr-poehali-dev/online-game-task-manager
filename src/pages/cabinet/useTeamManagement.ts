@@ -16,6 +16,12 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
   const [isOwner, setIsOwner] = useState(false);
   const [isRealAdmin, setIsRealAdmin] = useState(false);
   const [hasTeamAccess, setHasTeamAccess] = useState(false);
+  // accessChecked — отличает "права ещё не проверены" (сразу после захода в кабинет) от "проверили,
+  // прав нет": пока false, сайдбар показывает нейтральные заглушки вместо пунктов Команда/Журнал/
+  // Хранилище/Управление проектом (см. CabinetSidebar) — иначе эти пункты сначала не отображались
+  // бы (hasTeamAccess по умолчанию false), а через долю секунды резко появлялись после ответа
+  // сервера, из-за чего сайдбар визуально "дёргался".
+  const [accessChecked, setAccessChecked] = useState(false);
   const [permsError, setPermsError] = useState('');
   const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
   const [inviteName, setInviteName] = useState('');
@@ -46,6 +52,7 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
       setHasTeamAccess(false);
     }
     setUsersLoading(false);
+    setAccessChecked(true);
   }, []);
 
   useEffect(() => { if (user) load(); }, [load, user]);
@@ -162,6 +169,7 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     isOwner,
     isRealAdmin,
     hasTeamAccess,
+    accessChecked,
     permsError,
     impersonatingId,
     inviteName, setInviteName,

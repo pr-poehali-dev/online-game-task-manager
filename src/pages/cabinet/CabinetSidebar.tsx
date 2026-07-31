@@ -28,11 +28,13 @@ export function SidebarContent({
   active,
   onSelect,
   hasTeamAccess,
+  accessChecked,
   onBoard,
 }: {
   active: CabinetSection;
   onSelect: (s: CabinetSection) => void;
   hasTeamAccess: boolean;
+  accessChecked: boolean;
   onBoard: () => void;
 }) {
   return (
@@ -51,18 +53,32 @@ export function SidebarContent({
       </div>
 
       <nav className="px-3 py-3 flex-1 min-h-0 overflow-y-auto scrollbar-thin space-y-0.5">
-        {NAV_ITEMS.filter((item) => !TEAM_ONLY_SECTIONS.has(item.key) || hasTeamAccess).map((item) => (
-          <button
-            key={item.key}
-            onClick={() => onSelect(item.key)}
-            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
-              active === item.key ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
-            }`}
-          >
-            <Icon name={item.icon} size={16} />
-            {item.label}
-          </button>
-        ))}
+        {NAV_ITEMS.map((item) => {
+          const isTeamOnly = TEAM_ONLY_SECTIONS.has(item.key);
+          // Пока право team_manage/admin ещё не проверено backend (accessChecked === false) —
+          // показываем нейтральную заглушку вместо пункта вместо того, чтобы либо скрыть его
+          // (а потом резко показать при hasTeamAccess === true), либо показать сразу (а потом
+          // резко скрыть при hasTeamAccess === false) — оба варианта визуально "дёргали" сайдбар
+          // на долю секунды при каждом заходе в кабинет.
+          if (isTeamOnly && !accessChecked) {
+            return (
+              <div key={item.key} className="h-9 mx-0.5 rounded-lg bg-secondary/40 animate-pulse" />
+            );
+          }
+          if (isTeamOnly && !hasTeamAccess) return null;
+          return (
+            <button
+              key={item.key}
+              onClick={() => onSelect(item.key)}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm transition-colors ${
+                active === item.key ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+              }`}
+            >
+              <Icon name={item.icon} size={16} />
+              {item.label}
+            </button>
+          );
+        })}
       </nav>
     </>
   );
@@ -72,6 +88,7 @@ export default function CabinetSidebar(props: {
   active: CabinetSection;
   onSelect: (s: CabinetSection) => void;
   hasTeamAccess: boolean;
+  accessChecked: boolean;
   onBoard: () => void;
 }) {
   return (
