@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import Icon from '@/components/ui/icon';
-import { authHeaders, servers, PATCHES_URL } from './shared';
+import { useCatalog } from '@/lib/catalog';
+import { authHeaders, PATCHES_URL } from './shared';
 import type { ServerId } from './shared';
 import { fmtSize, buildTree } from './patchesUtils';
 import type { PatchFile, DroppedFile } from './patchesUtils';
@@ -23,7 +24,14 @@ export default function Patches({
   initialServerId?: ServerId | null;
   onFileTaskLinkChange?: () => void;
 }) {
-  const [active, setActive] = useState<ServerId>(initialServerId ?? servers[0].id);
+  const { servers } = useCatalog();
+  // active изначально пустая строка, если серверы (из useCatalog) ещё не подгрузились к моменту
+  // первого рендера — как только список придёт, useEffect ниже выставит первый сервер (или
+  // initialServerId, если он был передан по постоянной ссылке из "Патчи" на карточке задачи).
+  const [active, setActive] = useState<ServerId>(initialServerId ?? '');
+  useEffect(() => {
+    if (!active && servers.length > 0) setActive(initialServerId ?? servers[0].id);
+  }, [servers, active, initialServerId]);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [customRoots, setCustomRoots] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +78,7 @@ export default function Patches({
     }
   }, []);
 
-  useEffect(() => { load(active); }, [active, load]);
+  useEffect(() => { if (active) load(active); }, [active, load]);
 
   useEffect(() => {
     if (initialTaskId && appliedInitial.current !== initialTaskId) {
@@ -83,7 +91,7 @@ export default function Patches({
   const tree = useMemo(() => buildTree(files, customRoots), [files, customRoots]);
   const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
-  const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
+  const activeSrv = servers.find((s) => s.id === active) ?? servers[0] ?? { id: active, label: 'Сервер', color: '215 15% 55%' };
   const tasksForServer = useMemo(() => tasks.filter((t) => t.server === active), [tasks, active]);
 
   // При смене сервера сбрасываем выбранную задачу, если она относится к другому серверу

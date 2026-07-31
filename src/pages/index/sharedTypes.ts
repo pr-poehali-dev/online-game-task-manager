@@ -21,7 +21,11 @@ export type DeadlineState = 'overdue' | 'soon' | 'normal';
 
 export type Priority = 'low' | 'medium' | 'high' | 'critical';
 export type ColumnId = 'todo' | 'progress' | 'done' | 'restart' | 'hold';
-export type ServerId = 'c4x1' | 'hfx3old' | 'hfnew';
+// ServerId — идентификатор сервера из динамического справочника (см. useCatalog() в
+// src/lib/catalog.tsx, backend/catalog/index.py, таблица servers в БД) — раньше был фиксированным
+// union-типом из 3 конкретных ID, теперь любая строка, т.к. администратор может добавлять новые
+// серверы через кабинет (раздел "Управление проектом → Серверы", см. CabinetProject.tsx).
+export type ServerId = string;
 export type CategoryId = 'web' | 'launcher' | 'client' | 'social' | 'ads' | 'server-ext' | 'server-scripts' | 'logs' | 'events' | 'other';
 export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';

@@ -1,11 +1,9 @@
 import type {
   Priority,
   ColumnId,
-  ServerId,
   CategoryId,
   DeployStatus,
   TaskOutcome,
-  Server,
   Category,
   Sprint,
 } from './sharedTypes';
@@ -38,11 +36,9 @@ export function outcomeMeta(id: TaskOutcome) {
   return outcomes.find((o) => o.id === id) ?? outcomes[0];
 }
 
-export const servers: Server[] = [
-  { id: 'c4x1', label: 'С4х1', color: '270 65% 65%' },
-  { id: 'hfx3old', label: 'HFx3 old', color: '35 85% 58%' },
-  { id: 'hfnew', label: 'HF new', color: '152 60% 48%' },
-];
+// servers/serverMeta — УДАЛЕНЫ отсюда: список серверов теперь динамический, приходит из БД
+// через useCatalog() (см. src/lib/catalog.tsx, backend/catalog/index.py, таблица servers).
+// Используйте useCatalog().servers / useCatalog().serverMeta вместо этих констант.
 
 export const categories: Category[] = [
   { id: 'web', label: 'Веб', icon: 'Globe', color: '210 80% 62%' },
@@ -56,10 +52,6 @@ export const categories: Category[] = [
   { id: 'events', label: 'Эвенты', icon: 'PartyPopper', color: '300 65% 62%' },
   { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%' },
 ];
-
-export function serverMeta(id: ServerId): Server {
-  return servers.find((s) => s.id === id) ?? { id, label: id || 'Сервер', color: '215 15% 55%' };
-}
 
 export function categoryMeta(id: CategoryId) {
   return categories.find((c) => c.id === id) ?? categories[categories.length - 1];

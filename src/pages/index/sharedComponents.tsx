@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import Icon from '@/components/ui/icon';
-import { deployStatuses, priorityMap, serverMeta, categoryMeta } from './sharedConstants';
+import { useCatalog } from '@/lib/catalog';
+import { deployStatuses, priorityMap, categoryMeta } from './sharedConstants';
 import { formatDeadline, deadlineState, resolveAssignee } from './sharedHelpers';
 import type { Priority, DeployStatus, CategoryId, ServerId, DeadlineState, AssigneeView, TeamMember } from './sharedTypes';
 
@@ -135,6 +136,7 @@ export function DeadlineBadge({ iso }: { iso: string | null | undefined }) {
 }
 
 export function ServerBadge({ id }: { id: ServerId }) {
+  const { serverMeta } = useCatalog();
   const s = serverMeta(id);
   return (
     <span

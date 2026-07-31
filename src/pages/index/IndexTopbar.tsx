@@ -6,10 +6,10 @@ import NotificationBell from './NotificationBell';
 import ThemeToggle from '@/components/ThemeToggle';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { SidebarContent } from './IndexSidebar';
+import { useCatalog } from '@/lib/catalog';
 import {
   resolveAssignee,
   categoryMeta,
-  servers,
 } from './shared';
 import type {
   TeamMember,
@@ -70,6 +70,7 @@ export default function IndexTopbar({
   kbArticles: KbArticleBrief[];
 }) {
   const navigate = useNavigate();
+  const { servers } = useCatalog();
   const restartCount = activeTasks.filter((t) => t.column === 'restart').length;
   const [menuOpen, setMenuOpen] = useState(false);
 

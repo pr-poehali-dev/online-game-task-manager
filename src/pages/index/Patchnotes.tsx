@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import { useAuth } from '@/lib/auth';
-import { PATCHNOTES_URL, authHeaders, servers, formatMskDateTime } from './shared';
+import { useCatalog } from '@/lib/catalog';
+import { PATCHNOTES_URL, authHeaders, formatMskDateTime } from './shared';
 import type { ServerId } from './shared';
 
 interface PatchnoteEntry {
@@ -14,7 +15,13 @@ interface PatchnoteEntry {
 
 export default function Patchnotes() {
   const { isAdmin } = useAuth();
-  const [active, setActive] = useState<ServerId>(servers[0].id);
+  const { servers } = useCatalog();
+  // active изначально пустая строка, пока список серверов не подгрузился (см. useCatalog) —
+  // useEffect ниже выставит первый сервер, как только он появится.
+  const [active, setActive] = useState<ServerId>('');
+  useEffect(() => {
+    if (!active && servers.length > 0) setActive(servers[0].id);
+  }, [servers, active]);
   const [entries, setEntries] = useState<PatchnoteEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -40,9 +47,9 @@ export default function Patchnotes() {
     }
   }, []);
 
-  useEffect(() => { load(active); }, [active, load]);
+  useEffect(() => { if (active) load(active); }, [active, load]);
 
-  const activeSrv = servers.find((s) => s.id === active) ?? servers[0];
+  const activeSrv = servers.find((s) => s.id === active) ?? servers[0] ?? { id: active, label: 'Сервер', color: '215 15% 55%' };
 
   function copyAll() {
     const text = entries

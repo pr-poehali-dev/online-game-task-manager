@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { useCatalog } from '@/lib/catalog';
 import type { Sprint, Task } from './shared';
-import { ModalOverlay, Select, inputCls, servers, CategoryBadge, PriorityBadge } from './shared';
+import { ModalOverlay, Select, inputCls, CategoryBadge, PriorityBadge } from './shared';
 
 function TaskMultiSelect({ tasks, value, onChange }: {
   tasks: Task[];
