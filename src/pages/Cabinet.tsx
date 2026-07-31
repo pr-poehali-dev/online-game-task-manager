@@ -324,6 +324,7 @@ export default function Cabinet() {
       if (!prev) return prev;
       const strip = (list: typeof prev.knowledge) => list.filter((a) => a.id !== attachmentId);
       return {
+        ...prev,
         knowledge: strip(prev.knowledge),
         ideas: strip(prev.ideas),
         tasksActive: strip(prev.tasksActive),

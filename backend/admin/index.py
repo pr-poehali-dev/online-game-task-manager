@@ -38,18 +38,24 @@ def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None
     )
 
 
-def _current_admin(cur, schema, token):
+def _current_user(cur, schema, token):
+    '''Возвращает (id, role, effective_perms) текущего пользователя по токену сессии, либо None,
+    если токена нет / сессия невалидна / пользователь деактивирован. В отличие от старой
+    _current_admin (переименована и расширена) — НЕ проверяет role == 'admin' сама, эта проверка
+    теперь делается точечно вызывающей стороной (см. handler ниже) в зависимости от action: часть
+    действий раздела "Команда" доступна с точечным правом team_manage (см. TEAM_MANAGE_ACTIONS), а
+    часть — только настоящим администраторам (role == 'admin'), см. ADMIN_ONLY_ACTIONS.'''
     if not token:
         return None
     cur.execute(
-        f"SELECT u.id, u.role FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+        f"SELECT u.id, u.role, u.permissions FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
         f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
         (token,)
     )
     row = cur.fetchone()
-    if not row or row[1] != 'admin':
+    if not row:
         return None
-    return row[0]
+    return row[0], row[1], row[2]
 
 
 ALL_PERMISSIONS = [
@@ -60,6 +66,7 @@ ALL_PERMISSIONS = [
     'launcher_notify',
     'private_notes_view_others',
     'patch_edit',
+    'team_manage',
 ]
 
 # id пользователя-владельца проекта (руководителя) — тот же паттерн, что уже используется в
@@ -76,15 +83,16 @@ PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit'}
 
 def _effective_perms(role, raw):
     '''Индивидуальные права (если заданы явно) имеют приоритет выше роли. Если право не задано —
-    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit — по требованию
-    пользователя это право по умолчанию не должно доставаться всем администраторам автоматически
-    (в отличие от остальных привилегий), а быть только у владельца проекта (OWNER_USER_ID, ему
-    выдано явно через миграцию db_migrations) — пока сам владелец явно не выдаст его кому-то ещё.'''
+    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit и team_manage — по
+    требованию пользователя эти права по умолчанию не должны доставаться всем администраторам
+    автоматически (в отличие от остальных привилегий): patch_edit изначально есть только у
+    владельца проекта (OWNER_USER_ID, ему выдано явно через миграцию db_migrations), team_manage —
+    делегируется точечно каждому конкретному участнику.'''
     result = {}
     for key in ALL_PERMISSIONS:
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
-        elif key == 'patch_edit':
+        elif key in ('patch_edit', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')
@@ -148,8 +156,16 @@ def _disk_usage():
         return None
 
 
+# Действия, требующие ТОЛЬКО role == 'admin' (не делегируются через точечное право team_manage,
+# даже если оно выдано участнику) — все они прямо или косвенно могут привести к получению полного
+# административного доступа: impersonate позволяет войти под ЛЮБЫМ пользователем (в т.ч.
+# администратором), set_permissions меняет точечные права (включая сам team_manage и другие
+# PRIVILEGED_PERMISSIONS), set_role назначает/снимает роль admin целиком.
+ADMIN_ONLY_ACTIONS = {'impersonate', 'set_permissions', 'set_role'}
+
+
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно только администраторам.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -161,10 +177,16 @@ def handler(event: dict, context) -> dict:
     conn = _db()
     cur = conn.cursor()
 
-    admin_id = _current_admin(cur, schema, token)
-    if not admin_id:
+    current = _current_user(cur, schema, token)
+    if not current:
         cur.close(); conn.close()
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+    admin_id, current_role, current_perms_raw = current
+    current_perms = _effective_perms(current_role, current_perms_raw)
+    is_real_admin = current_role == 'admin'
+    # GET (список команды) и любой POST-action, не входящий в ADMIN_ONLY_ACTIONS, доступны и
+    # настоящим администраторам, и участникам с делегированным правом team_manage.
+    has_team_access = is_real_admin or current_perms.get('team_manage', False)
 
     body = {}
     if event.get('body'):
@@ -172,6 +194,16 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event['body'])
         except Exception:
             body = {}
+
+    # action=stats — ИСКЛЮЧЕНИЕ из общей проверки has_team_access: раздел "Статистика" в личном
+    # кабинете доступен КАЖДОМУ пользователю для просмотра СВОИХ ЖЕ показателей (не требует
+    # team_manage/admin) — команда видит только чужую статистику через раздел "Команда", это
+    # отдельная проверка ниже (see action == 'stats'). Здесь просто пропускаем общий guard, если
+    # это запрос статистики за САМОГО СЕБЯ; иначе (чужой user_id) — обычная проверка прав ниже.
+    is_self_stats = body.get('action') == 'stats' and str(body.get('user_id')) == str(admin_id)
+    if not has_team_access and not is_self_stats:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
     if method == 'GET':
         cur.execute(
@@ -204,10 +236,15 @@ def handler(event: dict, context) -> dict:
             'users': users, 'permissionKeys': ALL_PERMISSIONS,
             'privilegedPermissionKeys': sorted(PRIVILEGED_PERMISSIONS),
             'isOwner': admin_id == OWNER_USER_ID,
+            'isRealAdmin': is_real_admin,
         })}
 
     # POST: обновление роли / активности / приглашение по username / права / статистика
     action = body.get('action')
+
+    if action in ADMIN_ONLY_ACTIONS and not is_real_admin:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'admin_only_action'})}
 
     if action == 'activity_log':
         # Чистим записи старше 7 дней при каждом просмотре — журнал не хранится дольше недели
@@ -312,6 +349,11 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_username'})}
         if role not in ('member', 'admin'):
             role = 'member'
+        # Участник с делегированным team_manage (не настоящий администратор) не может пригласить
+        # НОВОГО пользователя сразу с ролью admin — иначе это была бы лазейка для эскалации прав в
+        # обход ADMIN_ONLY_ACTIONS (пригласить "своего" админа вместо использования set_role).
+        if not is_real_admin:
+            role = 'member'
         # уже есть такой username в белом списке?
         cur.execute(f"SELECT id FROM {schema}.users WHERE lower(tg_username) = lower(%s) AND is_hidden = false", (username,))
         if cur.fetchone():
@@ -379,11 +421,18 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'closed': closed})}
 
     if action == 'stats':
-        # Статистика по одному участнику за период: создано / закрыто / получено задач + время в приложении
+        # Статистика по одному участнику за период: создано / закрыто / получено задач + время в
+        # приложении. Доступна КАЖДОМУ пользователю за САМОГО СЕБЯ (см. is_self_stats выше — общий
+        # guard has_team_access для этого случая уже пропущен); просмотр статистики ДРУГОГО
+        # участника (раздел "Команда") требует has_team_access — проверяем это здесь явно, т.к.
+        # is_self_stats относится только к запросу за себя.
         target = body.get('user_id')
         if not target:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
+        if str(target) != str(admin_id) and not has_team_access:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
         date_from = _parse_dt(body.get('from')) or datetime(1970, 1, 1, tzinfo=timezone.utc)
         date_to = _parse_dt(body.get('to')) or datetime.now(timezone.utc)
 

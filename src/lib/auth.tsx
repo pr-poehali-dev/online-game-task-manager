@@ -17,7 +17,8 @@ export type PermissionKey =
   | 'sprint_edit'
   | 'launcher_notify'
   | 'private_notes_view_others'
-  | 'patch_edit';
+  | 'patch_edit'
+  | 'team_manage';
 
 export interface AuthUser {
   id: number;
