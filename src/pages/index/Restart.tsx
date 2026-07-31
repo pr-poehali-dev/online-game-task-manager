@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, TaskOutcome } from './shared';
-import { taskAssigneeIds, outcomes, servers, serverMeta, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, needsLauncherUpload, LauncherBadge } from './shared';
+import { taskAssigneeIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, needsLauncherUpload, LauncherBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 export default function Restart({
@@ -33,6 +34,7 @@ export default function Restart({
   currentUserId: number | null;
   tasksWithPatchFiles: Set<string>;
 }) {
+  const { servers, serverMeta } = useCatalog();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [archiveMenu, setArchiveMenu] = useState<string | null>(null);
 

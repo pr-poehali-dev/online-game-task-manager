@@ -136,6 +136,7 @@ export function CreateSprintModal({ onClose, onCreate, availableTasks }: {
     server: null,
   });
   const [taskIds, setTaskIds] = useState<string[]>([]);
+  const { servers } = useCatalog();
   const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const filteredTasks = form.server
