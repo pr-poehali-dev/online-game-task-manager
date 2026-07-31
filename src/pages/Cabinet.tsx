@@ -63,11 +63,11 @@ export default function Cabinet() {
 
   return (
     <div className="min-h-screen bg-background flex">
-      <CabinetSidebar active={section} onSelect={handleSelect} hasTeamAccess={team.hasTeamAccess} accessChecked={team.accessChecked} onBoard={() => navigate('/')} />
+      <CabinetSidebar active={section} onSelect={handleSelect} hasTeamAccess={team.hasTeamAccess} onBoard={() => navigate('/')} />
 
       <Sheet open={menuOpen} onOpenChange={setMenuOpen}>
         <SheetContent side="left" className="p-0 w-72 flex flex-col">
-          <SidebarContent active={section} onSelect={handleSelect} hasTeamAccess={team.hasTeamAccess} accessChecked={team.accessChecked} onBoard={() => navigate('/')} />
+          <SidebarContent active={section} onSelect={handleSelect} hasTeamAccess={team.hasTeamAccess} onBoard={() => navigate('/')} />
         </SheetContent>
       </Sheet>
 

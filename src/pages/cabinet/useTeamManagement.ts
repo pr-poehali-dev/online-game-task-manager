@@ -1,27 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { NavigateFunction } from 'react-router-dom';
 import type { AuthUser } from '@/lib/auth';
+import { useAuth } from '@/lib/auth';
 import { ADMIN_URL, TOKEN_KEY, authFetch } from '../admin/adminShared';
 import type { TeamUser, Permissions } from '../admin/adminShared';
 
 export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunction, applySession: (token: string, user: AuthUser) => void) {
   const [users, setUsers] = useState<TeamUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(true);
-  // isOwner/isRealAdmin приходят с backend (единый источник истины, см. backend/admin/index.py):
-  // isOwner — управляет выдачей/отзывом OWNER_ONLY_PERMISSION_GROUPS (просмотр чужих приватных
-  // сообщений, редактирование патчей), isRealAdmin — true только для настоящей роли admin (не для
-  // участника с делегированным точечным правом team_manage) — управляет видимостью действий,
-  // которые backend разрешает исключительно администраторам (impersonate/смена роли/индивидуальные
-  // права, см. ADMIN_ONLY_ACTIONS).
+  const { can } = useAuth();
+  // hasTeamAccess вычисляется СИНХРОННО из уже загруженного user.permissions (тот же расчёт, что
+  // делает backend — admin ИЛИ явное точечное право team_manage, см. backend/admin/index.py
+  // has_team_access) — НЕ дожидаясь отдельного GET-запроса к /admin. К моменту рендера Cabinet
+  // user уже гарантированно загружен (см. ProtectedRoute — держит спиннер, пока идёт /auth),
+  // поэтому пункты меню Команда/Журнал/Хранилище/Управление проектом в сайдбаре (см.
+  // CabinetSidebar) видны сразу в первом кадре — без резкого появления/скелетонов после ответа
+  // сервера, которое раньше вызывало заметное "дёргание" интерфейса при каждом заходе в кабинет.
+  const hasTeamAccess = useMemo(() => !!user && (user.role === 'admin' || can('team_manage')), [user, can]);
+  // isOwner/isRealAdmin по-прежнему приходят с backend при первой загрузке списка команды (нужны
+  // только внутри самого раздела "Команда", а не для сайдбара, поэтому их отложенная загрузка не
+  // вызывает визуальных скачков): isOwner — управляет выдачей/отзывом OWNER_ONLY_PERMISSION_GROUPS
+  // (просмотр чужих приватных сообщений, редактирование патчей), isRealAdmin — true только для
+  // настоящей роли admin (не для участника с делегированным team_manage) — управляет видимостью
+  // действий, которые backend разрешает исключительно администраторам (impersonate/смена роли/
+  // индивидуальные права, см. ADMIN_ONLY_ACTIONS).
   const [isOwner, setIsOwner] = useState(false);
-  const [isRealAdmin, setIsRealAdmin] = useState(false);
-  const [hasTeamAccess, setHasTeamAccess] = useState(false);
-  // accessChecked — отличает "права ещё не проверены" (сразу после захода в кабинет) от "проверили,
-  // прав нет": пока false, сайдбар показывает нейтральные заглушки вместо пунктов Команда/Журнал/
-  // Хранилище/Управление проектом (см. CabinetSidebar) — иначе эти пункты сначала не отображались
-  // бы (hasTeamAccess по умолчанию false), а через долю секунды резко появлялись после ответа
-  // сервера, из-за чего сайдбар визуально "дёргался".
-  const [accessChecked, setAccessChecked] = useState(false);
+  const [isRealAdmin, setIsRealAdmin] = useState(!!user && user.role === 'admin');
   const [permsError, setPermsError] = useState('');
   const [impersonatingId, setImpersonatingId] = useState<number | null>(null);
   const [inviteName, setInviteName] = useState('');
@@ -45,17 +49,14 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
       setUsers(data.users);
       setIsOwner(!!data.isOwner);
       setIsRealAdmin(!!data.isRealAdmin);
-      setHasTeamAccess(true);
-    } else {
-      // 403 forbidden — участник без team_manage/admin, разделы Команда/Журнал/Хранилище ему не
-      // видны в сайдбаре (см. CabinetSidebar), список пользователей не нужен вовсе.
-      setHasTeamAccess(false);
     }
     setUsersLoading(false);
-    setAccessChecked(true);
   }, []);
 
-  useEffect(() => { if (user) load(); }, [load, user]);
+  // Список участников грузится только если у пользователя реально есть доступ (иначе backend
+  // всё равно ответит 403, см. has_team_access в backend/admin/index.py) — hasTeamAccess уже
+  // известен синхронно из user.permissions (см. выше), ждать здесь нечего.
+  useEffect(() => { if (user && hasTeamAccess) load(); }, [load, user, hasTeamAccess]);
 
   async function invite() {
     const name = inviteName.trim().replace('@', '');
@@ -169,7 +170,6 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     isOwner,
     isRealAdmin,
     hasTeamAccess,
-    accessChecked,
     permsError,
     impersonatingId,
     inviteName, setInviteName,
