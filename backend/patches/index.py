@@ -1784,7 +1784,12 @@ def handler(event: dict, context) -> dict:
         # UPMaker — проверено на присланном пользователем примере.
         zip_size = len(zip_bytes)
 
-        ssh = _launcher_ssh_client(cur, schema)
+        try:
+            ssh = _launcher_ssh_client(cur, schema)
+        except Exception as e:
+            print(f'launcher_upload SSH connect error: {type(e).__name__}: {e}')
+            cur.close(); conn.close()
+            return _bad(f'ssh_connect_error_{type(e).__name__}')
         if ssh is None:
             cur.close(); conn.close()
             return _bad('ssh_not_configured')
@@ -1806,6 +1811,7 @@ def handler(event: dict, context) -> dict:
             finally:
                 sftp.close()
         except Exception as e:
+            print(f'launcher_upload SSH error: {type(e).__name__}: {e}')
             cur.close(); conn.close()
             return _bad(f'ssh_error_{type(e).__name__}')
         finally:
