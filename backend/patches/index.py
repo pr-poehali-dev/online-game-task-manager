@@ -486,7 +486,10 @@ def _update_xml_entry(text: str, launcher_path: str, file_hash: str, size: int) 
     pattern = re.compile(r'<set file="' + escaped + r'"[^>]*/>\s*\n?')
     new_entry = f'<set file="{launcher_path}" hash="{file_hash}" size="{size}" />\n'
     if pattern.search(text):
-        return pattern.sub(new_entry, text, count=1)
+        # ВАЖНО: замена через lambda, а не строку напрямую — путь launcher_path содержит
+        # обратные слеши (\system\...), и re.sub() иначе трактует их как escape-последовательности
+        # регулярных выражений (например \s), что валит sub() ошибкой "bad escape \s".
+        return pattern.sub(lambda _m: new_entry, text, count=1)
     idx = text.rfind('</list>')
     if idx == -1:
         raise ValueError('malformed_xml')
