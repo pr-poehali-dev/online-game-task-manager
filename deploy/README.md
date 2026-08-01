@@ -135,6 +135,34 @@ sudo systemctl status era-backend   # должно быть active (running)
 
 ---
 
+## 7.5. Автоперезапуск при изменении .env (для раздела «Хранилище (MinIO)» в кабинете)
+Чтобы можно было менять ключи S3/MinIO прямо из кабинета (Управление проектом →
+Хранилище), а не руками через SSH, нужно один раз настроить два момента —
+разрешить процессу backend (`www-data`) писать в `.env` и поставить
+systemd path-unit, который перезапускает backend при изменении файла:
+
+```bash
+# 1) права на запись .env для пользователя, от которого работает backend
+sudo chown www-data:www-data /var/www/era/deploy/.env
+sudo chmod 600 /var/www/era/deploy/.env
+
+# 2) systemd path-unit — следит за файлом и перезапускает сервис
+sudo cp /var/www/era/deploy/era-backend-env.path /etc/systemd/system/
+sudo cp /var/www/era/deploy/era-backend-env.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now era-backend-env.path
+sudo systemctl status era-backend-env.path   # должно быть active (waiting)
+```
+После этого при сохранении формы в кабинете файл `.env` перепишется backend-функцией
+`storage-config`, а systemd сам перезапустит `era-backend.service` в течение
+пары секунд — никаких sudoers и ручных команд на сервере не требуется.
+
+Без этого шага раздел «Хранилище (MinIO)» тоже будет сохранять `.env`, но
+для применения новых значений нужно будет выполнить
+`sudo systemctl restart era-backend` вручную.
+
+---
+
 ## 8. Собираем фронтенд
 Перед сборкой пропишите адрес backend. Откройте `backend/func2url.json` и
 замените все облачные URL на путь через ваш домен (важно перечислить

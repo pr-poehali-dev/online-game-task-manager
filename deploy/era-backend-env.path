@@ -1,0 +1,22 @@
+# systemd path-unit: следит за изменением .env и автоматически перезапускает backend.
+# Нужен, чтобы раздел «Управление проектом → Хранилище (MinIO)» в кабинете мог сохранять новые
+# ключи S3/MinIO прямо на сервере: backend-функция storage-config переписывает файл .env, но сама
+# НЕ может выполнять системные команды (subprocess/systemctl запрещены в облачных функциях этого
+# проекта) — вместо этого перезапуск делает systemd, реагируя на изменение файла.
+#
+# Установка (один раз при первом деплое):
+#   sudo cp deploy/era-backend-env.path deploy/era-backend-env.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now era-backend-env.path
+#
+# Проверка: sudo systemctl status era-backend-env.path
+
+[Unit]
+Description=Watch era .env for changes and restart era-backend
+
+[Path]
+PathModified=/var/www/era/deploy/.env
+Unit=era-backend-env.service
+
+[Install]
+WantedBy=multi-user.target

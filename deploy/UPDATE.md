@@ -113,3 +113,34 @@ sudo systemctl status era-backend   # должно быть active (running)
   вашей схемы, если не `public`)
 - **Картинки в базе знаний не грузятся:** проверьте `S3_ENDPOINT`, `S3_BUCKET`,
   `S3_PUBLIC_URL` в `.env` и что Nginx отдаёт `/files` наружу
+
+---
+
+## 7. Редактирование настроек хранилища прямо из кабинета (необязательно)
+Появился раздел **Управление проектом → Хранилище (MinIO)** — там владелец
+проекта может менять `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+`S3_ENDPOINT`, `S3_BUCKET`, `S3_PUBLIC_URL`, `CDN_BASE_URL` без захода по SSH.
+
+Чтобы это заработало, backend-функция `storage-config` должна иметь право
+писать в `.env`, а изменения должны подхватываться автоматически:
+
+```bash
+# права на запись .env для пользователя, от которого работает backend
+sudo chown www-data:www-data /var/www/era/deploy/.env
+sudo chmod 600 /var/www/era/deploy/.env
+
+# systemd path-unit — следит за файлом и перезапускает сервис при изменении
+sudo cp /var/www/era/deploy/era-backend-env.path /etc/systemd/system/
+sudo cp /var/www/era/deploy/era-backend-env.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now era-backend-env.path
+sudo systemctl status era-backend-env.path   # должно быть active (waiting)
+```
+
+Без этого шага сохранение в кабинете вернёт ошибку «недоступно» — раздел
+проверяет, что файл `.env` существует и доступен для записи по пути
+`/var/www/era/deploy/.env` (можно переопределить переменной `ENV_FILE_PATH`
+в `.env`, если структура папок на сервере другая).
+
+Раздел виден только владельцу проекта (пользователю с id=1 — тому, кто
+зарегистрировался первым).
