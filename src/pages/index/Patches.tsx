@@ -4,7 +4,7 @@ import { useCatalog } from '@/lib/catalog';
 import { authHeaders, PATCHES_URL } from './shared';
 import type { ServerId } from './shared';
 import { fmtSize, buildTree } from './patchesUtils';
-import type { PatchFile, DroppedFile } from './patchesUtils';
+import type { PatchFile, DroppedFile, LauncherUploadsMap } from './patchesUtils';
 import { postJson, uploadFileInChunks } from './patchesApi';
 import type { UploadQueueItem } from './patchesApi';
 import TreeFolder from './PatchesTreeFolder';
@@ -34,6 +34,7 @@ export default function Patches({
   }, [servers, active, initialServerId]);
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [customRoots, setCustomRoots] = useState<string[]>([]);
+  const [launcherUploads, setLauncherUploads] = useState<LauncherUploadsMap>({});
   const [loading, setLoading] = useState(true);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
@@ -44,6 +45,8 @@ export default function Patches({
   const [uploadIndex, setUploadIndex] = useState(0);
   const [fileProgress, setFileProgress] = useState(0);
   const [togglingPath, setTogglingPath] = useState<string | null>(null);
+  const [launcherUploadingKey, setLauncherUploadingKey] = useState<string | null>(null);
+  const [launcherError, setLauncherError] = useState('');
   const [addingRoot, setAddingRoot] = useState(false);
   const [newRootName, setNewRootName] = useState('');
   const [rootError, setRootError] = useState('');
@@ -70,6 +73,7 @@ export default function Patches({
         const data = await res.json();
         setFiles(data.files || []);
         setCustomRoots(data.customRoots || []);
+        setLauncherUploads(data.launcherUploads || {});
       }
     } catch {
       /* ignore */
@@ -174,6 +178,34 @@ export default function Patches({
       /* ignore */
     } finally {
       setTogglingPath(null);
+    }
+  }
+
+  // Заливает файл на VPS игрового лаунчера (быстрое или полное обновление) — см.
+  // LAUNCHER_UPLOAD.md. Backend упаковывает файл в .zip и правит XML-реестр на сервере.
+  async function handleLauncherUpload(path: string, target: 'fast' | 'full') {
+    const key = `${path}:${target}`;
+    setLauncherUploadingKey(key);
+    setLauncherError('');
+    try {
+      const data = await postJson({ action: 'launcher_upload', server: active, path, target });
+      setLauncherUploads((prev) => ({
+        ...prev,
+        [path]: { ...prev[path], [target]: { hash: data.hash, uploadedAt: new Date().toISOString() } },
+      }));
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'launcher_paths_not_configured') {
+        setLauncherError('Для этого сервера не заданы пути лаунчера — заполните их в «Управление проектом → Серверы»');
+      } else if (code === 'ssh_not_configured') {
+        setLauncherError('SSH-доступ к серверу лаунчера не настроен — заполните его в «Управление проектом → Служебные ключи»');
+      } else if (code === 'file_hash_missing') {
+        setLauncherError('У файла ещё нет контрольной суммы — перезалейте его в патчи и попробуйте снова');
+      } else {
+        setLauncherError('Не удалось залить файл на сервер лаунчера — проверьте подключение и попробуйте ещё раз');
+      }
+    } finally {
+      setLauncherUploadingKey(null);
     }
   }
 
@@ -360,6 +392,7 @@ export default function Patches({
           </div>
         )}
         {uploadError && <p className="text-xs text-destructive w-full">{uploadError}</p>}
+        {launcherError && <p className="text-xs text-destructive w-full">{launcherError}</p>}
       </div>
 
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -451,6 +484,11 @@ export default function Patches({
                   savingDescKey={savingDescKey}
                   onSaveDescription={saveDescription}
                   onDeleteDescription={deleteDescription}
+                  launcherUploads={launcherUploads}
+                  launcherFastEnabled={!!(activeSrv.launcherFastDir && activeSrv.launcherFastXml)}
+                  launcherFullEnabled={!!(activeSrv.launcherFullDir && activeSrv.launcherFullXml)}
+                  onLauncherUpload={handleLauncherUpload}
+                  launcherUploadingKey={launcherUploadingKey}
                 />
               </div>
             ))}

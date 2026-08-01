@@ -20,9 +20,16 @@ interface ServerFormState {
   color: string;
   protocol: ProtocolId;
   description: string;
+  launcherFastDir: string;
+  launcherFastXml: string;
+  launcherFullDir: string;
+  launcherFullXml: string;
 }
 
-const EMPTY_FORM: ServerFormState = { label: '', color: COLOR_PALETTE[0], protocol: 'hf', description: '' };
+const EMPTY_FORM: ServerFormState = {
+  label: '', color: COLOR_PALETTE[0], protocol: 'hf', description: '',
+  launcherFastDir: '', launcherFastXml: '', launcherFullDir: '', launcherFullXml: '',
+};
 
 function ServerForm({ initial, saving, error, onCancel, onSave }: {
   initial: ServerFormState;
@@ -96,19 +103,54 @@ function ServerForm({ initial, saving, error, onCancel, onSave }: {
         />
       </div>
 
-      {/* Настройки лаунчера — заглушка, будет доработана отдельным этапом (см. требования
-          пользователя): адреса xml/папок быстрой и полной загрузки. */}
-      <div className="rounded-lg border border-dashed border-border p-3 opacity-60">
-        <div className="flex items-center gap-1.5 text-xs font-medium mb-2">
+      {/* Настройки лаунчера — абсолютные пути НА ДИСКЕ VPS лаунчера (не URL сайта), куда backend
+          заливает .zip-архивы файлов патчей по SFTP и правит XML-реестр. См. LAUNCHER_UPLOAD.md.
+          Заполнение необязательно — без них кнопки заливки в дереве патчей будут неактивны. */}
+      <div className="rounded-lg border border-border p-3 space-y-3">
+        <div className="flex items-center gap-1.5 text-xs font-medium">
           <Icon name="UploadCloud" size={13} />
           Настройки лаунчера
-          <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-secondary text-muted-foreground">скоро</span>
         </div>
-        <div className="space-y-1.5 text-xs text-muted-foreground">
-          <div>Адрес xml файла быстрой загрузки</div>
-          <div>Адрес xml файла полной загрузки</div>
-          <div>Адрес папки с файлами быстрой загрузки</div>
-          <div>Адрес папки с файлами полной загрузки</div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Пути на диске VPS лаунчера — используются при заливке файлов из раздела «Патчи»
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Папка быстрого обновления</label>
+            <input
+              value={form.launcherFastDir}
+              onChange={(e) => setForm((p) => ({ ...p, launcherFastDir: e.target.value }))}
+              placeholder="/var/www/.../Patch"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">XML быстрого обновления</label>
+            <input
+              value={form.launcherFastXml}
+              onChange={(e) => setForm((p) => ({ ...p, launcherFastXml: e.target.value }))}
+              placeholder="/var/www/.../Patch/files.xml"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">Папка полного обновления</label>
+            <input
+              value={form.launcherFullDir}
+              onChange={(e) => setForm((p) => ({ ...p, launcherFullDir: e.target.value }))}
+              placeholder="/var/www/.../C4"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1.5">XML полного обновления</label>
+            <input
+              value={form.launcherFullXml}
+              onChange={(e) => setForm((p) => ({ ...p, launcherFullXml: e.target.value }))}
+              placeholder="/var/www/.../C4/files.xml"
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+          </div>
         </div>
       </div>
 
@@ -151,7 +193,11 @@ export default function CabinetServers() {
   async function createServer(form: ServerFormState) {
     setSaving(true);
     setError('');
-    const res = await catalogAuthFetch({ action: 'create_server', label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim() });
+    const res = await catalogAuthFetch({
+      action: 'create_server', label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim(),
+      launcherFastDir: form.launcherFastDir.trim(), launcherFastXml: form.launcherFastXml.trim(),
+      launcherFullDir: form.launcherFullDir.trim(), launcherFullXml: form.launcherFullXml.trim(),
+    });
     setSaving(false);
     if (!res.ok) {
       setError('Не удалось создать сервер — попробуйте ещё раз');
@@ -164,7 +210,11 @@ export default function CabinetServers() {
   async function updateServer(id: string, form: ServerFormState) {
     setSaving(true);
     setError('');
-    const res = await catalogAuthFetch({ action: 'update_server', id, label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim() });
+    const res = await catalogAuthFetch({
+      action: 'update_server', id, label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim(),
+      launcherFastDir: form.launcherFastDir.trim(), launcherFastXml: form.launcherFastXml.trim(),
+      launcherFullDir: form.launcherFullDir.trim(), launcherFullXml: form.launcherFullXml.trim(),
+    });
     setSaving(false);
     if (!res.ok) {
       setError('Не удалось сохранить изменения — попробуйте ещё раз');
@@ -222,7 +272,11 @@ export default function CabinetServers() {
             editingId === s.id ? (
               <div key={s.id}>
                 <ServerForm
-                  initial={{ label: s.label, color: s.color, protocol: (s.protocol as ProtocolId) ?? 'hf', description: s.description ?? '' }}
+                  initial={{
+                    label: s.label, color: s.color, protocol: (s.protocol as ProtocolId) ?? 'hf', description: s.description ?? '',
+                    launcherFastDir: s.launcherFastDir ?? '', launcherFastXml: s.launcherFastXml ?? '',
+                    launcherFullDir: s.launcherFullDir ?? '', launcherFullXml: s.launcherFullXml ?? '',
+                  }}
                   saving={saving}
                   error={error}
                   onCancel={() => { setEditingId(null); setError(''); }}

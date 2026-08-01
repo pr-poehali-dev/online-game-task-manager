@@ -1,4 +1,5 @@
 {
+  "service-keys": "https://functions.poehali.dev/5dd209b0-35a1-46b2-bfbe-1dc10f4d6178",
   "storage-config": "https://functions.poehali.dev/8b78be3b-5c66-4a84-8b6b-3c1fc7574ddd",
   "patches": "https://functions.poehali.dev/93469b36-b584-49e6-8b41-97d38b96b67a",
   "dev-login": "https://functions.poehali.dev/86c30ced-9989-4be5-8412-ecf83d8e4a10",

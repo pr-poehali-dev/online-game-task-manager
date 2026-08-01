@@ -3,8 +3,46 @@ import Icon from '@/components/ui/icon';
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { formatMskDateTime } from './shared';
 import { fmtSize, collectDroppedFiles } from './patchesUtils';
-import type { TreeNode, DroppedFile } from './patchesUtils';
+import type { TreeNode, DroppedFile, LauncherUploadsMap, LauncherUploadInfo } from './patchesUtils';
 import { describeFile, describeFolder, normalizeKey } from './patchesFileDescriptions';
+
+// Статус заливки файла на VPS лаунчера относительно его текущего hash (см. LAUNCHER_UPLOAD.md):
+// не заливался ни разу / залита именно эта версия файла / заливали, но файл с тех пор обновился.
+type LauncherFileStatus = 'none' | 'uploaded' | 'stale';
+
+function launcherFileStatus(fileHash: string | null | undefined, upload: LauncherUploadInfo | undefined): LauncherFileStatus {
+  if (!upload) return 'none';
+  if (fileHash && upload.hash === fileHash) return 'uploaded';
+  return 'stale';
+}
+
+// Маленькая круглая кнопка-бейдж заливки в лаунчер: буква Б (быстрое) или П (полное) внутри
+// кружка, цвет меняется по статусу — серый (не заливалось), зелёный (актуально), жёлтый
+// (устарело, файл обновлён после последней заливки).
+function LauncherUploadButton({ label, title, uploading, status, onClick }: {
+  label: string;
+  title: string;
+  uploading: boolean;
+  status: LauncherFileStatus;
+  onClick: () => void;
+}) {
+  const colorClass = status === 'uploaded'
+    ? 'text-primary border-primary/40 bg-primary/10 hover:bg-primary/20'
+    : status === 'stale'
+      ? 'text-amber-500 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20'
+      : 'text-muted-foreground border-border hover:bg-secondary';
+  const statusTitle = status === 'uploaded' ? ' — залито' : status === 'stale' ? ' — устарело, требуется перезалить' : '';
+  return (
+    <button
+      onClick={onClick}
+      disabled={uploading}
+      title={title + statusTitle}
+      className={`h-6 w-6 shrink-0 rounded-full border flex items-center justify-center text-[10px] font-semibold transition-colors disabled:opacity-40 ${colorClass}`}
+    >
+      {uploading ? <Icon name="Loader2" size={11} className="animate-spin" /> : label}
+    </button>
+  );
+}
 
 // Кнопка-подсказка с описанием назначения файла/папки игрового клиента (см.
 // patchesFileDescriptions.ts — встроенный статический справочник + пользовательские описания с
@@ -138,6 +176,11 @@ export default function TreeFolder({
   savingDescKey = null,
   onSaveDescription,
   onDeleteDescription,
+  launcherUploads = {},
+  launcherFastEnabled = false,
+  launcherFullEnabled = false,
+  onLauncherUpload,
+  launcherUploadingKey = null,
 }: {
   node: TreeNode;
   depth: number;
@@ -159,6 +202,14 @@ export default function TreeFolder({
   savingDescKey?: string | null;
   onSaveDescription: (name: string, isFolder: boolean, text: string) => void;
   onDeleteDescription: (name: string, isFolder: boolean) => void;
+  // Заливка файлов на VPS игрового лаунчера (см. LAUNCHER_UPLOAD.md) — launcherFastEnabled/
+  // launcherFullEnabled управляются наличием путей в настройках сервера (CabinetServers.tsx),
+  // launcherUploads — статус последней заливки каждого файла для сравнения с текущим hash.
+  launcherUploads?: LauncherUploadsMap;
+  launcherFastEnabled?: boolean;
+  launcherFullEnabled?: boolean;
+  onLauncherUpload?: (path: string, target: 'fast' | 'full') => void;
+  launcherUploadingKey?: string | null;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
@@ -225,6 +276,28 @@ export default function TreeFolder({
           >
             <Icon name="FileText" size={13} />
           </button>
+        )}
+        {canManage && onLauncherUpload && (launcherFastEnabled || launcherFullEnabled) && (
+          <div className="shrink-0 flex items-center gap-1">
+            {launcherFastEnabled && (
+              <LauncherUploadButton
+                label="Б"
+                title="Залить в быстрое обновление"
+                uploading={launcherUploadingKey === `${f.path}:fast`}
+                status={launcherFileStatus(f.hash, launcherUploads[f.path]?.fast)}
+                onClick={() => onLauncherUpload(f.path, 'fast')}
+              />
+            )}
+            {launcherFullEnabled && (
+              <LauncherUploadButton
+                label="П"
+                title="Залить в полное обновление"
+                uploading={launcherUploadingKey === `${f.path}:full`}
+                status={launcherFileStatus(f.hash, launcherUploads[f.path]?.full)}
+                onClick={() => onLauncherUpload(f.path, 'full')}
+              />
+            )}
+          </div>
         )}
         {canManage && highlightTaskId && (
           <button
@@ -368,6 +441,11 @@ export default function TreeFolder({
               savingDescKey={savingDescKey}
               onSaveDescription={onSaveDescription}
               onDeleteDescription={onDeleteDescription}
+              launcherUploads={launcherUploads}
+              launcherFastEnabled={launcherFastEnabled}
+              launcherFullEnabled={launcherFullEnabled}
+              onLauncherUpload={onLauncherUpload}
+              launcherUploadingKey={launcherUploadingKey}
             />
           ))}
         </div>

@@ -57,7 +57,12 @@ def _category_row(r):
 
 
 def _server_row(r):
-    return {'id': r[0], 'label': r[1], 'color': r[2], 'sortOrder': r[3]}
+    return {
+        'id': r[0], 'label': r[1], 'color': r[2], 'sortOrder': r[3],
+        'protocol': r[4], 'description': r[5],
+        'launcherFastDir': r[6], 'launcherFastXml': r[7],
+        'launcherFullDir': r[8], 'launcherFullXml': r[9],
+    }
 
 
 def handler(event: dict, context) -> dict:
@@ -92,7 +97,11 @@ def handler(event: dict, context) -> dict:
     if action == 'list' or method == 'GET':
         cur.execute(f"SELECT id, label, icon, color, sort_order FROM {schema}.categories ORDER BY sort_order ASC, id ASC")
         cats = [_category_row(r) for r in cur.fetchall()]
-        cur.execute(f"SELECT id, label, color, sort_order FROM {schema}.servers ORDER BY sort_order ASC, id ASC")
+        cur.execute(
+            f"SELECT id, label, color, sort_order, protocol, description, "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml "
+            f"FROM {schema}.servers ORDER BY sort_order ASC, id ASC"
+        )
         srvs = [_server_row(r) for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'categories': cats, 'servers': srvs})}
@@ -172,6 +181,14 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_label'})}
         color = body.get('color') or '215 15% 55%'
+        protocol = body.get('protocol') or 'hf'
+        description = (body.get('description') or '').strip() or None
+        # Настройки лаунчера (пути на диске VPS) — необязательны при создании, обычно заполняются
+        # отдельно позже через "Настройки лаунчера" в форме сервера, см. LAUNCHER_UPLOAD.md.
+        launcher_fast_dir = (body.get('launcherFastDir') or '').strip() or None
+        launcher_fast_xml = (body.get('launcherFastXml') or '').strip() or None
+        launcher_full_dir = (body.get('launcherFullDir') or '').strip() or None
+        launcher_full_xml = (body.get('launcherFullXml') or '').strip() or None
         base_id = _slugify(label)
         new_id = base_id
         n = 1
@@ -184,9 +201,14 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"SELECT COALESCE(MAX(sort_order), -1) + 1 FROM {schema}.servers")
         sort_order = cur.fetchone()[0]
         cur.execute(
-            f"INSERT INTO {schema}.servers (id, label, color, sort_order) VALUES (%s, %s, %s, %s) "
-            f"RETURNING id, label, color, sort_order",
-            (new_id, label, color, sort_order)
+            f"INSERT INTO {schema}.servers "
+            f"(id, label, color, sort_order, protocol, description, "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"RETURNING id, label, color, sort_order, protocol, description, "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml",
+            (new_id, label, color, sort_order, protocol, description,
+             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml)
         )
         srv = _server_row(cur.fetchone())
         cur.close(); conn.close()
@@ -202,10 +224,20 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_label'})}
         color = body.get('color') or '215 15% 55%'
+        protocol = body.get('protocol') or 'hf'
+        description = (body.get('description') or '').strip() or None
+        launcher_fast_dir = (body.get('launcherFastDir') or '').strip() or None
+        launcher_fast_xml = (body.get('launcherFastXml') or '').strip() or None
+        launcher_full_dir = (body.get('launcherFullDir') or '').strip() or None
+        launcher_full_xml = (body.get('launcherFullXml') or '').strip() or None
         cur.execute(
-            f"UPDATE {schema}.servers SET label = %s, color = %s WHERE id = %s "
-            f"RETURNING id, label, color, sort_order",
-            (label, color, srv_id)
+            f"UPDATE {schema}.servers SET label = %s, color = %s, protocol = %s, description = %s, "
+            f"launcher_fast_dir = %s, launcher_fast_xml = %s, launcher_full_dir = %s, launcher_full_xml = %s "
+            f"WHERE id = %s "
+            f"RETURNING id, label, color, sort_order, protocol, description, "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml",
+            (label, color, protocol, description,
+             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, srv_id)
         )
         row = cur.fetchone()
         cur.close(); conn.close()

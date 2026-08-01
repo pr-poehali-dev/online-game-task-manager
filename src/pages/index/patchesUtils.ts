@@ -11,7 +11,17 @@ export interface PatchFile {
   updatedAt: string | null;
   taskIds: string[];
   ddfSupported?: boolean;
+  hash?: string | null;
 }
+
+// Статус заливки файла на VPS лаунчера (см. LAUNCHER_UPLOAD.md) по каждой цели (fast/full) —
+// хранит hash файла на момент последней заливки, чтобы дерево патчей могло сравнить с текущим
+// hash файла (PatchFile.hash) и показать бейдж "залито" (совпадает) или "устарело" (отличается).
+export interface LauncherUploadInfo {
+  hash: string;
+  uploadedAt: string | null;
+}
+export type LauncherUploadsMap = Record<string, Partial<Record<'fast' | 'full', LauncherUploadInfo>>>;
 
 export interface TreeNode {
   name: string;

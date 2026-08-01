@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import json
 import os
@@ -11,6 +12,7 @@ import zipfile
 
 import boto3
 from botocore.config import Config
+import paramiko
 import psycopg2
 
 import ddf_parser
@@ -371,7 +373,124 @@ def _row_to_file(r, server):
         'updatedAt': r[4].isoformat() if r[4] else None,
         'taskIds': [str(t) for t in (r[5] or [])],
         'ddfSupported': _ddf_is_supported(server, r[1]),
+        'hash': r[6],
     }
+
+
+# ---------------------------------------------------------------------------
+# Заливка файлов патчей на VPS игрового лаунчера (SFTP) — см. LAUNCHER_UPLOAD.md за полным
+# описанием формата. Каждый файл заливается отдельным .zip-архивом (как делает сторонняя
+# программа UPMaker, которой пользователь пользовался вручную раньше — один файл внутри архива
+# под тем же именем), а на VPS правится XML-реестр (files.xml), который читает лаунчер клиента,
+# чтобы понять, что и откуда скачивать. SSH-реквизиты хранятся в таблице service_keys (см.
+# backend/service-keys/index.py), управляются через кабинет — НЕ через секреты платформы.
+# ---------------------------------------------------------------------------
+
+def _make_launcher_zip(basename: str, raw: bytes) -> bytes:
+    '''Упаковывает файл в .zip той же структуры, что и UPMaker: один файл внутри архива под
+    оригинальным именем (без вложенных путей), ZIP_DEFLATED.'''
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(basename, raw)
+    return buf.getvalue()
+
+
+def _to_launcher_path(rel_path: str) -> str:
+    '''Конвертирует путь файла в дереве патчей (например "System/etcitemgrp.dat") в формат,
+    который лаунчер ожидает в XML и на диске: обратные слеши, ведущий слеш, ИМЕНА ПАПОК строчными
+    буквами (реальный files.xml на сервере пользователя использует \\system\\, не \\System\\ —
+    см. LAUNCHER_UPLOAD.md), а вот регистр самого имени файла сохраняется как есть (в реальных
+    примерах встречаются "L2.exe", "L2UI_CH3.utx" с заглавными буквами).'''
+    parts = rel_path.split('/')
+    if len(parts) > 1:
+        dirs = [p.lower() for p in parts[:-1]]
+        basename = parts[-1]
+        return '\\' + '\\'.join(dirs + [basename])
+    return '\\' + parts[0]
+
+
+def _service_key(cur, schema, key):
+    cur.execute(f"SELECT value FROM {schema}.service_keys WHERE key = %s", (key,))
+    row = cur.fetchone()
+    return row[0] if row and row[0] else None
+
+
+def _launcher_ssh_client(cur, schema):
+    '''Создаёт SSH-подключение к VPS лаунчера по логину/паролю, сохранённым в service_keys (раздел
+    "Управление проектом → Служебные ключи" в кабинете — НЕ секреты платформы). Возвращает None,
+    если ключи ещё не заполнены — вызывающий код должен в этом случае вернуть понятную ошибку.'''
+    host = _service_key(cur, schema, 'LAUNCHER_SSH_HOST')
+    user = _service_key(cur, schema, 'LAUNCHER_SSH_USER')
+    password = _service_key(cur, schema, 'LAUNCHER_SSH_PASSWORD')
+    if not host or not user or not password:
+        return None
+    port_raw = _service_key(cur, schema, 'LAUNCHER_SSH_PORT') or '22'
+    try:
+        port = int(port_raw)
+    except ValueError:
+        port = 22
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.connect(hostname=host, port=port, username=user, password=password, timeout=15)
+    return client
+
+
+def _sftp_makedirs(sftp, remote_dir: str):
+    '''Создаёт цепочку папок на VPS по SFTP, если их ещё нет (аналог os.makedirs с exist_ok).'''
+    if not remote_dir or remote_dir in ('/', ''):
+        return
+    parts = [p for p in remote_dir.strip('/').split('/') if p]
+    path = ''
+    for part in parts:
+        path += '/' + part
+        try:
+            sftp.stat(path)
+        except (IOError, OSError):
+            try:
+                sftp.mkdir(path)
+            except (IOError, OSError):
+                pass
+
+
+def _read_remote_text(sftp, path: str) -> str:
+    with sftp.open(path, 'rb') as f:
+        raw = f.read()
+    return raw.decode('utf-8-sig')
+
+
+def _write_remote_text(sftp, path: str, text: str):
+    '''Записывает XML обратно на VPS с BOM (как у исходного файла лаунчера) через временный файл +
+    атомарное переименование — чтобы лаунчер клиента никогда не увидел частично записанный XML.'''
+    data = b'\xef\xbb\xbf' + text.encode('utf-8')
+    tmp_path = path + '.tmp'
+    with sftp.open(tmp_path, 'wb') as f:
+        f.write(data)
+    try:
+        sftp.posix_rename(tmp_path, path)
+    except (AttributeError, IOError, OSError):
+        try:
+            sftp.remove(path)
+        except (IOError, OSError):
+            pass
+        sftp.rename(tmp_path, path)
+
+
+_LAUNCHER_XML_EMPTY = '<?xml version="1.0" encoding="utf-8"?>\n<list>\n</list>\n'
+
+
+def _update_xml_entry(text: str, launcher_path: str, file_hash: str, size: int) -> str:
+    '''Добавляет или обновляет запись <set file="..." hash="..." size="..." /> в XML-реестре
+    лаунчера — если запись с таким же file= уже есть, заменяет её (перезаписывает hash/size),
+    иначе добавляет новую перед закрывающим </list>.'''
+    escaped = re.escape(launcher_path)
+    pattern = re.compile(r'<set file="' + escaped + r'"[^>]*/>\s*\n?')
+    new_entry = f'<set file="{launcher_path}" hash="{file_hash}" size="{size}" />\n'
+    if pattern.search(text):
+        return pattern.sub(new_entry, text, count=1)
+    idx = text.rfind('</list>')
+    if idx == -1:
+        raise ValueError('malformed_xml')
+    return text[:idx] + new_entry + text[idx:]
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +690,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('no_server')
         cur.execute(
-            f"SELECT id, path, size, file_key, updated_at, task_ids FROM {schema}.patch_files "
+            f"SELECT id, path, size, file_key, updated_at, task_ids, hash FROM {schema}.patch_files "
             f"WHERE server = %s ORDER BY path",
             (server,)
         )
@@ -581,8 +700,21 @@ def handler(event: dict, context) -> dict:
             (server,)
         )
         custom_roots = [r[0] for r in cur.fetchall()]
+        # Статус заливки в лаунчер (fast/full) по каждому файлу — см. LAUNCHER_UPLOAD.md. Фронт
+        # сравнивает launcherUploads[path][target].hash с hash самого файла, чтобы показать бейдж
+        # "залито" (совпадает) или "устарело, требуется перезалить" (отличается).
+        cur.execute(
+            f"SELECT path, target, file_hash, uploaded_at FROM {schema}.patch_launcher_uploads WHERE server = %s",
+            (server,)
+        )
+        launcher_uploads: dict = {}
+        for lu_path, lu_target, lu_hash, lu_uploaded_at in cur.fetchall():
+            launcher_uploads.setdefault(lu_path, {})[lu_target] = {
+                'hash': lu_hash,
+                'uploadedAt': lu_uploaded_at.isoformat() if lu_uploaded_at else None,
+            }
         cur.close(); conn.close()
-        return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots})
+        return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots, 'launcherUploads': launcher_uploads})
 
     if action == 'tasks_with_files':
         # Список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл патча —
@@ -643,7 +775,7 @@ def handler(event: dict, context) -> dict:
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
                   'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete',
-                  'ddf_save_raw'):
+                  'ddf_save_raw', 'launcher_upload'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -1482,12 +1614,16 @@ def handler(event: dict, context) -> dict:
         task_ids = list(existing[0]) if existing and existing[0] else []
         if task_id_int is not None and task_id_int not in task_ids:
             task_ids.append(task_id_int)
+        # MD5 содержимого — нужен для заливки в лаунчер (см. LAUNCHER_UPLOAD.md): атрибут hash= в
+        # XML-реестре лаунчера считается от исходного файла (не от .zip-обёртки), и для сравнения
+        # "залито / устарело" в дереве патчей (patch_launcher_uploads.file_hash).
+        file_hash = hashlib.md5(raw).hexdigest()
         cur.execute(
-            f"INSERT INTO {schema}.patch_files (server, path, file_key, size, task_ids, uploaded_by, updated_at) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
+            f"INSERT INTO {schema}.patch_files (server, path, file_key, size, hash, task_ids, uploaded_by, updated_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, now()) "
             f"ON CONFLICT (server, path) DO UPDATE SET file_key = EXCLUDED.file_key, "
-            f"size = EXCLUDED.size, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
-            (server, rel_path, file_key, len(raw), json.dumps(task_ids), me['id'])
+            f"size = EXCLUDED.size, hash = EXCLUDED.hash, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
+            (server, rel_path, file_key, len(raw), file_hash, json.dumps(task_ids), me['id'])
         )
         cur.close(); conn.close()
         return _ok({'ok': True, 'path': rel_path, 'size': len(raw)})
@@ -1593,6 +1729,97 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s", (server,))
         cur.close(); conn.close()
         return _ok({'ok': True, 'deletedCount': len(keys)})
+
+    if action == 'launcher_upload':
+        # Заливает уже загруженный файл патчей на VPS игрового лаунчера — упаковывает в .zip
+        # (формат UPMaker) по SFTP в папку fast/full конкретного сервера и добавляет/обновляет
+        # запись в XML-реестре лаунчера. См. LAUNCHER_UPLOAD.md за полным описанием формата и
+        # решений. Требует patch_edit (уже проверено выше вместе с остальными write-действиями).
+        server = _safe_server(body.get('server'))
+        path = body.get('path')
+        target = body.get('target')
+        if not server or not path or target not in ('fast', 'full'):
+            cur.close(); conn.close()
+            return _bad('bad_request')
+
+        cur.execute(
+            f"SELECT launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml "
+            f"FROM {schema}.servers WHERE id = %s",
+            (server,)
+        )
+        srv_row = cur.fetchone()
+        if not srv_row:
+            cur.close(); conn.close()
+            return _bad('server_not_found', 404)
+        remote_dir = srv_row[0] if target == 'fast' else srv_row[2]
+        remote_xml = srv_row[1] if target == 'fast' else srv_row[3]
+        if not remote_dir or not remote_xml:
+            cur.close(); conn.close()
+            return _bad('launcher_paths_not_configured')
+
+        cur.execute(
+            f"SELECT file_key, size, hash FROM {schema}.patch_files WHERE server = %s AND path = %s",
+            (server, path)
+        )
+        file_row = cur.fetchone()
+        if not file_row:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        file_key, _size, file_hash = file_row
+        if not file_hash:
+            # Файлы, загруженные до появления колонки hash (см. db_migrations), ещё не имеют
+            # посчитанного MD5 — просим перезалить в патчи, чтобы hash появился.
+            cur.close(); conn.close()
+            return _bad('file_hash_missing')
+
+        s3 = _s3_client()
+        bucket = _bucket()
+        obj = s3.get_object(Bucket=bucket, Key=file_key)
+        raw = obj['Body'].read()
+
+        basename = path.rsplit('/', 1)[-1]
+        zip_bytes = _make_launcher_zip(basename, raw)
+        launcher_path = _to_launcher_path(path)
+        # Атрибут size= в XML-реестре — это размер .zip-архива (не исходного файла), как делает
+        # UPMaker — проверено на присланном пользователем примере.
+        zip_size = len(zip_bytes)
+
+        ssh = _launcher_ssh_client(cur, schema)
+        if ssh is None:
+            cur.close(); conn.close()
+            return _bad('ssh_not_configured')
+        try:
+            sftp = ssh.open_sftp()
+            try:
+                remote_file_dir = remote_dir.rstrip('/') + '/' + '/'.join(launcher_path.strip('\\').split('\\')[:-1])
+                _sftp_makedirs(sftp, remote_file_dir)
+                remote_file_path = remote_dir.rstrip('/') + '/' + launcher_path.strip('\\').replace('\\', '/') + '.zip'
+                with sftp.open(remote_file_path, 'wb') as f:
+                    f.write(zip_bytes)
+
+                try:
+                    xml_text = _read_remote_text(sftp, remote_xml)
+                except (IOError, OSError):
+                    xml_text = _LAUNCHER_XML_EMPTY
+                xml_text = _update_xml_entry(xml_text, launcher_path, file_hash, zip_size)
+                _write_remote_text(sftp, remote_xml, xml_text)
+            finally:
+                sftp.close()
+        except Exception as e:
+            cur.close(); conn.close()
+            return _bad(f'ssh_error_{type(e).__name__}')
+        finally:
+            ssh.close()
+
+        cur.execute(
+            f"INSERT INTO {schema}.patch_launcher_uploads (server, path, target, file_hash, file_size, uploaded_by, uploaded_at) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
+            f"ON CONFLICT (server, path, target) DO UPDATE SET file_hash = EXCLUDED.file_hash, "
+            f"file_size = EXCLUDED.file_size, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()",
+            (server, path, target, file_hash, zip_size, me['id'])
+        )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'target': target, 'path': path, 'hash': file_hash})
 
     if action == 'zip_all':
         # Архив всего дерева файлов сервера целиком (не привязано к конкретной задаче).
