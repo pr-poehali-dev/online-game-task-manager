@@ -7,12 +7,16 @@ import PatchesTree from './PatchesTree';
 
 export default function Patches({
   canManage,
+  canDelete,
+  canLauncherUpload,
   tasks,
   initialTaskId,
   initialServerId,
   onFileTaskLinkChange,
 }: {
   canManage: boolean;
+  canDelete: boolean;
+  canLauncherUpload: boolean;
   tasks: { id: string; title: string; server: ServerId }[];
   initialTaskId?: string | null;
   initialServerId?: ServerId | null;
@@ -61,6 +65,8 @@ export default function Patches({
         handleDownloadAllZip={p.handleDownloadAllZip}
         zippingAll={p.zippingAll}
         canManage={canManage}
+        canDelete={canDelete}
+        canLauncherUpload={canLauncherUpload}
         addingRoot={p.addingRoot}
         setAddingRoot={p.setAddingRoot}
         newRootName={p.newRootName}

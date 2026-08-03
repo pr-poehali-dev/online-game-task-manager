@@ -159,6 +159,8 @@ export default function TreeFolder({
   node,
   depth,
   canManage,
+  canDelete = false,
+  canLauncherUpload = false,
   onDelete,
   highlightTaskId,
   onDropFiles,
@@ -188,6 +190,11 @@ export default function TreeFolder({
   node: TreeNode;
   depth: number;
   canManage: boolean;
+  // Точечные права поверх canManage/patch_edit — удаление файлов и заливка в лаунчер (см.
+  // patch_delete_files/patch_launcher_upload в src/lib/auth.tsx) требуют patch_edit как
+  // предусловие, но управляются отдельными чекбоксами в дереве прав.
+  canDelete?: boolean;
+  canLauncherUpload?: boolean;
   onDelete: (path: string) => void;
   highlightTaskId: string | null;
   onDropFiles: (targetFolder: string, files: DroppedFile[]) => void;
@@ -252,7 +259,7 @@ export default function TreeFolder({
         }`}
         style={{ paddingLeft: `${depth * 18 + 24}px` }}
       >
-        {canManage && selectMode && onToggleSelectPath && (
+        {canDelete && selectMode && onToggleSelectPath && (
           <input
             type="checkbox"
             checked={isSelected}
@@ -293,7 +300,7 @@ export default function TreeFolder({
             <Icon name="FileText" size={13} />
           </button>
         )}
-        {canManage && onLauncherUpload && (launcherFastEnabled || launcherFullEnabled) && (
+        {canLauncherUpload && onLauncherUpload && (launcherFastEnabled || launcherFullEnabled) && (
           <div className="shrink-0 flex items-center gap-1">
             {launcherFastEnabled && (
               <LauncherUploadButton
@@ -329,7 +336,7 @@ export default function TreeFolder({
             <Icon name={togglingPath === f.path ? 'Loader2' : 'Paperclip'} size={13} className={togglingPath === f.path ? 'animate-spin' : ''} />
           </button>
         )}
-        {canManage && (confirmPath === f.path ? (
+        {canDelete && (confirmPath === f.path ? (
           <div className="shrink-0 flex items-center gap-1">
             <button
               onClick={() => { setConfirmPath(null); onDelete(f.path); }}
@@ -359,6 +366,9 @@ export default function TreeFolder({
 
   const isDragTarget = dragActive === node.path;
   const isCustomRoot = isRoot && !!customRootNames?.has(node.name);
+  // delete_root удаляет ПУСТУЮ пользовательскую корневую папку (структура дерева) — backend
+  // проверяет это действие через can_manage (patch_edit), а не can_delete (удаление ФАЙЛОВ,
+  // см. patch_delete_files) — держим то же разделение на фронте для консистентности.
   const canDeleteRoot = isCustomRoot && canManage && entries.length === 0 && !!onDeleteRoot;
   const folderKey = node.name.toLowerCase();
   const folderInfo = describeFolder(node.name, customFolderDescriptions);
@@ -440,6 +450,8 @@ export default function TreeFolder({
               node={child}
               depth={depth + 1}
               canManage={canManage}
+              canDelete={canDelete}
+              canLauncherUpload={canLauncherUpload}
               onDelete={onDelete}
               highlightTaskId={highlightTaskId}
               onDropFiles={onDropFiles}

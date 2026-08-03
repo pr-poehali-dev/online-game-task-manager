@@ -9,7 +9,7 @@ import type { ServerId } from './shared';
 
 export default function PatchesTree({
   activeSrv, files, totalSize, handleDownloadAllZip, zippingAll,
-  canManage, addingRoot, setAddingRoot, newRootName, setNewRootName, rootError, setRootError,
+  canManage, canDelete, canLauncherUpload, addingRoot, setAddingRoot, newRootName, setNewRootName, rootError, setRootError,
   handleAddRoot, loading, tree, handleDelete, selectedTaskId, handleDropFiles,
   dragActive, setDragActive, handleToggleTask, togglingPath, customRootNames,
   handleDeleteRoot, deletingRoot, setEditingDdfPath, isOwner, customFiles, customFolders,
@@ -24,6 +24,8 @@ export default function PatchesTree({
   handleDownloadAllZip: () => void;
   zippingAll: boolean;
   canManage: boolean;
+  canDelete: boolean;
+  canLauncherUpload: boolean;
   addingRoot: boolean;
   setAddingRoot: (v: boolean) => void;
   newRootName: string;
@@ -88,7 +90,7 @@ export default function PatchesTree({
                 {zippingAll ? 'Собираю...' : 'Скачать всё'}
               </button>
             )}
-            {canManage && files.length > 0 && (
+            {canDelete && files.length > 0 && (
               <button
                 onClick={toggleSelectMode}
                 title={selectMode ? 'Выйти из режима выбора' : 'Выбрать несколько файлов для удаления'}
@@ -188,6 +190,8 @@ export default function PatchesTree({
                   node={node}
                   depth={0}
                   canManage={canManage}
+                  canDelete={canDelete}
+                  canLauncherUpload={canLauncherUpload}
                   onDelete={handleDelete}
                   highlightTaskId={selectedTaskId || null}
                   onDropFiles={handleDropFiles}

@@ -259,6 +259,8 @@ export default function IndexMain({
           <div className={view === 'patches' ? '' : 'hidden'}>
             <Patches
               canManage={can('patch_edit')}
+              canDelete={can('patch_delete_files')}
+              canLauncherUpload={can('patch_launcher_upload')}
               tasks={activeTasks.map((t) => ({ id: t.id, title: t.title, server: t.server }))}
               initialTaskId={patchesTaskId}
               initialServerId={patchesServerId}

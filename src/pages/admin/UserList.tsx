@@ -1,5 +1,5 @@
 import Icon from '@/components/ui/icon';
-import { PERMISSION_GROUPS, OWNER_ONLY_PERMISSION_GROUPS } from './adminShared';
+import { PERMISSION_GROUPS, OWNER_ONLY_PERMISSION_GROUPS, PATCH_SUB_PERMISSION_GROUP } from './adminShared';
 import type { TeamUser, Permissions } from './adminShared';
 
 export default function UserList({
@@ -343,6 +343,46 @@ export default function UserList({
                     </div>
                   </div>
                 ))}
+                {/* patch_launcher_upload/patch_delete_files — точечная донастройка ПОВЕРХ
+                    patch_edit, выдаёт любой администратор (не входит в OWNER_ONLY_PERMISSION_GROUPS),
+                    но backend требует patch_edit=true как предусловие — блокируем чекбоксы в UI,
+                    пока в ТЕКУЩЕМ черновике (permsDraft) не включено patch_edit, чтобы не создавать
+                    иллюзию, что право сохранится без него. */}
+                {(() => {
+                  const patchEditOn = !!permsDraft.patch_edit;
+                  return (
+                    <div className={`rounded-lg border p-3 ${patchEditOn ? 'border-border/60' : 'border-border/60 opacity-60'}`}>
+                      <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
+                        <Icon name={PATCH_SUB_PERMISSION_GROUP.icon} size={13} className="text-primary" />
+                        {PATCH_SUB_PERMISSION_GROUP.title}
+                        {!patchEditOn && (
+                          <span className="text-[10px] font-normal text-muted-foreground ml-auto">
+                            нужно «Редактирование Патчи»
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {PATCH_SUB_PERMISSION_GROUP.items.map((item) => (
+                          <label
+                            key={item.key}
+                            className={`flex items-center gap-2 text-xs text-muted-foreground ${patchEditOn ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={!!permsDraft[item.key]}
+                              disabled={!patchEditOn}
+                              onChange={(e) =>
+                                setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                              }
+                              className="h-3.5 w-3.5 rounded border-border accent-primary"
+                            />
+                            {item.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="rounded-lg border border-border/60 p-3">
                   <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
                     <Icon name="Send" size={13} className="text-primary" />

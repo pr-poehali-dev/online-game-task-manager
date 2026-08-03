@@ -169,32 +169,51 @@ def _db():
     return conn
 
 
-# patch_edit — привилегия на РЕДАКТИРОВАНИЕ раздела "Патчи" целиком (загрузка/удаление файлов и
-# папок, привязка к задачам, а также создание/изменение/удаление записей внутри .dat-файлов) —
+# patch_edit — привилегия на РЕДАКТИРОВАНИЕ раздела "Патчи" целиком (загрузка файлов и папок,
+# привязка к задачам, а также создание/изменение/удаление записей внутри .dat-файлов) —
 # в отличие от private_notes_view_others/patch_desc_save (эксклюзивно OWNER_USER_ID), это ОБЫЧНАЯ
 # привилегия из ALL_PERMISSIONS с эффективным значением по роли (по умолчанию есть у admin, нет у
 # member — см. _effective_perms), но выдавать/отзывать её у КОНКРЕТНОГО пользователя, как и
 # private_notes_view_others, может только владелец проекта (см. PRIVILEGED_PERMISSIONS в
 # backend/admin/index.py) — это ограничение проверяется ТАМ (в set_permissions), а не здесь.
 # Здесь просто читаем эффективное значение права: просмотр (tree/ddf_search/ddf_get и т.п.)
-# доступен любому авторизованному участнику, а вот загрузка/удаление файлов и любая запись
-# внутри .dat-файлов (ddf_save/ddf_create/ddf_delete/ddf_save_raw и т.д., см. ниже) — только
-# тем, у кого patch_edit=true.
-ALL_PERMISSIONS = ['task_edit_own', 'patch_edit']
+# доступен любому авторизованному участнику, а вот загрузка файлов и любая запись внутри
+# .dat-файлов (ddf_save/ddf_create/ddf_delete/ddf_save_raw и т.д., см. ниже) — только тем, у
+# кого patch_edit=true.
+#
+# patch_launcher_upload / patch_delete_files — точечная донастройка ПОВЕРХ patch_edit (см.
+# _effective_perms ниже): удаление файлов из дерева патчей и заливка в лаунчер — более опасные
+# операции, чем обычное редактирование, поэтому вынесены в отдельные права, которые можно выдать
+# (или не выдать) вдобавок к patch_edit. В отличие от patch_edit, эти два права НЕ входят в
+# PRIVILEGED_PERMISSIONS в backend/admin/index.py — их может выдавать любой администратор с
+# доступом к разделу "Команда", а не только владелец проекта.
+ALL_PERMISSIONS = ['task_edit_own', 'patch_edit', 'patch_launcher_upload', 'patch_delete_files']
 
 
 def _effective_perms(role, raw):
     '''См. одноимённую функцию в backend/admin/index.py за полным описанием — patch_edit по
     умолчанию False (даже для role == 'admin'), пока не выдано явно (изначально есть только у
-    OWNER_USER_ID через миграцию), остальные права — по умолчанию role == 'admin' как обычно.'''
+    OWNER_USER_ID через миграцию), остальные права — по умолчанию role == 'admin' как обычно.
+    patch_launcher_upload/patch_delete_files требуют patch_edit как обязательное предусловие —
+    если patch_edit эффективно False, оба этих права всегда False независимо от сохранённого
+    значения (защита от рассинхронизации, если patch_edit отозвали, а точечные права забыли).'''
     result = {}
     for key in ALL_PERMISSIONS:
+        if key in ('patch_launcher_upload', 'patch_delete_files'):
+            continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
         elif key == 'patch_edit':
             result[key] = False
         else:
             result[key] = (role == 'admin')
+    for key in ('patch_launcher_upload', 'patch_delete_files'):
+        if not result['patch_edit']:
+            result[key] = False
+        elif isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = False
     return result
 
 
@@ -210,7 +229,12 @@ def _current_user(cur, schema, token):
     if not row:
         return None
     perms = _effective_perms(row[1], row[2])
-    return {'id': row[0], 'role': row[1], 'can_manage': perms['patch_edit']}
+    return {
+        'id': row[0], 'role': row[1],
+        'can_manage': perms['patch_edit'],
+        'can_launcher_upload': perms['patch_launcher_upload'],
+        'can_delete': perms['patch_delete_files'],
+    }
 
 
 def _tg_send(chat_id, text, button_url=None):
@@ -785,10 +809,22 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'ok': True})
 
-    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'delete_bulk',
-                  'clear_server', 'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create',
-                  'ddf_delete', 'ddf_save_raw', 'launcher_upload'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort',
+                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create',
+                  'ddf_delete', 'ddf_save_raw'):
         if not me['can_manage']:
+            cur.close(); conn.close()
+            return _forbidden()
+
+    # Удаление файлов и заливка в лаунчер — точечные права поверх patch_edit (см.
+    # patch_launcher_upload/patch_delete_files выше), проверяются отдельно от общего can_manage.
+    if action in ('delete', 'delete_bulk', 'clear_server'):
+        if not me['can_delete']:
+            cur.close(); conn.close()
+            return _forbidden()
+
+    if action == 'launcher_upload':
+        if not me['can_launcher_upload']:
             cur.close(); conn.close()
             return _forbidden()
 

@@ -226,7 +226,7 @@ ALL_PERMISSIONS = [
     'sprint_create', 'sprint_edit',
     'launcher_notify',
     'private_notes_view_others',
-    'patch_edit',
+    'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
     'team_manage',
 ]
 
@@ -235,15 +235,25 @@ def _effective_perms(role, raw):
     '''Индивидуальные права (если заданы явно) приоритетнее роли. Не заданные — берутся из роли,
     КРОМЕ patch_edit/team_manage — по умолчанию False даже для role == 'admin' (см.
     backend/admin/index.py за подробностями): patch_edit изначально есть только у OWNER_USER_ID
-    через миграцию, team_manage делегируется точечно каждому участнику.'''
+    через миграцию, team_manage делегируется точечно каждому участнику.
+    patch_launcher_upload/patch_delete_files требуют patch_edit=true как предусловие.'''
     result = {}
     for key in ALL_PERMISSIONS:
+        if key in ('patch_launcher_upload', 'patch_delete_files'):
+            continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
         elif key in ('patch_edit', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')
+    for key in ('patch_launcher_upload', 'patch_delete_files'):
+        if not result['patch_edit']:
+            result[key] = False
+        elif isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = False
     return result
 
 

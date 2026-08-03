@@ -26,7 +26,7 @@ ALL_PERMISSIONS = [
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
-    'patch_edit',
+    'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
     'team_manage',
 ]
 
@@ -34,15 +34,25 @@ ALL_PERMISSIONS = [
 def _effective_perms(role, raw):
     '''patch_edit/team_manage по умолчанию False даже для role == 'admin' (см.
     backend/admin/index.py) — patch_edit изначально есть только у OWNER_USER_ID через миграцию,
-    team_manage делегируется точечно каждому участнику.'''
+    team_manage делегируется точечно каждому участнику. patch_launcher_upload/patch_delete_files
+    требуют patch_edit=true как предусловие (см. backend/admin/index.py за подробностями).'''
     result = {}
     for key in ALL_PERMISSIONS:
+        if key in ('patch_launcher_upload', 'patch_delete_files'):
+            continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
         elif key in ('patch_edit', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')
+    for key in ('patch_launcher_upload', 'patch_delete_files'):
+        if not result['patch_edit']:
+            result[key] = False
+        elif isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = False
     return result
 
 

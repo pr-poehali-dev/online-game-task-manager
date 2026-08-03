@@ -18,6 +18,8 @@ export type PermissionKey =
   | 'launcher_notify'
   | 'private_notes_view_others'
   | 'patch_edit'
+  | 'patch_launcher_upload'
+  | 'patch_delete_files'
   | 'team_manage';
 
 export interface AuthUser {

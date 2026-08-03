@@ -65,7 +65,7 @@ ALL_PERMISSIONS = [
     'sprint_create', 'sprint_edit',
     'launcher_notify',
     'private_notes_view_others',
-    'patch_edit',
+    'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
     'team_manage',
 ]
 
@@ -73,10 +73,13 @@ ALL_PERMISSIONS = [
 # backend/patches/index.py для описаний файлов клиента (см. OWNER_USER_ID там за подробностями:
 # первый зарегистрированный администратор проекта, new_era_l2). Здесь используется, чтобы
 # ограничить выдачу/отзыв прав 'private_notes_view_others' (просмотр чужих приватных заметок) и
-# 'patch_edit' (редактирование раздела "Патчи": загрузка/удаление файлов и папок, создание/правка/
-# удаление записей внутри .dat-файлов — см. backend/patches/index.py) — по требованию пользователя
-# эти привилегии должен раздавать только он сам, а не любой администратор с доступом к разделу
-# "Команда".
+# 'patch_edit' (редактирование раздела "Патчи": загрузка файлов и папок, создание/правка/удаление
+# записей внутри .dat-файлов — см. backend/patches/index.py) — по требованию пользователя эти
+# привилегии должен раздавать только он сам, а не любой администратор с доступом к разделу
+# "Команда". patch_launcher_upload (заливка файлов в лаунчер) и patch_delete_files (удаление
+# файлов из дерева патчей) — точечная донастройка ПОВЕРХ patch_edit, но НЕ входят в
+# PRIVILEGED_PERMISSIONS: их может выдавать любой администратор с доступом к "Команде", как и
+# остальные обычные права (см. _effective_perms ниже за логикой предусловия patch_edit).
 OWNER_USER_ID = 1
 PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit'}
 
@@ -87,15 +90,26 @@ def _effective_perms(role, raw):
     требованию пользователя эти права по умолчанию не должны доставаться всем администраторам
     автоматически (в отличие от остальных привилегий): patch_edit изначально есть только у
     владельца проекта (OWNER_USER_ID, ему выдано явно через миграцию db_migrations), team_manage —
-    делегируется точечно каждому конкретному участнику.'''
+    делегируется точечно каждому конкретному участнику. patch_launcher_upload/patch_delete_files
+    дополнительно требуют patch_edit=true как предусловие (см. ниже) — без него всегда False,
+    даже если сохранённое значение в БД было true (например patch_edit отозвали позже).'''
     result = {}
     for key in ALL_PERMISSIONS:
+        if key in ('patch_launcher_upload', 'patch_delete_files'):
+            continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
         elif key in ('patch_edit', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')
+    for key in ('patch_launcher_upload', 'patch_delete_files'):
+        if not result['patch_edit']:
+            result[key] = False
+        elif isinstance(raw, dict) and key in raw and raw[key] is not None:
+            result[key] = bool(raw[key])
+        else:
+            result[key] = False
     return result
 
 
