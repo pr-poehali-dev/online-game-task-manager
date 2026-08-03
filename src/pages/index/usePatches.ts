@@ -72,9 +72,18 @@ export function usePatches({
         setFiles(data.files || []);
         setCustomRoots(data.customRoots || []);
         setLauncherUploads(data.launcherUploads || {});
+      } else {
+        // Запрос за деревом файлов не удался (например сервер не найден) — обязательно очищаем
+        // список, иначе на экране остаётся дерево ПРЕДЫДУЩЕГО открытого сервера и выглядит так,
+        // будто это файлы нового/только что выбранного сервера.
+        setFiles([]);
+        setCustomRoots([]);
+        setLauncherUploads({});
       }
     } catch {
-      /* ignore */
+      setFiles([]);
+      setCustomRoots([]);
+      setLauncherUploads({});
     } finally {
       setLoading(false);
     }

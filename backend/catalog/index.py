@@ -38,11 +38,26 @@ def _current_user(cur, schema, token):
     return {'id': row[0], 'role': row[1]}
 
 
+# Транслитерация кириллицы в латиницу для _slugify() — без неё label вида "Тест" превращался в
+# id "тест", который потом отклоняется валидацией server/category id в других backend-функциях
+# (например _safe_server в backend/patches/index.py принимает только [a-zA-Z0-9_-]), из-за чего
+# запросы к такому серверу молча проваливались, а фронтенд по ошибке продолжал показывать список
+# файлов от ПРЕДЫДУЩЕГО открытого сервера (см. usePatches.ts — при неуспешном ответе список файлов
+# не сбрасывался), что выглядело как "чужие" файлы у нового сервера.
+_CYRILLIC_TRANSLIT = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'e', 'ж': 'zh',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+}
+
+
 def _slugify(label: str) -> str:
     s = label.strip().lower()
+    transliterated = ''.join(_CYRILLIC_TRANSLIT.get(ch, ch) for ch in s)
     out = []
-    for ch in s:
-        if ch.isalnum():
+    for ch in transliterated:
+        if ch.isascii() and ch.isalnum():
             out.append(ch)
         elif ch in (' ', '-', '_', '·'):
             out.append('-')
