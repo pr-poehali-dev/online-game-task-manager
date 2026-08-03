@@ -186,6 +186,8 @@ export default function TreeFolder({
   selectMode = false,
   selectedPaths,
   onToggleSelectPath,
+  rootLabel,
+  onRenameRoot,
 }: {
   node: TreeNode;
   depth: number;
@@ -224,10 +226,16 @@ export default function TreeFolder({
   selectMode?: boolean;
   selectedPaths?: Set<string>;
   onToggleSelectPath?: (path: string) => void;
+  // Пользовательская подпись корневой папки (см. patch_root_labels в backend/patches/index.py) —
+  // переопределяет отображаемое имя ТОЛЬКО в дереве, реальный путь файла (node.path) не меняется.
+  rootLabel?: string;
+  onRenameRoot?: (rootName: string, label: string) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
   const [confirmRoot, setConfirmRoot] = useState(false);
+  const [renamingRoot, setRenamingRoot] = useState(false);
+  const [rootNameDraft, setRootNameDraft] = useState('');
   const isRoot = depth === 0;
   const entries = useMemo(() => {
     const arr = Array.from(node.children.values());
@@ -400,16 +408,56 @@ export default function TreeFolder({
             onDelete={() => onDeleteDescription(node.name, true)}
           />
         )}
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex items-center gap-2 flex-1 min-w-0 text-left"
-        >
-          <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
-          <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
-          <span className="text-sm font-medium truncate">{node.name}</span>
-        </button>
-        {canManage && (
-          <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
+        {renamingRoot ? (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+            <input
+              autoFocus
+              value={rootNameDraft}
+              onChange={(e) => setRootNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') { onRenameRoot?.(node.path, rootNameDraft.trim()); setRenamingRoot(false); }
+                if (e.key === 'Escape') setRenamingRoot(false);
+              }}
+              placeholder={node.name}
+              className="h-7 flex-1 min-w-0 px-2 rounded-md border border-border bg-background text-sm"
+            />
+            <button
+              onClick={() => { onRenameRoot?.(node.path, rootNameDraft.trim()); setRenamingRoot(false); }}
+              className="text-xs text-primary hover:underline shrink-0"
+            >
+              OK
+            </button>
+            <button
+              onClick={() => setRenamingRoot(false)}
+              className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Icon name="X" size={13} />
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={() => setOpen((o) => !o)}
+              className="flex items-center gap-2 flex-1 min-w-0 text-left"
+            >
+              <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground shrink-0" />
+              <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+              <span className="text-sm font-medium truncate">{rootLabel || node.name}</span>
+            </button>
+            {isRoot && canManage && onRenameRoot && (
+              <button
+                onClick={() => { setRootNameDraft(rootLabel || node.name); setRenamingRoot(true); }}
+                title="Переименовать отображаемое имя папки (реальный путь файлов не меняется)"
+                className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors opacity-0 group-hover/root:opacity-100"
+              >
+                <Icon name="Pencil" size={12} />
+              </button>
+            )}
+            {canManage && (
+              <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
+            )}
+          </>
         )}
         {canDeleteRoot && (confirmRoot ? (
           <div className="shrink-0 flex items-center gap-1 pr-1">

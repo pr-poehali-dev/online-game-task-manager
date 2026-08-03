@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { ServerItem } from '@/lib/catalog';
 import { fmtSize } from './patchesUtils';
-import type { PatchFile, TreeNode, LauncherUploadsMap } from './patchesUtils';
+import type { PatchFile, TreeNode, LauncherUploadsMap, RootLabelsMap } from './patchesUtils';
 import TreeFolder from './PatchesTreeFolder';
 import PatchesDdfEditor from './PatchesDdfEditor';
 import type { ServerId } from './shared';
@@ -17,6 +17,7 @@ export default function PatchesTree({
   launcherUploadingKey, descError, editingDdfPath, active,
   selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
   handleBulkDelete,
+  rootLabels, renamingRootError, handleRenameRoot,
 }: {
   activeSrv: ServerItem;
   files: PatchFile[];
@@ -65,6 +66,9 @@ export default function PatchesTree({
   bulkDeleting: boolean;
   bulkDeleteError: string;
   handleBulkDelete: () => void;
+  rootLabels: RootLabelsMap;
+  renamingRootError: string;
+  handleRenameRoot: (rootName: string, label: string) => void;
 }) {
   const [confirmBulk, setConfirmBulk] = useState(false);
   return (
@@ -217,12 +221,15 @@ export default function PatchesTree({
                   selectMode={selectMode}
                   selectedPaths={selectedPaths}
                   onToggleSelectPath={toggleSelectPath}
+                  rootLabel={rootLabels[node.path]}
+                  onRenameRoot={handleRenameRoot}
                 />
               </div>
             ))}
           </div>
         )}
         {descError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{descError}</p>}
+        {renamingRootError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{renamingRootError}</p>}
       </div>
 
       {editingDdfPath && (

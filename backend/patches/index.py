@@ -688,7 +688,9 @@ def handler(event: dict, context) -> dict:
     сразу делает задачу требующей заливки в лаунчер (колонка «К рестарту» или статус деплоя «Можно
     заливать на лайв»), уведомляются (в приложении и Telegram) пользователи с правом launcher_notify.
     Помимо фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
-    пустая) собственные корневые папки для конкретного сервера. Поддерживает скачивание отдельного
+    пустая) собственные корневые папки для конкретного сервера. Действие rename_root меняет ТОЛЬКО
+    отображаемое имя корневой папки (фиксированной или пользовательской) в дереве — реальный путь
+    файлов и путь в XML-реестре лаунчера при заливке не меняются. Поддерживает скачивание отдельного
     файла, сборку архива файлов конкретной задачи (task_zip) или архива всего дерева сервера целиком
     (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
     список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
@@ -770,8 +772,15 @@ def handler(event: dict, context) -> dict:
                 'hash': lu_hash,
                 'uploadedAt': lu_uploaded_at.isoformat() if lu_uploaded_at else None,
             }
+        # Пользовательские подписи корневых папок (см. patch_root_labels) — переопределяют
+        # отображаемое имя папки в дереве, реальный путь файлов не меняется (см. rename_root ниже).
+        cur.execute(
+            f"SELECT root_name, label FROM {schema}.patch_root_labels WHERE server = %s",
+            (server,)
+        )
+        root_labels = {r[0]: r[1] for r in cur.fetchall()}
         cur.close(); conn.close()
-        return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots, 'launcherUploads': launcher_uploads})
+        return _ok({'files': files, 'roots': FIXED_ROOTS, 'customRoots': custom_roots, 'launcherUploads': launcher_uploads, 'rootLabels': root_labels})
 
     if action == 'tasks_with_files':
         # Список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл патча —
@@ -831,7 +840,7 @@ def handler(event: dict, context) -> dict:
         return _ok({'ok': True})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort',
-                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create',
+                  'toggle_task', 'add_root', 'delete_root', 'rename_root', 'ddf_save', 'ddf_create',
                   'ddf_delete', 'ddf_save_raw'):
         if not me['can_manage']:
             cur.close(); conn.close()
@@ -1577,8 +1586,49 @@ def handler(event: dict, context) -> dict:
             f"DELETE FROM {schema}.patch_custom_roots WHERE server = %s AND name = %s",
             (server, name)
         )
+        cur.execute(
+            f"DELETE FROM {schema}.patch_root_labels WHERE server = %s AND root_name = %s",
+            (server, name)
+        )
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'rename_root':
+        # Меняет ТОЛЬКО отображаемое имя корневой папки в дереве (patch_root_labels) — реальный
+        # путь файлов в patch_files/S3 и путь, который уходит в XML-реестр лаунчера при заливке
+        # (там регистр и так приводится к нижнему автоматически, см. _to_launcher_path), не
+        # меняются. Работает и для фиксированных корней (System, System_eng и т.д.), и для
+        # пользовательских (patch_custom_roots) — единственное ограничение: root_name должен быть
+        # реальным существующим корнем этого сервера.
+        server = _safe_server(body.get('server'))
+        root_name = (body.get('rootName') or '').strip()
+        label = (body.get('label') or '').strip()
+        if not server or not root_name:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT name FROM {schema}.patch_custom_roots WHERE server = %s",
+            (server,)
+        )
+        extra_roots = {r[0] for r in cur.fetchall()}
+        if root_name not in FIXED_ROOTS and root_name not in extra_roots:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        if not label:
+            cur.execute(
+                f"DELETE FROM {schema}.patch_root_labels WHERE server = %s AND root_name = %s",
+                (server, root_name)
+            )
+        else:
+            cur.execute(
+                f"INSERT INTO {schema}.patch_root_labels (server, root_name, label, updated_by, updated_at) "
+                f"VALUES (%s, %s, %s, %s, now()) "
+                f"ON CONFLICT (server, root_name) DO UPDATE SET label = EXCLUDED.label, "
+                f"updated_by = EXCLUDED.updated_by, updated_at = now()",
+                (server, root_name, label, me['id'])
+            )
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'rootName': root_name, 'label': label or None})
 
     s3 = _s3_client()
     bucket = _bucket()

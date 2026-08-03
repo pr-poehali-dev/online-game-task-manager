@@ -110,6 +110,9 @@ export default function Patches({
         bulkDeleting={p.bulkDeleting}
         bulkDeleteError={p.bulkDeleteError}
         handleBulkDelete={p.handleBulkDelete}
+        rootLabels={p.rootLabels}
+        renamingRootError={p.renamingRootError}
+        handleRenameRoot={p.handleRenameRoot}
       />
     </div>
   );

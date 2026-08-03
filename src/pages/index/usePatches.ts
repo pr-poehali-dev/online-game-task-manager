@@ -3,7 +3,7 @@ import { useCatalog } from '@/lib/catalog';
 import { authHeaders, PATCHES_URL } from './shared';
 import type { ServerId } from './shared';
 import { buildTree } from './patchesUtils';
-import type { PatchFile, DroppedFile, LauncherUploadsMap } from './patchesUtils';
+import type { PatchFile, DroppedFile, LauncherUploadsMap, RootLabelsMap } from './patchesUtils';
 import { postJson, uploadFileInChunks } from './patchesApi';
 import type { UploadQueueItem } from './patchesApi';
 import { useDdfFileDescriptions } from './useDdfFileDescriptions';
@@ -30,6 +30,8 @@ export function usePatches({
   const [files, setFiles] = useState<PatchFile[]>([]);
   const [customRoots, setCustomRoots] = useState<string[]>([]);
   const [launcherUploads, setLauncherUploads] = useState<LauncherUploadsMap>({});
+  const [rootLabels, setRootLabels] = useState<RootLabelsMap>({});
+  const [renamingRootError, setRenamingRootError] = useState('');
   const [loading, setLoading] = useState(true);
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
@@ -74,6 +76,7 @@ export function usePatches({
         setFiles(data.files || []);
         setCustomRoots(data.customRoots || []);
         setLauncherUploads(data.launcherUploads || {});
+        setRootLabels(data.rootLabels || {});
       } else {
         // Запрос за деревом файлов не удался (например сервер не найден) — обязательно очищаем
         // список, иначе на экране остаётся дерево ПРЕДЫДУЩЕГО открытого сервера и выглядит так,
@@ -81,11 +84,13 @@ export function usePatches({
         setFiles([]);
         setCustomRoots([]);
         setLauncherUploads({});
+        setRootLabels({});
       }
     } catch {
       setFiles([]);
       setCustomRoots([]);
       setLauncherUploads({});
+      setRootLabels({});
     } finally {
       setLoading(false);
     }
@@ -351,6 +356,25 @@ export function usePatches({
     }
   }
 
+  // Меняет ТОЛЬКО отображаемое имя корневой папки в дереве (см. action rename_root в
+  // backend/patches/index.py) — реальный путь файлов и путь в XML-реестре лаунчера при заливке
+  // не меняются, регистр там и так приводится к нижнему автоматически. label === '' сбрасывает
+  // подпись обратно на исходное имя папки.
+  async function handleRenameRoot(rootName: string, label: string) {
+    setRenamingRootError('');
+    try {
+      await postJson({ action: 'rename_root', server: active, rootName, label });
+      setRootLabels((prev) => {
+        const next = { ...prev };
+        if (label) next[rootName] = label;
+        else delete next[rootName];
+        return next;
+      });
+    } catch {
+      setRenamingRootError('Не удалось переименовать папку');
+    }
+  }
+
   return {
     servers, active, setActive,
     files, launcherUploads,
@@ -361,6 +385,7 @@ export function usePatches({
     togglingPath, launcherUploadingKey, launcherError, launcherSyncing, launcherSyncResult, handleLauncherSync,
     addingRoot, setAddingRoot, newRootName, setNewRootName, rootError, setRootError,
     deletingRoot, editingDdfPath, setEditingDdfPath,
+    rootLabels, renamingRootError, handleRenameRoot,
     uploading,
     customFiles, customFolders, isOwner, savingDescKey, descError, saveDescription, deleteDescription,
     tree, customRootNames, totalSize, activeSrv, tasksForServer, taskFilesCount,

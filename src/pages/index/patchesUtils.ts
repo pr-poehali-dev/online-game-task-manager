@@ -31,6 +31,11 @@ export interface TreeNode {
   file?: PatchFile;
 }
 
+// Пользовательская подпись корневой папки (например "system" вместо "System") — только для
+// отображения в дереве, реальный путь файла (node.path) и путь в XML-реестре лаунчера при заливке
+// не меняются (см. rename_root в backend/patches/index.py). Ключ — реальное имя корня (node.path).
+export type RootLabelsMap = Record<string, string>;
+
 export function fmtSize(bytes: number) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;

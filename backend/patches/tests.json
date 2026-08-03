@@ -148,6 +148,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST rename_root without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "rename_root", "server": "c4x1", "rootName": "System", "label": "system"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }
