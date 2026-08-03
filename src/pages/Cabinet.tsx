@@ -101,7 +101,7 @@ export default function Cabinet() {
 
           {visited.has('project') && team.hasTeamAccess && (
             <div className={section === 'project' ? '' : 'hidden'}>
-              <CabinetProject />
+              <CabinetProject isOwner={team.isOwner} />
             </div>
           )}
 
