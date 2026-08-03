@@ -308,6 +308,81 @@ def _notify_launcher_required(cur, schema, task_id, task_title, actor_id):
             _tg_send(tg_id, text, button_url)
 
 
+def _task_has_patch_files(cur, schema, task_id):
+    '''См. одноимённую функцию в backend/tasks/index.py — проверяет, есть ли у задачи хотя бы один
+    прикреплённый файл патча (независимо от того, залит ли он уже в лаунчер).'''
+    cur.execute(
+        f"SELECT EXISTS(SELECT 1 FROM {schema}.patch_files WHERE task_ids @> %s)",
+        (json.dumps([int(task_id)]),)
+    )
+    return bool(cur.fetchone()[0])
+
+
+def _task_files_all_launcher_uploaded(cur, schema, task_id):
+    '''Возвращает True, если у задачи есть хотя бы один прикреплённый файл патча, и ВСЕ они уже
+    залиты в лаунчер хотя бы в ОДНУ цель (fast или full — по требованию пользователя достаточно
+    любой одной) с АКТУАЛЬНЫМ hash (patch_launcher_uploads.file_hash совпадает с текущим
+    patch_files.hash) — иначе False. Используется для автоматического управления флагом
+    tasks.launcher_uploaded, чтобы бейдж «Требуется залить в лаунчер» сам снимался, когда все
+    файлы задачи реально залиты, и сам возвращался, если файл потом перезалили новой версией и
+    hash разошёлся с уже залитым в лаунчер (см. LAUNCHER_UPLOAD.md).'''
+    cur.execute(
+        f"SELECT server, path, hash FROM {schema}.patch_files WHERE task_ids @> %s",
+        (json.dumps([int(task_id)]),)
+    )
+    files = cur.fetchall()
+    if not files:
+        return False
+    for server, path, file_hash in files:
+        if not file_hash:
+            return False
+        cur.execute(
+            f"SELECT 1 FROM {schema}.patch_launcher_uploads WHERE server = %s AND path = %s AND file_hash = %s LIMIT 1",
+            (server, path, file_hash)
+        )
+        if not cur.fetchone():
+            return False
+    return True
+
+
+def _recompute_launcher_flag_for_file(cur, schema, server, path, actor_id):
+    '''Пересчитывает бейдж «Требуется залить в лаунчер» для ВСЕХ задач, к которым прикреплён
+    указанный файл (см. _recompute_launcher_flag_and_notify) — используется после правки записи
+    в DDF-редакторе, когда hash файла меняется и мог разойтись с уже залитым в лаунчер.'''
+    cur.execute(f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
+    row = cur.fetchone()
+    for tid in (row[0] if row and row[0] else []):
+        _recompute_launcher_flag_and_notify(cur, schema, tid, actor_id)
+
+
+def _recompute_launcher_flag_and_notify(cur, schema, task_id, actor_id):
+    '''Пересчитывает tasks.launcher_uploaded под факт (см. _task_files_all_launcher_uploaded) и
+    обновляет его в БД, если он разошёлся с фактическим состоянием — снимает бейдж «Требуется
+    залить в лаунчер», когда все файлы задачи залиты, и возвращает его, если файл перезалили новой
+    версией и hash перестал совпадать с уже залитым в лаунчер. Если в результате бейдж именно
+    ПОЯВИЛСЯ (не было → стало) — уведомляет пользователей с правом launcher_notify, как и при
+    ручных изменениях (см. _notify_launcher_required).'''
+    cur.execute(
+        f"SELECT launcher_uploaded, column_id, deploy_status, title FROM {schema}.tasks WHERE id = %s",
+        (task_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        return
+    was_uploaded, column_id, deploy_status, title = row
+    has_files = _task_has_patch_files(cur, schema, task_id)
+    was_needs = _needs_launcher_upload(column_id, deploy_status, bool(was_uploaded), has_files)
+    now_uploaded = _task_files_all_launcher_uploaded(cur, schema, task_id) if has_files else False
+    if bool(was_uploaded) != now_uploaded:
+        cur.execute(
+            f"UPDATE {schema}.tasks SET launcher_uploaded = %s, updated_at = now() WHERE id = %s",
+            (now_uploaded, task_id)
+        )
+    now_needs = _needs_launcher_upload(column_id, deploy_status, now_uploaded, has_files)
+    if now_needs and not was_needs:
+        _notify_launcher_required(cur, schema, task_id, title, actor_id)
+
+
 def _forbidden():
     return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
@@ -1193,10 +1268,15 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad(f'encode_error_{e}')
         s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        # ВАЖНО: пересчитываем hash после правки записи, а не только size — иначе он остаётся
+        # старым, и сравнение с patch_launcher_uploads (статус "залито"/"устарело") будет неверным:
+        # файл реально изменился, но hash в БД по-прежнему совпадает с тем, что уже залито в лаунчер.
+        new_hash = hashlib.md5(new_raw).hexdigest()
         cur.execute(
-            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
-            (len(new_raw), server, path)
+            f"UPDATE {schema}.patch_files SET size = %s, hash = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), new_hash, server, path)
         )
+        _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
 
@@ -1299,10 +1379,12 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad(f'encode_error_{e}')
         s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        new_hash = hashlib.md5(new_raw).hexdigest()
         cur.execute(
-            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
-            (len(new_raw), server, path)
+            f"UPDATE {schema}.patch_files SET size = %s, hash = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), new_hash, server, path)
         )
+        _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': new_index, 'size': len(new_raw), 'moved': new_index != idx})
 
@@ -1498,10 +1580,12 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad(f'encode_error_{e}')
         s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        new_hash = hashlib.md5(new_raw).hexdigest()
         cur.execute(
-            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
-            (len(new_raw), server, path)
+            f"UPDATE {schema}.patch_files SET size = %s, hash = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), new_hash, server, path)
         )
+        _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'added': len(new_rows), 'size': len(new_raw)})
 
@@ -1548,10 +1632,12 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad(f'encode_error_{e}')
         s3.put_object(Bucket=bucket, Key=file_key, Body=new_raw)
+        new_hash = hashlib.md5(new_raw).hexdigest()
         cur.execute(
-            f"UPDATE {schema}.patch_files SET size = %s, updated_at = now() WHERE server = %s AND path = %s",
-            (len(new_raw), server, path)
+            f"UPDATE {schema}.patch_files SET size = %s, hash = %s, updated_at = now() WHERE server = %s AND path = %s",
+            (len(new_raw), new_hash, server, path)
         )
+        _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'size': len(new_raw)})
 
@@ -1744,6 +1830,12 @@ def handler(event: dict, context) -> dict:
             f"size = EXCLUDED.size, hash = EXCLUDED.hash, task_ids = EXCLUDED.task_ids, uploaded_by = EXCLUDED.uploaded_by, updated_at = now()",
             (server, rel_path, file_key, len(raw), file_hash, json.dumps(task_ids), me['id'])
         )
+        # Файл только что перезалит новой версией (новый hash) — если у какой-то из прикреплённых
+        # задач бейдж «Требуется залить в лаунчер» уже был снят автоматически (все файлы были
+        # залиты), а новый hash больше не совпадает с тем, что зафиксировано в
+        # patch_launcher_uploads, бейдж должен автоматически вернуться (см. LAUNCHER_UPLOAD.md).
+        for tid in task_ids:
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'path': rel_path, 'size': len(raw)})
 
@@ -1795,17 +1887,11 @@ def handler(event: dict, context) -> dict:
             f"UPDATE {schema}.patch_files SET task_ids = %s, updated_at = now() WHERE server = %s AND path = %s",
             (json.dumps(task_ids), server, path)
         )
-        # Если файл только что прикреплён и задача уже находится в состоянии, готовом к раскатке
-        # (колонка «К рестарту» или статус деплоя «Можно заливать на лайв»), у неё появляется бейдж
-        # «Требуется залить в лаунчер» — уведомляем пользователей с правом launcher_notify.
-        if attached:
-            cur.execute(
-                f"SELECT column_id, deploy_status, launcher_uploaded, title FROM {schema}.tasks WHERE id = %s",
-                (task_id_int,)
-            )
-            trow = cur.fetchone()
-            if trow and _needs_launcher_upload(trow[0], trow[1], bool(trow[2]), True):
-                _notify_launcher_required(cur, schema, task_id_int, trow[3], me['id'])
+        # Прикрепление/открепление файла меняет набор файлов задачи — пересчитываем бейдж
+        # «Требуется залить в лаунчер» под факт (если ТЕПЕРЬ все прикреплённые файлы залиты хотя бы
+        # в одну цель — бейдж снимается, иначе при необходимости появляется, с уведомлением тем, у
+        # кого есть право launcher_notify, см. _recompute_launcher_flag_and_notify выше).
+        _recompute_launcher_flag_and_notify(cur, schema, task_id_int, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'taskIds': [str(t) for t in task_ids]})
 
@@ -1816,7 +1902,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('bad_request')
         cur.execute(
-            f"SELECT file_key FROM {schema}.patch_files WHERE server = %s AND path = %s",
+            f"SELECT file_key, task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s",
             (server, path)
         )
         row = cur.fetchone()
@@ -1828,6 +1914,10 @@ def handler(event: dict, context) -> dict:
         except Exception:
             pass
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
+        # Удалённый файл мог быть последним "недостающим" файлом задачи для автоматического
+        # снятия бейджа «Требуется залить в лаунчер» — пересчитываем под факт.
+        for tid in (row[1] or []):
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True})
 
@@ -1844,16 +1934,19 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('bad_request')
         cur.execute(
-            f"SELECT path, file_key FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s)",
+            f"SELECT path, file_key, task_ids FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s)",
             (server, paths)
         )
         rows = cur.fetchall()
-        for _path, file_key in rows:
+        for _path, file_key, _task_ids in rows:
             try:
                 s3.delete_object(Bucket=bucket, Key=file_key)
             except Exception:
                 pass
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s)", (server, paths))
+        touched_task_ids = {tid for (_p, _k, tids) in rows for tid in (tids or [])}
+        for tid in touched_task_ids:
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'deletedCount': len(rows), 'deletedPaths': [r[0] for r in rows]})
 
@@ -1995,6 +2088,13 @@ def handler(event: dict, context) -> dict:
             f"file_size = EXCLUDED.file_size, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()",
             (server, path, target, file_hash, zip_size, me['id'])
         )
+        # Автоматически снимаем бейдж «Требуется залить в лаунчер» у всех задач, к которым
+        # прикреплён этот файл, если ТЕПЕРЬ все их файлы залиты хотя бы в одну цель (см.
+        # _task_files_all_launcher_uploaded/_recompute_launcher_flag_and_notify выше).
+        cur.execute(f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
+        file_task_row = cur.fetchone()
+        for tid in (file_task_row[0] if file_task_row and file_task_row[0] else []):
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'target': target, 'path': path, 'hash': file_hash})
 
@@ -2109,6 +2209,13 @@ def handler(event: dict, context) -> dict:
                 'hash': lu_hash,
                 'uploadedAt': lu_uploaded_at.isoformat() if lu_uploaded_at else None,
             }
+        # Пересчитываем бейдж «Требуется залить в лаунчер» у всех задач этого сервера, к которым
+        # прикреплён хотя бы один файл — сверка могла подтвердить фактическую заливку (matched) или
+        # снять неактуальную запись (removed), в обоих случаях итоговый статус задачи мог измениться.
+        cur.execute(f"SELECT task_ids FROM {schema}.patch_files WHERE server = %s", (server,))
+        touched_task_ids = {tid for (row,) in cur.fetchall() for tid in (row or [])}
+        for tid in touched_task_ids:
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
         cur.close(); conn.close()
         return _ok({'ok': True, 'matched': matched, 'removed': removed, 'launcherUploads': launcher_uploads})
 
