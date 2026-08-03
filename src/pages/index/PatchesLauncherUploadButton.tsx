@@ -12,7 +12,7 @@ export function launcherFileStatus(fileHash: string | null | undefined, upload: 
 }
 
 // Маленькая круглая кнопка-бейдж заливки в лаунчер: буква Б (быстрое) или П (полное) внутри
-// кружка, цвет меняется по статусу — серый (не заливалось), зелёный (актуально), жёлтый
+// кружка, цвет меняется по статусу — серый (не заливалось), оранжевый/primary (актуально), жёлтый
 // (устарело, файл обновлён после последней заливки).
 export default function LauncherUploadButton({ label, title, uploading, status, onClick }: {
   label: string;
