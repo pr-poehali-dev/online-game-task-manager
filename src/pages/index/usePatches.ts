@@ -42,6 +42,8 @@ export function usePatches({
   const [togglingPath, setTogglingPath] = useState<string | null>(null);
   const [launcherUploadingKey, setLauncherUploadingKey] = useState<string | null>(null);
   const [launcherError, setLauncherError] = useState('');
+  const [launcherSyncing, setLauncherSyncing] = useState(false);
+  const [launcherSyncResult, setLauncherSyncResult] = useState<string>('');
   const [addingRoot, setAddingRoot] = useState(false);
   const [newRootName, setNewRootName] = useState('');
   const [rootError, setRootError] = useState('');
@@ -266,6 +268,35 @@ export function usePatches({
     }
   }
 
+  // Сверяет статус "залито в лаунчер" с реальным содержимым XML-реестра на VPS (см. action
+  // launcher_sync в backend/patches/index.py) — нужно, если файл был залит на хостинг лаунчера в
+  // обход этого приложения (например вручную по FTP, с ручной правкой того же XML).
+  async function handleLauncherSync() {
+    setLauncherSyncing(true);
+    setLauncherError('');
+    setLauncherSyncResult('');
+    try {
+      const data = await postJson({ action: 'launcher_sync', server: active });
+      setLauncherUploads(data.launcherUploads || {});
+      setLauncherSyncResult(
+        data.matched > 0
+          ? `Сверка завершена: найдено совпадений — ${data.matched}`
+          : 'Сверка завершена: совпадений с хостингом не найдено'
+      );
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'launcher_paths_not_configured') {
+        setLauncherError('Для этого сервера не заданы пути лаунчера — заполните их в «Управление проектом → Серверы»');
+      } else if (code === 'ssh_not_configured') {
+        setLauncherError('SSH-доступ к серверу лаунчера не настроен — заполните его в «Управление проектом → Служебные ключи»');
+      } else {
+        setLauncherError('Не удалось сверить статусы с лаунчером — проверьте подключение и попробуйте ещё раз');
+      }
+    } finally {
+      setLauncherSyncing(false);
+    }
+  }
+
   async function handleDownloadTaskZip() {
     if (!selectedTaskId) return;
     setZipping(true);
@@ -327,7 +358,7 @@ export function usePatches({
     selectedTaskId, setSelectedTaskId,
     dragActive, setDragActive,
     uploadQueue, uploadIndex, fileProgress,
-    togglingPath, launcherUploadingKey, launcherError,
+    togglingPath, launcherUploadingKey, launcherError, launcherSyncing, launcherSyncResult, handleLauncherSync,
     addingRoot, setAddingRoot, newRootName, setNewRootName, rootError, setRootError,
     deletingRoot, editingDdfPath, setEditingDdfPath,
     uploading,

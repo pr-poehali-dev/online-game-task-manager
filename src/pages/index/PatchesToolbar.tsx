@@ -9,6 +9,7 @@ export default function PatchesToolbar({
   handleDownloadTaskZip, taskFilesCount, zipping,
   canManage, uploading, uploadQueue, uploadIndex, fileProgress, handleCancelUpload,
   uploadError, launcherError,
+  canLauncherUpload, launcherSyncing, launcherSyncResult, handleLauncherSync,
 }: {
   servers: ServerItem[];
   active: ServerId;
@@ -27,6 +28,10 @@ export default function PatchesToolbar({
   handleCancelUpload: () => void;
   uploadError: string;
   launcherError: string;
+  canLauncherUpload: boolean;
+  launcherSyncing: boolean;
+  launcherSyncResult: string;
+  handleLauncherSync: () => void;
 }) {
   return (
     <>
@@ -66,6 +71,17 @@ export default function PatchesToolbar({
             {zipping ? 'Собираю...' : `Скачать файлы задачи (${taskFilesCount})`}
           </button>
         )}
+        {canLauncherUpload && (
+          <button
+            onClick={handleLauncherSync}
+            disabled={launcherSyncing}
+            title="Прочитать реальный XML-реестр на хостинге лаунчера и обновить статусы «залито» под факт — полезно, если файл заливали на хостинг в обход этого приложения"
+            className="h-9 px-3 rounded-lg text-sm font-medium border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-40 flex items-center gap-1.5"
+          >
+            <Icon name="RefreshCcw" size={14} className={launcherSyncing ? 'animate-spin' : ''} />
+            {launcherSyncing ? 'Сверяю...' : 'Сверить с лаунчером'}
+          </button>
+        )}
         {canManage && uploading && uploadQueue && (
           <div className="flex items-center gap-2 w-full">
             <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
@@ -87,6 +103,7 @@ export default function PatchesToolbar({
         )}
         {uploadError && <p className="text-xs text-destructive w-full">{uploadError}</p>}
         {launcherError && <p className="text-xs text-destructive w-full">{launcherError}</p>}
+        {!launcherError && launcherSyncResult && <p className="text-xs text-muted-foreground w-full">{launcherSyncResult}</p>}
       </div>
     </>
   );

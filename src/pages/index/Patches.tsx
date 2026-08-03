@@ -56,6 +56,10 @@ export default function Patches({
         handleCancelUpload={p.handleCancelUpload}
         uploadError={p.uploadError}
         launcherError={p.launcherError}
+        canLauncherUpload={canLauncherUpload}
+        launcherSyncing={p.launcherSyncing}
+        launcherSyncResult={p.launcherSyncResult}
+        handleLauncherSync={p.handleLauncherSync}
       />
 
       <PatchesTree

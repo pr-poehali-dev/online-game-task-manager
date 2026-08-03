@@ -139,6 +139,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST launcher_sync without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "launcher_sync", "server": "c4x1"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

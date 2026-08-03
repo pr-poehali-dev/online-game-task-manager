@@ -529,6 +529,24 @@ def _verify_xml_entry(text: str, launcher_path: str, file_hash: str, size: int) 
     return pattern.search(text) is not None
 
 
+_XML_ENTRY_RE = re.compile(r'<set\s+file="([^"]+)"\s+hash="([^"]+)"\s+size="(\d+)"\s*/>')
+
+
+def _parse_xml_entries(text: str) -> dict:
+    '''Разбирает XML-реестр лаунчера (files.xml) на словарь {путь_в_нижнем_регистре: {hash, size}}
+    — используется для сверки (action=launcher_sync), когда файл мог быть залит на VPS в обход
+    приложения (например вручную по FTP, с ручной правкой того же XML) — тогда локальная таблица
+    patch_launcher_uploads ничего не знает о такой заливке, и бейдж "залито" в дереве патчей не
+    загорается, хотя на хостинге всё уже актуально. Ключ приводится к нижнему регистру для сверки
+    без чувствительности к регистру папок/имени файла — сам XML лаунчера не всегда единообразен,
+    если правился вручную.'''
+    result = {}
+    for m in _XML_ENTRY_RE.finditer(text):
+        file_path, file_hash, size = m.group(1), m.group(2), m.group(3)
+        result[file_path.lower()] = {'hash': file_hash, 'size': int(size)}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # DDF (текстовые .dat файлы) — поиск / просмотр / редактирование одной записи
 # ---------------------------------------------------------------------------
@@ -675,6 +693,9 @@ def handler(event: dict, context) -> dict:
     (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
     список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
     для подсветки задач, ожидающих заливки в лаунчер.
+    Действие launcher_sync подключается по SFTP к VPS лаунчера, читает актуальный XML-реестр
+    (fast и full) и обновляет статусы "залито" под фактическое содержимое хостинга — нужно, если
+    файл был залит на VPS в обход приложения (например вручную по FTP с ручной правкой того же XML).
     Для текстовых .dat файлов клиента (названия/описания предметов, скиллов, нпс и т.п. — список
     поддерживаемых схем в ddf_registry.py/ddf_registry_c4.py) доступны действия: ddf_search (поиск
     записи по подстроке в текстовых полях, возвращает короткий список совпадений), ddf_get (полная
@@ -823,7 +844,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _forbidden()
 
-    if action == 'launcher_upload':
+    if action in ('launcher_upload', 'launcher_sync'):
         if not me['can_launcher_upload']:
             cur.close(); conn.close()
             return _forbidden()
@@ -1926,6 +1947,120 @@ def handler(event: dict, context) -> dict:
         )
         cur.close(); conn.close()
         return _ok({'ok': True, 'target': target, 'path': path, 'hash': file_hash})
+
+    if action == 'launcher_sync':
+        # Сверяет статус "залито в лаунчер" с РЕАЛЬНЫМ содержимым XML-реестра на VPS — а не только
+        # с локальной таблицей patch_launcher_uploads, которая заполняется исключительно при
+        # заливке ЧЕРЕЗ это приложение (см. launcher_upload выше). Если пользователь залил файл на
+        # хостинг лаунчера в обход приложения (например вручную по FTP) и сам прописал корректные
+        # hash/size в files.xml, локальная таблица об этом ничего не знает, и бейдж "залито" в
+        # дереве патчей не загорается, хотя по факту всё актуально. Читает fast- и full-XML сервера
+        # по SFTP, сравнивает каждую запись с hash файла в patch_files по launcher-пути (совпадение
+        # и hash, и size), и вставляет/обновляет/удаляет записи в patch_launcher_uploads так, чтобы
+        # они отражали фактическое состояние на хостинге на момент сверки.
+        server = _safe_server(body.get('server'))
+        if not server:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+
+        cur.execute(
+            f"SELECT launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml "
+            f"FROM {schema}.servers WHERE id = %s",
+            (server,)
+        )
+        srv_row = cur.fetchone()
+        if not srv_row:
+            cur.close(); conn.close()
+            return _bad('server_not_found', 404)
+        targets = [('fast', srv_row[1]), ('full', srv_row[3])]
+        if not any(remote_xml for _t, remote_xml in targets):
+            cur.close(); conn.close()
+            return _bad('launcher_paths_not_configured')
+
+        cur.execute(f"SELECT path, hash FROM {schema}.patch_files WHERE server = %s", (server,))
+        # launcher_path (в нижнем регистре) -> (исходный path в дереве патчей, hash файла)
+        by_launcher_path = {}
+        for f_path, f_hash in cur.fetchall():
+            if f_hash:
+                by_launcher_path[_to_launcher_path(f_path).lower()] = (f_path, f_hash)
+
+        try:
+            ssh = _launcher_ssh_client(cur, schema)
+        except Exception as e:
+            print(f'launcher_sync SSH connect error: {type(e).__name__}: {e}')
+            cur.close(); conn.close()
+            return _bad(f'ssh_connect_error_{type(e).__name__}')
+        if ssh is None:
+            cur.close(); conn.close()
+            return _bad('ssh_not_configured')
+
+        matched = 0
+        removed = 0
+        try:
+            sftp = ssh.open_sftp()
+            try:
+                for target, remote_xml in targets:
+                    if not remote_xml:
+                        continue
+                    try:
+                        xml_text = _read_remote_text(sftp, remote_xml)
+                    except (IOError, OSError):
+                        continue
+                    entries = _parse_xml_entries(xml_text)
+                    for launcher_path_lower, entry in entries.items():
+                        hit = by_launcher_path.get(launcher_path_lower)
+                        if not hit:
+                            continue
+                        f_path, f_hash = hit
+                        if entry['hash'] != f_hash:
+                            continue
+                        cur.execute(
+                            f"INSERT INTO {schema}.patch_launcher_uploads "
+                            f"(server, path, target, file_hash, file_size, uploaded_by, uploaded_at) "
+                            f"VALUES (%s, %s, %s, %s, %s, %s, now()) "
+                            f"ON CONFLICT (server, path, target) DO UPDATE SET file_hash = EXCLUDED.file_hash, "
+                            f"file_size = EXCLUDED.file_size, uploaded_by = EXCLUDED.uploaded_by, uploaded_at = now()",
+                            (server, f_path, target, f_hash, entry['size'], me['id'])
+                        )
+                        matched += 1
+                    # Записи в БД, для которых в свежепрочитанном XML этого target нет ни одной
+                    # подходящей строки (совпадение по launcher-пути и hash), считаются
+                    # неактуальными для сверки "снизу вверх" — убираем, чтобы бейдж не горел
+                    # оранжевым для файла, которого на хостинге для этого target на самом деле нет.
+                    cur.execute(
+                        f"SELECT path, file_hash FROM {schema}.patch_launcher_uploads WHERE server = %s AND target = %s",
+                        (server, target)
+                    )
+                    for db_path, db_hash in cur.fetchall():
+                        launcher_path_lower = _to_launcher_path(db_path).lower()
+                        entry = entries.get(launcher_path_lower)
+                        if not entry or entry['hash'] != db_hash:
+                            cur.execute(
+                                f"DELETE FROM {schema}.patch_launcher_uploads WHERE server = %s AND path = %s AND target = %s",
+                                (server, db_path, target)
+                            )
+                            removed += 1
+            finally:
+                sftp.close()
+        except Exception as e:
+            print(f'launcher_sync SSH error: {type(e).__name__}: {e}')
+            cur.close(); conn.close()
+            return _bad(f'ssh_error_{type(e).__name__}')
+        finally:
+            ssh.close()
+
+        cur.execute(
+            f"SELECT path, target, file_hash, uploaded_at FROM {schema}.patch_launcher_uploads WHERE server = %s",
+            (server,)
+        )
+        launcher_uploads: dict = {}
+        for lu_path, lu_target, lu_hash, lu_uploaded_at in cur.fetchall():
+            launcher_uploads.setdefault(lu_path, {})[lu_target] = {
+                'hash': lu_hash,
+                'uploadedAt': lu_uploaded_at.isoformat() if lu_uploaded_at else None,
+            }
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'matched': matched, 'removed': removed, 'launcherUploads': launcher_uploads})
 
     if action == 'zip_all':
         # Архив всего дерева файлов сервера целиком (не привязано к конкретной задаче).
