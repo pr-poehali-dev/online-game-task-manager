@@ -282,131 +282,143 @@ export default function UserList({
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {PERMISSION_GROUPS.map((group) => (
-                  <div key={group.title} className="rounded-lg border border-border/60 p-3">
-                    <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
-                      <Icon name={group.icon} size={13} className="text-primary" />
-                      {group.title}
-                    </div>
-                    <div className="space-y-1.5">
-                      {group.items.map((item) => (
-                        <label key={item.key} className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={!!permsDraft[item.key]}
-                            onChange={(e) =>
-                              setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
-                            }
-                            className="h-3.5 w-3.5 rounded border-border accent-primary"
-                          />
-                          {item.label}
-                        </label>
-                      ))}
-                    </div>
+              <div className="space-y-5">
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    Обычные права
                   </div>
-                ))}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {PERMISSION_GROUPS.map((group) => (
+                      <div key={group.title} className="rounded-lg border border-border/60 p-3">
+                        <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
+                          <Icon name={group.icon} size={13} className="text-primary" />
+                          {group.title}
+                        </div>
+                        <div className="space-y-1.5">
+                          {group.items.map((item) => (
+                            <label key={item.key} className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!permsDraft[item.key]}
+                                onChange={(e) =>
+                                  setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                                }
+                                className="h-3.5 w-3.5 rounded border-border accent-primary"
+                              />
+                              {item.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 {/* OWNER_ONLY_PERMISSION_GROUPS (сейчас — просмотр чужих приватных сообщений,
                     редактирование патчей) — выдавать/отзывать может только владелец проекта
                     (backend/admin/index.py, OWNER_USER_ID). Не-владельцу показываем те же
                     чекбоксы, но заблокированными (disabled) с пояснением — честнее, чем скрыть
                     совсем (видно, что право есть и кем управляется), и не даёт заполнить форму,
-                    которую backend всё равно отклонит только при сохранении. */}
-                {OWNER_ONLY_PERMISSION_GROUPS.map((group) => (
-                  <div key={group.title} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
-                    <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
-                      <Icon name={group.icon} size={13} className="text-amber-500" />
-                      {group.title}
-                      <span className="text-[10px] font-normal text-muted-foreground ml-auto flex items-center gap-1">
-                        <Icon name="Crown" size={10} />
-                        только руководитель
-                      </span>
-                    </div>
-                    <div className="space-y-1.5">
-                      {group.items.map((item) => (
-                        <label
-                          key={item.key}
-                          className={`flex items-center gap-2 text-xs text-muted-foreground ${isOwner ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!permsDraft[item.key]}
-                            disabled={!isOwner}
-                            onChange={(e) =>
-                              setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
-                            }
-                            className="h-3.5 w-3.5 rounded border-border accent-primary"
-                          />
-                          {item.label}
-                        </label>
-                      ))}
-                    </div>
+                    которую backend всё равно отклонит только при сохранении.
+                    patch_launcher_upload/patch_delete_files (PATCH_SUB_PERMISSION_GROUP) —
+                    донастройка ПОВЕРХ patch_edit, которую уже может выдать любой администратор —
+                    вложена ОТСТУПОМ прямо под карточку "Патчи", чтобы визуально показать
+                    зависимость, а не разбрасывать по отдельным одинаковым карточкам. */}
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2 flex items-center gap-1.5">
+                    <Icon name="Crown" size={11} className="text-amber-500" />
+                    Особые права руководителя
                   </div>
-                ))}
-                {/* patch_launcher_upload/patch_delete_files — точечная донастройка ПОВЕРХ
-                    patch_edit, выдаёт любой администратор (не входит в OWNER_ONLY_PERMISSION_GROUPS),
-                    но backend требует patch_edit=true как предусловие — блокируем чекбоксы в UI,
-                    пока в ТЕКУЩЕМ черновике (permsDraft) не включено patch_edit, чтобы не создавать
-                    иллюзию, что право сохранится без него. */}
-                {(() => {
-                  const patchEditOn = !!permsDraft.patch_edit;
-                  return (
-                    <div className={`rounded-lg border p-3 ${patchEditOn ? 'border-border/60' : 'border-border/60 opacity-60'}`}>
-                      <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
-                        <Icon name={PATCH_SUB_PERMISSION_GROUP.icon} size={13} className="text-primary" />
-                        {PATCH_SUB_PERMISSION_GROUP.title}
-                        {!patchEditOn && (
-                          <span className="text-[10px] font-normal text-muted-foreground ml-auto">
-                            нужно «Редактирование Патчи»
-                          </span>
-                        )}
-                      </div>
-                      <div className="space-y-1.5">
-                        {PATCH_SUB_PERMISSION_GROUP.items.map((item) => (
-                          <label
-                            key={item.key}
-                            className={`flex items-center gap-2 text-xs text-muted-foreground ${patchEditOn ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={!!permsDraft[item.key]}
-                              disabled={!patchEditOn}
-                              onChange={(e) =>
-                                setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
-                              }
-                              className="h-3.5 w-3.5 rounded border-border accent-primary"
-                            />
-                            {item.label}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div className="rounded-lg border border-border/60 p-3">
-                  <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
-                    <Icon name="Send" size={13} className="text-primary" />
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {OWNER_ONLY_PERMISSION_GROUPS.map((group) => {
+                      const isPatchGroup = group.title === 'Патчи';
+                      const patchEditOn = !!permsDraft.patch_edit;
+                      return (
+                        <div key={group.title} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                          <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-foreground">
+                            <Icon name={group.icon} size={13} className="text-amber-500" />
+                            {group.title}
+                            <span className="text-[10px] font-normal text-muted-foreground ml-auto flex items-center gap-1">
+                              <Icon name="Lock" size={10} />
+                              только руководитель
+                            </span>
+                          </div>
+                          <div className="space-y-1.5">
+                            {group.items.map((item) => (
+                              <label
+                                key={item.key}
+                                className={`flex items-center gap-2 text-xs text-muted-foreground ${isOwner ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={!!permsDraft[item.key]}
+                                  disabled={!isOwner}
+                                  onChange={(e) =>
+                                    setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                                  }
+                                  className="h-3.5 w-3.5 rounded border-border accent-primary"
+                                />
+                                {item.label}
+                              </label>
+                            ))}
+                          </div>
+                          {isPatchGroup && (
+                            <div className="mt-2.5 pt-2.5 border-t border-amber-500/20">
+                              <div className="text-[10px] text-muted-foreground mb-1.5">
+                                Доп. права — доступны любому администратору, если включено выше
+                              </div>
+                              <div className="pl-3 border-l-2 border-amber-500/20 space-y-1.5">
+                                {PATCH_SUB_PERMISSION_GROUP.items.map((item) => (
+                                  <label
+                                    key={item.key}
+                                    className={`flex items-center gap-2 text-xs text-muted-foreground ${patchEditOn ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={!!permsDraft[item.key]}
+                                      disabled={!patchEditOn}
+                                      onChange={(e) =>
+                                        setPermsDraft((prev) => ({ ...prev, [item.key]: e.target.checked }))
+                                      }
+                                      className="h-3.5 w-3.5 rounded border-border accent-primary"
+                                    />
+                                    {item.label.replace(/\s*\(требует.*\)$/, '')}
+                                  </label>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">
                     Telegram
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={u.tg_notify_muted}
-                        onChange={() => toggleTgMuted(u)}
-                        className="h-3.5 w-3.5 rounded border-border accent-primary"
-                      />
-                      Скрыть написание в Telegram (бот не будет присылать сообщения этому участнику)
-                    </label>
-                    <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!u.show_tg_contact}
-                        onChange={() => toggleShowTgContact(u)}
-                        className="h-3.5 w-3.5 rounded border-border accent-primary"
-                      />
-                      Скрыть кнопку «написать в Telegram» в списке команды
-                    </label>
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={u.tg_notify_muted}
+                          onChange={() => toggleTgMuted(u)}
+                          className="h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        Скрыть написание в Telegram (бот не будет присылать сообщения этому участнику)
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={!u.show_tg_contact}
+                          onChange={() => toggleShowTgContact(u)}
+                          className="h-3.5 w-3.5 rounded border-border accent-primary"
+                        />
+                        Скрыть кнопку «написать в Telegram» в списке команды
+                      </label>
+                    </div>
                   </div>
                 </div>
               </div>
