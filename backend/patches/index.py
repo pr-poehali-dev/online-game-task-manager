@@ -496,6 +496,15 @@ def _update_xml_entry(text: str, launcher_path: str, file_hash: str, size: int) 
     return text[:idx] + new_entry + text[idx:]
 
 
+def _verify_xml_entry(text: str, launcher_path: str, file_hash: str, size: int) -> bool:
+    '''Проверяет, что в XML-реестре лаунчера реально есть запись <set file="..." hash="..."
+    size="..." /> с ТОЧНО таким же hash и size, как мы только что записали — используется сразу
+    после _update_xml_entry() + записи на диск, чтобы статус "Залито" отражал факт, а не намерение.'''
+    escaped = re.escape(launcher_path)
+    pattern = re.compile(r'<set file="' + escaped + r'" hash="' + re.escape(file_hash) + r'" size="' + str(size) + r'"\s*/>')
+    return pattern.search(text) is not None
+
+
 # ---------------------------------------------------------------------------
 # DDF (текстовые .dat файлы) — поиск / просмотр / редактирование одной записи
 # ---------------------------------------------------------------------------
@@ -1811,6 +1820,21 @@ def handler(event: dict, context) -> dict:
                     xml_text = _LAUNCHER_XML_EMPTY
                 xml_text = _update_xml_entry(xml_text, launcher_path, file_hash, zip_size)
                 _write_remote_text(sftp, remote_xml, xml_text)
+
+                # Флаг "Залито" должен отражать реальное состояние на хостинге, а не просто факт
+                # того, что SSH-запись технически прошла без исключений — поэтому перечитываем XML
+                # заново с диска (а не используем переменную xml_text) и убеждаемся, что нужная
+                # запись <set file="..." hash="..." size="..." /> действительно там есть, и заодно
+                # проверяем что .zip реально лежит на диске нужного размера.
+                try:
+                    remote_size = sftp.stat(remote_file_path).st_size
+                except (IOError, OSError):
+                    remote_size = None
+                verify_xml_text = _read_remote_text(sftp, remote_xml)
+                verify_ok = (
+                    remote_size == zip_size
+                    and _verify_xml_entry(verify_xml_text, launcher_path, file_hash, zip_size)
+                )
             finally:
                 sftp.close()
         except Exception as e:
@@ -1819,6 +1843,17 @@ def handler(event: dict, context) -> dict:
             return _bad(f'ssh_error_{type(e).__name__}')
         finally:
             ssh.close()
+
+        if not verify_ok:
+            # Не подтвердилось — не отмечаем файл как залитый, а если раньше он уже был отмечен
+            # (например перезаливка не удалась), убираем старую запись, чтобы иконка не горела
+            # для файла, который на хостинге на самом деле не актуален.
+            cur.execute(
+                f"DELETE FROM {schema}.patch_launcher_uploads WHERE server = %s AND path = %s AND target = %s",
+                (server, path, target)
+            )
+            cur.close(); conn.close()
+            return _bad('xml_verify_failed')
 
         cur.execute(
             f"INSERT INTO {schema}.patch_launcher_uploads (server, path, target, file_hash, file_size, uploaded_by, uploaded_at) "
