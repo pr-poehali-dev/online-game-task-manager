@@ -1,0 +1,162 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "GET tree without token unauthorized",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST file_init without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "file_init", "server": "c4x1", "path": "data/test.txt"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST add_root without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "add_root", "server": "c4x1", "name": "test_root"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST zip_all without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "zip_all", "server": "c4x1"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST delete_bulk without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete_bulk", "server": "c4x1", "paths": ["System/test.txt"]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_search without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_search", "server": "c4x1", "path": "System/itemname-e.dat", "query": "arrow"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_save without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_save", "server": "c4x1", "path": "System/itemname-e.dat", "index": 0, "edits": {"name": "test"}},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_new without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_new", "path": "System/itemname-e.dat"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_create without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_create", "server": "c4x1", "path": "System/itemname-e.dat", "rows": [{"id": 1, "name": "test"}]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_delete without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_delete", "server": "c4x1", "path": "System/itemname-e.dat", "index": 0},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_get_raw without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_get_raw", "server": "c4x1", "path": "System/armorgrp.dat", "index": 0},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_save_raw without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_save_raw", "server": "c4x1", "path": "System/armorgrp.dat", "index": 0, "line": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST ddf_range without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "ddf_range", "server": "c4x1", "path": "System/itemname-e.dat", "idFrom": 1, "idTo": 10},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST patch_desc_list without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "patch_desc_list"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST patch_desc_save without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "patch_desc_save", "nameKey": "itemname", "isFolder": false, "description": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST launcher_sync without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "launcher_sync", "server": "c4x1"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST rename_root without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "rename_root", "server": "c4x1", "rootName": "System", "label": "system"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

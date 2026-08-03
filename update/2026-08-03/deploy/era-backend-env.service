@@ -1,0 +1,13 @@
+# Вспомогательный сервис для era-backend-env.path (см. этот файл за подробностями).
+# Срабатывает при изменении /var/www/era/deploy/.env и перезапускает основной backend, чтобы
+# новые значения переменных окружения (например ключи S3/MinIO, сохранённые из раздела
+# «Управление проектом → Хранилище (MinIO)» в кабинете) реально вступили в силу.
+#
+# Не запускается напрямую и не требует enable — активируется только через era-backend-env.path.
+
+[Unit]
+Description=Restart era-backend after .env change
+
+[Service]
+Type=oneshot
+ExecStart=/bin/systemctl restart era-backend.service

@@ -26,3 +26,23 @@ grep -rn "poehali.dev" backend/ update/ДАТА/ | grep -v __pycache__ | grep -v
 `backend/knowledge/index.py`, `backend/ideas/index.py` (+ их копии в
 `update/2026-07-30/backend/...`, кроме knowledge/ideas — они не входили в
 этот апдейт).
+
+3 августа (`update/2026-08-03/`) та же проверка повторена и пройдена для
+всех скопированных backend-файлов — исправлены `backend/patches/index.py`,
+`backend/admin/index.py` (только endpoint_url — там нет своего `_public_url`,
+использует общий паттерн иначе), `backend/tasks/index.py`,
+`backend/knowledge/index.py`, `backend/ideas/index.py`. Новые файлы
+`backend/service-keys/index.py` и `backend/storage-config/index.py` S3 не
+используют вовсе (сервисные разделы кабинета), хардкода в них нет. Оставшиеся
+упоминания `poehali.dev` в `backend/storage-config/index.py` и
+`src/pages/cabinet/CabinetStorage.tsx` — осознанные текстовые пояснения для
+пользователя про разницу облачного/self-hosted окружения, не адреса
+запросов — трогать не нужно.
+
+Также с 30 июля появился новый паттерн self-hosted-only функционала:
+`backend/storage-config` пишет/читает `.env` на диске VPS (ключ MANAGED_KEYS)
+и требует ручной настройки systemd path-unit на сервере пользователя
+(`deploy/era-backend-env.path`/`.service`) — сама функция НЕ может
+перезапустить backend (subprocess запрещён в облачных функциях), поэтому
+всегда описывать этот шаг явно в README апдейта, не полагаться, что
+пользователь сам найдёт эти файлы.
