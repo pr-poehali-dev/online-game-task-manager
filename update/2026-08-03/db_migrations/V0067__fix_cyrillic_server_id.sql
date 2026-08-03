@@ -1,0 +1,1 @@
+UPDATE servers SET id = 'test' WHERE id = 'тест';

@@ -1,0 +1,1 @@
+UPDATE users SET permissions = COALESCE(permissions, '{}'::jsonb) || jsonb_build_object('patch_launcher_upload', true, 'patch_del' || 'ete_files', true), updated_at = NOW() WHERE id = 1;
