@@ -20,7 +20,7 @@ export default function Login() {
       navigate(decodeURIComponent(next), { replace: true });
       return;
     }
-    navigate('/cabinet', { replace: true });
+    navigate('/', { replace: true });
   }
 
   return (
