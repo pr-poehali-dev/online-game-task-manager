@@ -93,6 +93,13 @@ export default function Patches({
         descError={p.descError}
         editingDdfPath={p.editingDdfPath}
         active={p.active}
+        selectMode={p.selectMode}
+        toggleSelectMode={p.toggleSelectMode}
+        selectedPaths={p.selectedPaths}
+        toggleSelectPath={p.toggleSelectPath}
+        bulkDeleting={p.bulkDeleting}
+        bulkDeleteError={p.bulkDeleteError}
+        handleBulkDelete={p.handleBulkDelete}
       />
     </div>
   );

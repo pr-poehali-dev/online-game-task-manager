@@ -47,6 +47,10 @@ export function usePatches({
   const [rootError, setRootError] = useState('');
   const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
   const [editingDdfPath, setEditingDdfPath] = useState<string | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState('');
   const appliedInitial = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const cancelledRef = useRef(false);
@@ -98,6 +102,13 @@ export function usePatches({
       setSelectedTaskId('');
     }
   }, [active, tasksForServer, selectedTaskId]);
+
+  // При смене сервера сбрасываем режим выбора файлов — набор путей относится только к текущему дереву
+  useEffect(() => {
+    setSelectMode(false);
+    setSelectedPaths(new Set());
+    setBulkDeleteError('');
+  }, [active]);
 
   const taskFilesCount = useMemo(
     () => (selectedTaskId ? files.filter((f) => f.taskIds.includes(selectedTaskId)).length : 0),
@@ -155,9 +166,50 @@ export function usePatches({
     try {
       await postJson({ action: 'delete', server: active, path });
       setFiles((prev) => prev.filter((f) => f.path !== path));
+      setSelectedPaths((prev) => {
+        if (!prev.has(path)) return prev;
+        const next = new Set(prev);
+        next.delete(path);
+        return next;
+      });
       onFileTaskLinkChange?.();
     } catch {
       /* ignore */
+    }
+  }
+
+  function toggleSelectMode() {
+    setSelectMode((v) => !v);
+    setSelectedPaths(new Set());
+    setBulkDeleteError('');
+  }
+
+  function toggleSelectPath(path: string) {
+    setSelectedPaths((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  }
+
+  // Удаляет разом все отмеченные чекбоксами файлы — см. action='delete_bulk' в backend/patches.
+  async function handleBulkDelete() {
+    const paths = Array.from(selectedPaths);
+    if (paths.length === 0) return;
+    setBulkDeleting(true);
+    setBulkDeleteError('');
+    try {
+      const data = await postJson({ action: 'delete_bulk', server: active, paths });
+      const deleted = new Set<string>(data.deletedPaths || paths);
+      setFiles((prev) => prev.filter((f) => !deleted.has(f.path)));
+      setSelectedPaths(new Set());
+      setSelectMode(false);
+      onFileTaskLinkChange?.();
+    } catch {
+      setBulkDeleteError('Не удалось удалить выбранные файлы — попробуйте ещё раз');
+    } finally {
+      setBulkDeleting(false);
     }
   }
 
@@ -274,5 +326,7 @@ export function usePatches({
     tree, customRootNames, totalSize, activeSrv, tasksForServer, taskFilesCount,
     handleDropFiles, handleCancelUpload, handleDelete, handleToggleTask, handleLauncherUpload,
     handleDownloadTaskZip, handleDownloadAllZip, handleAddRoot, handleDeleteRoot,
+    selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
+    handleBulkDelete,
   };
 }

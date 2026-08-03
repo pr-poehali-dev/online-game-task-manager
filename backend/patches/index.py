@@ -785,9 +785,9 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'ok': True})
 
-    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'clear_server',
-                  'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create', 'ddf_delete',
-                  'ddf_save_raw', 'launcher_upload'):
+    if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort', 'delete', 'delete_bulk',
+                  'clear_server', 'toggle_task', 'add_root', 'delete_root', 'ddf_save', 'ddf_create',
+                  'ddf_delete', 'ddf_save_raw', 'launcher_upload'):
         if not me['can_manage']:
             cur.close(); conn.close()
             return _forbidden()
@@ -1723,6 +1723,32 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = %s", (server, path))
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'delete_bulk':
+        # Массовое удаление файлов из дерева патчей (выбор чекбоксами на фронтенде) — принимает
+        # список относительных путей и удаляет каждый из S3 и БД, аналогично одиночному 'delete'.
+        server = _safe_server(body.get('server'))
+        paths = body.get('paths')
+        if not server or not isinstance(paths, list) or not paths or len(paths) > 500:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        paths = [p for p in paths if isinstance(p, str) and p]
+        if not paths:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT path, file_key FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s)",
+            (server, paths)
+        )
+        rows = cur.fetchall()
+        for _path, file_key in rows:
+            try:
+                s3.delete_object(Bucket=bucket, Key=file_key)
+            except Exception:
+                pass
+        cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s)", (server, paths))
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'deletedCount': len(rows), 'deletedPaths': [r[0] for r in rows]})
 
     if action == 'clear_server':
         # Служебное действие — полностью очищает дерево файлов сервера (удаляет из S3 и из БД).

@@ -181,6 +181,9 @@ export default function TreeFolder({
   launcherFullEnabled = false,
   onLauncherUpload,
   launcherUploadingKey = null,
+  selectMode = false,
+  selectedPaths,
+  onToggleSelectPath,
 }: {
   node: TreeNode;
   depth: number;
@@ -210,6 +213,10 @@ export default function TreeFolder({
   launcherFullEnabled?: boolean;
   onLauncherUpload?: (path: string, target: 'fast' | 'full') => void;
   launcherUploadingKey?: string | null;
+  // Режим массового выбора файлов чекбоксами для удаления пачкой (см. Patches → "Выбрать файлы").
+  selectMode?: boolean;
+  selectedPaths?: Set<string>;
+  onToggleSelectPath?: (path: string) => void;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmPath, setConfirmPath] = useState<string | null>(null);
@@ -237,13 +244,22 @@ export default function TreeFolder({
     const highlighted = !!highlightTaskId && f.taskIds.includes(highlightTaskId);
     const fileKey = normalizeKey(node.name);
     const fileInfo = describeFile(node.name, customFileDescriptions);
+    const isSelected = !!selectedPaths?.has(f.path);
     return (
       <div
         className={`flex items-center gap-2 py-1.5 pr-2 rounded-md transition-colors group ${
-          highlighted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/40'
+          isSelected ? 'bg-primary/10' : highlighted ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/40'
         }`}
         style={{ paddingLeft: `${depth * 18 + 24}px` }}
       >
+        {canManage && selectMode && onToggleSelectPath && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelectPath(f.path)}
+            className="h-3.5 w-3.5 shrink-0 rounded border-border accent-primary cursor-pointer"
+          />
+        )}
         {(fileInfo || isOwner) && (
           <InfoHint
             title={node.name}
@@ -446,6 +462,9 @@ export default function TreeFolder({
               launcherFullEnabled={launcherFullEnabled}
               onLauncherUpload={onLauncherUpload}
               launcherUploadingKey={launcherUploadingKey}
+              selectMode={selectMode}
+              selectedPaths={selectedPaths}
+              onToggleSelectPath={onToggleSelectPath}
             />
           ))}
         </div>

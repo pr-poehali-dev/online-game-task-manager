@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { ServerItem } from '@/lib/catalog';
 import { fmtSize } from './patchesUtils';
@@ -14,6 +15,8 @@ export default function PatchesTree({
   handleDeleteRoot, deletingRoot, setEditingDdfPath, isOwner, customFiles, customFolders,
   savingDescKey, saveDescription, deleteDescription, launcherUploads, handleLauncherUpload,
   launcherUploadingKey, descError, editingDdfPath, active,
+  selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
+  handleBulkDelete,
 }: {
   activeSrv: ServerItem;
   files: PatchFile[];
@@ -53,7 +56,15 @@ export default function PatchesTree({
   descError: string;
   editingDdfPath: string | null;
   active: ServerId;
+  selectMode: boolean;
+  toggleSelectMode: () => void;
+  selectedPaths: Set<string>;
+  toggleSelectPath: (path: string) => void;
+  bulkDeleting: boolean;
+  bulkDeleteError: string;
+  handleBulkDelete: () => void;
 }) {
+  const [confirmBulk, setConfirmBulk] = useState(false);
   return (
     <>
       <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -77,6 +88,18 @@ export default function PatchesTree({
                 {zippingAll ? 'Собираю...' : 'Скачать всё'}
               </button>
             )}
+            {canManage && files.length > 0 && (
+              <button
+                onClick={toggleSelectMode}
+                title={selectMode ? 'Выйти из режима выбора' : 'Выбрать несколько файлов для удаления'}
+                className={`h-7 px-2.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                  selectMode ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}
+              >
+                <Icon name="CheckSquare" size={14} />
+                {selectMode ? 'Отменить выбор' : 'Выбрать файлы'}
+              </button>
+            )}
             {canManage && !addingRoot && (
               <button
                 onClick={() => { setAddingRoot(true); setRootError(''); }}
@@ -88,6 +111,43 @@ export default function PatchesTree({
             )}
           </div>
         </div>
+
+        {selectMode && (
+          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-secondary/20">
+            <span className="text-xs text-muted-foreground">
+              Выбрано файлов: {selectedPaths.size}
+            </span>
+            {confirmBulk ? (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <span className="text-xs text-muted-foreground">Удалить {selectedPaths.size} файл(ов)?</span>
+                <button
+                  onClick={() => { setConfirmBulk(false); handleBulkDelete(); }}
+                  disabled={bulkDeleting}
+                  className="h-7 px-2.5 rounded-md bg-destructive/90 text-white text-xs font-medium hover:bg-destructive transition-colors disabled:opacity-40 flex items-center gap-1.5"
+                >
+                  {bulkDeleting ? <Icon name="Loader2" size={13} className="animate-spin" /> : 'Да, удалить'}
+                </button>
+                <button
+                  onClick={() => setConfirmBulk(false)}
+                  disabled={bulkDeleting}
+                  className="h-7 px-2.5 rounded-md border border-border text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                >
+                  Отмена
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmBulk(true)}
+                disabled={selectedPaths.size === 0 || bulkDeleting}
+                className="h-7 px-2.5 ml-auto rounded-md bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors disabled:opacity-30 flex items-center gap-1.5"
+              >
+                <Icon name="Trash2" size={13} />
+                Удалить выбранное
+              </button>
+            )}
+            {bulkDeleteError && <p className="text-xs text-destructive w-full">{bulkDeleteError}</p>}
+          </div>
+        )}
 
         {canManage && addingRoot && (
           <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border bg-secondary/20">
@@ -150,6 +210,9 @@ export default function PatchesTree({
                   launcherFullEnabled={!!(activeSrv.launcherFullDir && activeSrv.launcherFullXml)}
                   onLauncherUpload={handleLauncherUpload}
                   launcherUploadingKey={launcherUploadingKey}
+                  selectMode={selectMode}
+                  selectedPaths={selectedPaths}
+                  onToggleSelectPath={toggleSelectPath}
                 />
               </div>
             ))}
