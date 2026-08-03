@@ -2,18 +2,21 @@ import Icon from '@/components/ui/icon';
 import type { LauncherUploadInfo } from './patchesUtils';
 
 // Статус заливки файла на VPS лаунчера относительно его текущего hash (см. LAUNCHER_UPLOAD.md):
-// не заливался ни разу / залита именно эта версия файла / заливали, но файл с тех пор обновился.
-export type LauncherFileStatus = 'none' | 'uploaded' | 'stale';
+// не заливался ни разу (или заливали, но hash с тех пор разошёлся с текущим — считаем как
+// "не залит", а не отдельным промежуточным статусом: и заливка (verify_ok), и сверка
+// (action=launcher_sync) сами удаляют запись в patch_launcher_uploads при несовпадении hash,
+// поэтому на фронте лишний третий статус только дублировал бы одно и то же состояние) / залита
+// именно эта версия файла.
+export type LauncherFileStatus = 'none' | 'uploaded';
 
 export function launcherFileStatus(fileHash: string | null | undefined, upload: LauncherUploadInfo | undefined): LauncherFileStatus {
   if (!upload) return 'none';
   if (fileHash && upload.hash === fileHash) return 'uploaded';
-  return 'stale';
+  return 'none';
 }
 
 // Маленькая круглая кнопка-бейдж заливки в лаунчер: буква Б (быстрое) или П (полное) внутри
-// кружка, цвет меняется по статусу — серый (не заливалось), оранжевый/primary (актуально), жёлтый
-// (устарело, файл обновлён после последней заливки).
+// кружка, цвет меняется по статусу — серый (не заливалось), оранжевый/primary (залито).
 export default function LauncherUploadButton({ label, title, uploading, status, onClick }: {
   label: string;
   title: string;
@@ -23,10 +26,8 @@ export default function LauncherUploadButton({ label, title, uploading, status, 
 }) {
   const colorClass = status === 'uploaded'
     ? 'text-primary border-primary/40 bg-primary/10 hover:bg-primary/20'
-    : status === 'stale'
-      ? 'text-amber-500 border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20'
-      : 'text-muted-foreground border-border hover:bg-secondary';
-  const statusTitle = status === 'uploaded' ? ' — залито' : status === 'stale' ? ' — устарело, требуется перезалить' : '';
+    : 'text-muted-foreground border-border hover:bg-secondary';
+  const statusTitle = status === 'uploaded' ? ' — залито' : '';
   return (
     <button
       onClick={onClick}
