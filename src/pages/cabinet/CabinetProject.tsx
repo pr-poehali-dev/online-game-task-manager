@@ -7,15 +7,7 @@ import CabinetServiceKeys from './CabinetServiceKeys';
 
 type ProjectSubsection = 'menu' | 'servers' | 'categories' | 'storage' | 'keys';
 
-// Остальные подразделы (Лаунчер) — заглушка, по требованию пользователя будет наполнена отдельным
-// этапом. "Серверы", "Категории", "Хранилище (MinIO)" и "Служебные ключи" уже реализованы
-// полностью (см. CabinetServers.tsx / CabinetCategories.tsx / CabinetStorage.tsx /
-// CabinetServiceKeys.tsx) и открываются отдельным экраном внутри этого раздела.
-const PLACEHOLDER_ITEMS = [
-  { icon: 'UploadCloud', label: 'Лаунчер', description: 'Настройки заливки патчей и лаунчера' },
-];
-
-export default function CabinetProject() {
+export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
   const [sub, setSub] = useState<ProjectSubsection>('menu');
 
   if (sub !== 'menu') {
@@ -78,7 +70,14 @@ export default function CabinetProject() {
             <Icon name="Cloud" size={17} className="text-primary" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Хранилище (MinIO)</div>
+            <div className="text-sm font-medium flex items-center gap-1.5">
+              Хранилище (MinIO)
+              {/* Backend (storage-config/index.py) разрешает читать/менять эти настройки только
+                  владельцу проекта (OWNER_USER_ID) — остальным показываем замок сразу в меню,
+                  чтобы не заводить в тупик (раньше пункт открывался, но внутри было "доступно
+                  только владельцу"). */}
+              {!isOwner && <Icon name="Lock" size={12} className="text-muted-foreground" />}
+            </div>
             <div className="text-xs text-muted-foreground">Адреса и ключи для файлового хранилища</div>
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
@@ -92,27 +91,14 @@ export default function CabinetProject() {
             <Icon name="KeyRound" size={17} className="text-primary" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium">Служебные ключи</div>
+            <div className="text-sm font-medium flex items-center gap-1.5">
+              Служебные ключи
+              {!isOwner && <Icon name="Lock" size={12} className="text-muted-foreground" />}
+            </div>
             <div className="text-xs text-muted-foreground">Прочая служебная информация для работы проекта</div>
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
         </button>
-
-        {PLACEHOLDER_ITEMS.map((item) => (
-          <div
-            key={item.label}
-            className="flex items-center gap-3 rounded-xl border border-border bg-card/50 p-4 opacity-60"
-          >
-            <div className="h-9 w-9 rounded-lg bg-secondary/60 flex items-center justify-center shrink-0">
-              <Icon name={item.icon} size={17} className="text-muted-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium">{item.label}</div>
-              <div className="text-xs text-muted-foreground">{item.description}</div>
-            </div>
-            <span className="text-xs px-2 py-0.5 rounded-md bg-secondary text-muted-foreground shrink-0">скоро</span>
-          </div>
-        ))}
       </div>
     </div>
   );
