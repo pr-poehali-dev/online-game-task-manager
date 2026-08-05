@@ -46,3 +46,41 @@ grep -rn "poehali.dev" backend/ update/ДАТА/ | grep -v __pycache__ | grep -v
 перезапустить backend (subprocess запрещён в облачных функциях), поэтому
 всегда описывать этот шаг явно в README апдейта, не полагаться, что
 пользователь сам найдёт эти файлы.
+
+⚠️ 5 августа: две новые категории проблем self-hosted-сборки/запуска,
+проверять КАЖДЫЙ раз перед тем как отдать `update/ДАТА/`:
+
+1. **Новые pip-зависимости отдельных backend-функций не попадают в
+   `deploy/requirements.txt`.** У self-hosted `deploy/server.py` грузит ВСЕ
+   функции backend при старте одним махом — если хоть одна не импортируется
+   (ModuleNotFoundError), падает ВЕСЬ backend, а не только эта функция.
+   Пример: `backend/patches/index.py` использует `paramiko` (SSH/SFTP на
+   лаунчер) — это было в `backend/patches/requirements.txt`, но не в общем
+   `deploy/requirements.txt`, из-за чего весь backend не стартовал у
+   пользователя (включая вход через бота, хотя вход тут вообще ни при чём).
+   Проверять командой:
+   ```
+   for f in backend/*/requirements.txt; do cat "$f"; done | sort -u
+   ```
+   и сверять каждый пакет с `deploy/requirements.txt` — если чего-то не
+   хватает, дописывать туда с комментарием, какая функция его требует.
+
+2. **`src/pages/Login.tsx` и любые другие "боевые" страницы НЕ должны
+   импортировать dev-only компоненты, которых нет в `update/`.**
+   `DevOnlyLoginButton` (кнопка тестового входа, видна только на
+   `*.poehali.dev`) и backend `dev-login` — оба намеренно НЕ переносятся в
+   `update/` (см. комментарии в самих файлах: "НИКОГДА не переносить").
+   Но исходный `src/pages/Login.tsx` жёстко их импортирует — из-за этого
+   `npm run build` падает у любого self-hosted пользователя с
+   `Could not load src/components/DevOnlyLoginButton`.
+   Перед каждым апдейтом: копия `update/ДАТА/src/pages/Login.tsx` должна
+   НЕ содержать `import DevOnlyLoginButton` и `<DevOnlyLoginButton .../>`
+   (и связанный с ним `useAuth`/`applySession`, если больше нигде на
+   странице не используется). Проверять командой:
+   ```
+   grep -rn "DevOnlyLoginButton\|from '@/lib/auth'.*useAuth" update/ДАТА/src/pages/Login.tsx
+   ```
+   Общее правило: любой файл с пометкой "не переносить в update/" в
+   комментарии — грепать по всем файлам, которые ЕГО импортируют, и в
+   копии внутри `update/ДАТА/` вручную вырезать импорт/использование,
+   а не просто не копировать сам файл.
