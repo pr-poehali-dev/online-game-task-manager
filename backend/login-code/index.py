@@ -133,7 +133,7 @@ def handler(event: dict, context) -> dict:
 
         if status == 'confirmed' and session_token:
             cur.execute(
-                f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.permissions "
+                f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.permissions, u.nickname, u.avatar_url "
                 f"FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
                 f"WHERE s.token = %s AND s.expires_at > NOW()",
                 (session_token,)
@@ -142,10 +142,13 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             if not u:
                 return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'status': 'expired'})}
+            u_nickname, u_avatar_url = u[10], u[11]
             user = {
-                'id': u[0], 'telegram_id': u[1], 'username': u[2], 'first_name': u[3],
-                'last_name': u[4], 'photo_url': u[5], 'role': u[6], 'member_id': u[7], 'tg_username': u[8],
+                'id': u[0], 'telegram_id': u[1], 'username': u[2],
+                'first_name': u_nickname or u[3], 'last_name': None if u_nickname else u[4],
+                'photo_url': u_avatar_url or u[5], 'role': u[6], 'member_id': u[7], 'tg_username': u[8],
                 'permissions': _effective_perms(u[6], u[9]),
+                'nickname': u_nickname, 'avatar_url': u_avatar_url,
             }
             return {
                 'statusCode': 200,

@@ -31,6 +31,33 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "string"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST set_nickname without token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "set_nickname", "nickname": "Test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST upload_avatar without token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "upload_avatar", "data": "aGVsbG8="},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST remove_avatar without token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "remove_avatar"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "string"},
+      "bodyMatcher": "partial"
     }
   ]
 }

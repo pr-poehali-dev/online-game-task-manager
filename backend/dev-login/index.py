@@ -28,7 +28,8 @@ def _db():
 
 def handler(event: dict, context) -> dict:
     '''ВРЕМЕННАЯ функция только для тестового превью в редакторе poehali.dev — выдаёт сессию
-    администратору без прохождения Telegram-авторизации. НИКОГДА не должна разворачиваться
+    администратору без прохождения Telegram-авторизации (учитывает кастомный nickname/avatar_url,
+    если заданы). НИКОГДА не должна разворачиваться
     на боевом self-hosted сервере: там нет смысла её вызывать, так как реальный вход идёт
     через Telegram-бота. Не добавлять в update/, не переносить на сервер.'''
     method = event.get('httpMethod', 'GET')
@@ -42,7 +43,7 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor()
 
     cur.execute(
-        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions, theme "
+        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions, theme, nickname, avatar_url "
         f"FROM {schema}.users WHERE role = 'admin' AND is_active = true ORDER BY id LIMIT 1"
     )
     row = cur.fetchone()
@@ -58,10 +59,13 @@ def handler(event: dict, context) -> dict:
         (user_id, session_token, expires)
     )
 
+    row_nickname, row_avatar_url = row[11], row[12]
     user = {
-        'id': row[0], 'telegram_id': row[1], 'username': row[2], 'first_name': row[3],
-        'last_name': row[4], 'photo_url': row[5], 'role': row[6], 'member_id': row[7],
+        'id': row[0], 'telegram_id': row[1], 'username': row[2],
+        'first_name': row_nickname or row[3], 'last_name': None if row_nickname else row[4],
+        'photo_url': row_avatar_url or row[5], 'role': row[6], 'member_id': row[7],
         'tg_username': row[8], 'permissions': row[9] or {}, 'theme': row[10],
+        'nickname': row_nickname, 'avatar_url': row_avatar_url,
     }
     cur.close(); conn.close()
     return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'token': session_token, 'user': user})}

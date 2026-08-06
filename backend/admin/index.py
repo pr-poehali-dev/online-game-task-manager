@@ -225,22 +225,28 @@ def handler(event: dict, context) -> dict:
             f"u.tg_username, u.is_active, u.created_at, u.specialization, u.permissions, "
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
-            f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact "
+            f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact, u.nickname, u.avatar_url "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC"
         )
         rows = cur.fetchall()
-        users = [{
-            'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3], 'last_name': r[4],
-            'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
-            'is_active': r[9], 'created_at': r[10].isoformat() if r[10] else None,
-            'specialization': r[11],
-            'permissions': _effective_perms(r[6], r[12]),
-            'online': (r[14] or 0) > 0,
-            'active_sessions': r[14] or 0,
-            'show_in_team': r[15] if r[15] is not None else True,
-            'tg_notify_muted': bool(r[16]),
-            'show_tg_contact': r[17] if r[17] is not None else True,
-        } for r in rows]
+        users = []
+        for r in rows:
+            nickname, avatar_url = r[18], r[19]
+            users.append({
+                'id': r[0], 'telegram_id': r[1], 'username': r[2],
+                'first_name': nickname or r[3], 'last_name': None if nickname else r[4],
+                'photo_url': avatar_url or r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
+                'is_active': r[9], 'created_at': r[10].isoformat() if r[10] else None,
+                'specialization': r[11],
+                'permissions': _effective_perms(r[6], r[12]),
+                'online': (r[14] or 0) > 0,
+                'active_sessions': r[14] or 0,
+                'show_in_team': r[15] if r[15] is not None else True,
+                'tg_notify_muted': bool(r[16]),
+                'show_tg_contact': r[17] if r[17] is not None else True,
+                'nickname': nickname, 'avatar_url': avatar_url,
+                'tg_first_name': r[3], 'tg_last_name': r[4], 'tg_photo_url': r[5],
+            })
         cur.close(); conn.close()
         # isOwner — единый источник истины для фронта (показывать ли UI редактирования владельческих
         # прав из PRIVILEGED_PERMISSIONS), чтобы OWNER_USER_ID не пришлось дублировать константой
@@ -280,7 +286,7 @@ def handler(event: dict, context) -> dict:
         where = " AND ".join(conditions)
         cur.execute(
             f"SELECT a.id, a.user_id, u.first_name, u.last_name, a.action, a.entity_type, a.entity_id, "
-            f"a.entity_title, a.details, a.created_at "
+            f"a.entity_title, a.details, a.created_at, u.nickname "
             f"FROM {schema}.activity_log a LEFT JOIN {schema}.users u ON u.id = a.user_id "
             f"WHERE {where} ORDER BY a.created_at DESC LIMIT 500",
             tuple(params)
@@ -288,7 +294,7 @@ def handler(event: dict, context) -> dict:
         entries = [{
             'id': r[0],
             'userId': r[1],
-            'userName': f"{r[2]}{(' ' + r[3]) if r[3] else ''}" if r[2] else 'Неизвестный',
+            'userName': (r[10] or (f"{r[2]}{(' ' + r[3]) if r[3] else ''}" if r[2] else 'Неизвестный')),
             'action': r[4],
             'entityType': r[5],
             'entityId': r[6],
@@ -501,7 +507,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_user_id'})}
         cur.execute(
-            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, permissions, theme "
+            f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, is_active, permissions, theme, nickname, avatar_url "
             f"FROM {schema}.users WHERE id = %s AND is_hidden = false",
             (target,)
         )
@@ -515,10 +521,13 @@ def handler(event: dict, context) -> dict:
             f"INSERT INTO {schema}.sessions (user_id, token, expires_at) VALUES (%s, %s, %s)",
             (r[0], session_token, expires)
         )
+        r_nickname, r_avatar_url = r[12], r[13]
         user = {
-            'id': r[0], 'telegram_id': r[1], 'username': r[2], 'first_name': r[3],
-            'last_name': r[4], 'photo_url': r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
+            'id': r[0], 'telegram_id': r[1], 'username': r[2],
+            'first_name': r_nickname or r[3], 'last_name': None if r_nickname else r[4],
+            'photo_url': r_avatar_url or r[5], 'role': r[6], 'member_id': r[7], 'tg_username': r[8],
             'permissions': _effective_perms(r[6], r[10]), 'theme': r[11],
+            'nickname': r_nickname, 'avatar_url': r_avatar_url,
         }
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'token': session_token, 'user': user})}

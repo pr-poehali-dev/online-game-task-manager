@@ -34,6 +34,14 @@ export interface AuthUser {
   tg_username: string | null;
   permissions?: Partial<Record<PermissionKey, boolean>>;
   theme?: 'light' | 'dark';
+  // Кастомные никнейм/аватарка, заданные самим пользователем в кабинете — если заполнены, уже
+  // подставлены backend'ом в first_name/photo_url выше вместо телеграм-данных. tg_* — исходные
+  // данные из Telegram (для формы в кабинете, чтобы можно было показать "сброс к телеграм-имени").
+  nickname?: string | null;
+  avatar_url?: string | null;
+  tg_first_name?: string;
+  tg_last_name?: string | null;
+  tg_photo_url?: string | null;
 }
 
 export interface TelegramAuthData {
@@ -54,6 +62,7 @@ interface AuthContextValue {
   loginWithTelegram: (data: TelegramAuthData) => Promise<AuthUser>;
   applySession: (token: string, user: AuthUser) => void;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -152,7 +161,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', can, loginWithTelegram, applySession, logout }}>
+    <AuthContext.Provider value={{ user, loading, isAdmin: user?.role === 'admin', can, loginWithTelegram, applySession, logout, refreshUser: fetchMe }}>
       {children}
     </AuthContext.Provider>
   );
