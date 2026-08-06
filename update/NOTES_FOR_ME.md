@@ -104,3 +104,28 @@ grep -rn "poehali.dev" backend/ update/ДАТА/ | grep -v __pycache__ | grep -v
 информацию куда-то ещё в интерфейсе (например для storage-config или
 service-keys) — использовать тот же паттерн: не прятать код ошибки от
 backend, а дописывать его в конец пользовательского сообщения в скобках.
+
+✅ 6 августа (вечер): `update/2026-08-06/` пересобран целиком и включает все
+три фичи дня одним пакетом (README.md объединяет все разделы):
+1. Свой никнейм/аватарка участника в кабинете, не зависящие от Telegram
+   (новые колонки `users.nickname`/`users.avatar_url`, миграция V0074,
+   новые actions в `backend/auth`: `set_nickname`/`upload_avatar`/
+   `remove_avatar` — доступны самому пользователю без прав администратора).
+2. Переименование/удаление ПРОИЗВОЛЬНОЙ вложенной папки в дереве «Патчи»
+   (новые actions `rename_folder`/`delete_folder` в `backend/patches`,
+   работают по префиксу пути в отличие от старых `rename_root`/
+   `delete_root`, которые остались только для корневых папок).
+3. Журнал активности (кабинет → «Журнал») теперь фиксирует действия с
+   файлами патчей — новые ключи в `ACTIVITY_META`
+   (`src/pages/admin/adminShared.ts`) и вызовы `_log_activity` по всему
+   `backend/patches/index.py`.
+
+Проверено перед сборкой: `backend/dev-login` НЕ включён (dev-only, как и
+предписано правилом выше). `backend/auth/requirements.txt` пополнился
+`boto3` (нужен для загрузки аватарки в S3) — учтено в README раздела 1,
+но `boto3` уже есть в общем `deploy/requirements.txt`, доп. действий на
+сервере пользователя не требуется. Хардкод `poehali.dev` в скопированных
+файлах — только safety-default (паттерн `S3_ENDPOINT`/`S3_PUBLIC_URL`/
+`CDN_BASE_URL` с fallback на облако poehali.dev), как и должно быть,
+самому коду переопределять не нужно. Новых pip-зависимостей, которых нет
+в `deploy/requirements.txt`, не добавилось.
