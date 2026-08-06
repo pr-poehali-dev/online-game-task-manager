@@ -50,6 +50,9 @@ export function usePatches({
   const [newRootName, setNewRootName] = useState('');
   const [rootError, setRootError] = useState('');
   const [deletingRoot, setDeletingRoot] = useState<string | null>(null);
+  const [renameFolderError, setRenameFolderError] = useState('');
+  const [deletingFolder, setDeletingFolder] = useState<string | null>(null);
+  const [deleteFolderError, setDeleteFolderError] = useState('');
   const [editingDdfPath, setEditingDdfPath] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -375,6 +378,38 @@ export function usePatches({
     }
   }
 
+  // Переименовывает ПРОИЗВОЛЬНУЮ вложенную папку (не корень) физически — см. action rename_folder
+  // в backend/patches/index.py: все файлы внутри переносятся на S3 под новым путём, дерево
+  // перезагружается целиком, т.к. меняются пути сразу у многих файлов.
+  async function handleRenameFolder(path: string, newName: string) {
+    setRenameFolderError('');
+    try {
+      await postJson({ action: 'rename_folder', server: active, path, newName });
+      await load(active);
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === 'name_taken') setRenameFolderError('Папка с таким именем уже существует');
+      else if (code === 'bad_name') setRenameFolderError('Недопустимое имя папки');
+      else setRenameFolderError('Не удалось переименовать папку');
+    }
+  }
+
+  // Удаляет ПРОИЗВОЛЬНУЮ вложенную папку целиком со всеми файлами внутри — см. action
+  // delete_folder в backend/patches/index.py.
+  async function handleDeleteFolder(path: string) {
+    setDeletingFolder(path);
+    setDeleteFolderError('');
+    try {
+      await postJson({ action: 'delete_folder', server: active, path });
+      await load(active);
+      onFileTaskLinkChange?.();
+    } catch {
+      setDeleteFolderError('Не удалось удалить папку — попробуйте ещё раз');
+    } finally {
+      setDeletingFolder(null);
+    }
+  }
+
   return {
     servers, active, setActive,
     files, launcherUploads,
@@ -386,6 +421,8 @@ export function usePatches({
     addingRoot, setAddingRoot, newRootName, setNewRootName, rootError, setRootError,
     deletingRoot, editingDdfPath, setEditingDdfPath,
     rootLabels, renamingRootError, handleRenameRoot,
+    renameFolderError, handleRenameFolder,
+    deletingFolder, deleteFolderError, handleDeleteFolder,
     uploading,
     customFiles, customFolders, isOwner, savingDescKey, descError, saveDescription, deleteDescription,
     tree, customRootNames, totalSize, activeSrv, tasksForServer, taskFilesCount,

@@ -113,6 +113,11 @@ export default function Patches({
         rootLabels={p.rootLabels}
         renamingRootError={p.renamingRootError}
         handleRenameRoot={p.handleRenameRoot}
+        renameFolderError={p.renameFolderError}
+        handleRenameFolder={p.handleRenameFolder}
+        deletingFolder={p.deletingFolder}
+        deleteFolderError={p.deleteFolderError}
+        handleDeleteFolder={p.handleDeleteFolder}
       />
     </div>
   );

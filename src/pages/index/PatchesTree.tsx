@@ -18,6 +18,7 @@ export default function PatchesTree({
   selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
   handleBulkDelete,
   rootLabels, renamingRootError, handleRenameRoot,
+  renameFolderError, handleRenameFolder, deletingFolder, deleteFolderError, handleDeleteFolder,
 }: {
   activeSrv: ServerItem;
   files: PatchFile[];
@@ -69,6 +70,11 @@ export default function PatchesTree({
   rootLabels: RootLabelsMap;
   renamingRootError: string;
   handleRenameRoot: (rootName: string, label: string) => void;
+  renameFolderError: string;
+  handleRenameFolder: (path: string, newName: string) => void;
+  deletingFolder: string | null;
+  deleteFolderError: string;
+  handleDeleteFolder: (path: string) => void;
 }) {
   const [confirmBulk, setConfirmBulk] = useState(false);
   return (
@@ -223,6 +229,9 @@ export default function PatchesTree({
                   onToggleSelectPath={toggleSelectPath}
                   rootLabel={rootLabels[node.path]}
                   onRenameRoot={handleRenameRoot}
+                  onRenameFolder={handleRenameFolder}
+                  onDeleteFolder={handleDeleteFolder}
+                  deletingFolder={deletingFolder}
                 />
               </div>
             ))}
@@ -230,6 +239,8 @@ export default function PatchesTree({
         )}
         {descError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{descError}</p>}
         {renamingRootError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{renamingRootError}</p>}
+        {renameFolderError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{renameFolderError}</p>}
+        {deleteFolderError && <p className="text-xs text-destructive px-4 py-2 border-t border-border">{deleteFolderError}</p>}
       </div>
 
       {editingDdfPath && (

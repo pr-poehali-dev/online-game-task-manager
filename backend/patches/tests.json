@@ -157,6 +157,24 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST rename_folder without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "rename_folder", "server": "c4x1", "path": "l2text/workshop", "newName": "workshop2"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST delete_folder without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "delete_folder", "server": "c4x1", "path": "l2text/workshop"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

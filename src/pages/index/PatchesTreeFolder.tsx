@@ -48,6 +48,9 @@ export default function TreeFolder({
   onToggleSelectPath,
   rootLabel,
   onRenameRoot,
+  onRenameFolder,
+  onDeleteFolder,
+  deletingFolder,
 }: {
   node: TreeNode;
   depth: number;
@@ -90,11 +93,21 @@ export default function TreeFolder({
   // переопределяет отображаемое имя ТОЛЬКО в дереве, реальный путь файла (node.path) не меняется.
   rootLabel?: string;
   onRenameRoot?: (rootName: string, label: string) => void;
+  // Переименование/удаление ПРОИЗВОЛЬНОЙ вложенной папки (depth > 0) — в отличие от rename_root/
+  // delete_root (только корень), эти действия физически переносят/удаляют файлы по префиксу пути
+  // (см. actions rename_folder/delete_folder в backend/patches/index.py), т.к. у вложенных папок
+  // нет отдельной сущности в БД.
+  onRenameFolder?: (path: string, newName: string) => void;
+  onDeleteFolder?: (path: string) => void;
+  deletingFolder?: string | null;
 }) {
   const [open, setOpen] = useState(depth === 0);
   const [confirmRoot, setConfirmRoot] = useState(false);
   const [renamingRoot, setRenamingRoot] = useState(false);
   const [rootNameDraft, setRootNameDraft] = useState('');
+  const [renamingFolder, setRenamingFolder] = useState(false);
+  const [folderNameDraft, setFolderNameDraft] = useState('');
+  const [confirmDeleteFolder, setConfirmDeleteFolder] = useState(false);
   const isRoot = depth === 0;
   const entries = useMemo(() => {
     const arr = Array.from(node.children.values());
@@ -206,6 +219,33 @@ export default function TreeFolder({
               <Icon name="X" size={13} />
             </button>
           </div>
+        ) : renamingFolder ? (
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <Icon name={open ? 'FolderOpen' : 'Folder'} size={15} className="shrink-0" style={{ color: 'hsl(45 90% 55%)' }} />
+            <input
+              autoFocus
+              value={folderNameDraft}
+              onChange={(e) => setFolderNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && folderNameDraft.trim()) { onRenameFolder?.(node.path, folderNameDraft.trim()); setRenamingFolder(false); }
+                if (e.key === 'Escape') setRenamingFolder(false);
+              }}
+              placeholder={node.name}
+              className="h-7 flex-1 min-w-0 px-2 rounded-md border border-border bg-background text-sm"
+            />
+            <button
+              onClick={() => { if (folderNameDraft.trim()) { onRenameFolder?.(node.path, folderNameDraft.trim()); setRenamingFolder(false); } }}
+              className="text-xs text-primary hover:underline shrink-0"
+            >
+              OK
+            </button>
+            <button
+              onClick={() => setRenamingFolder(false)}
+              className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Icon name="X" size={13} />
+            </button>
+          </div>
         ) : (
           <>
             <button
@@ -224,6 +264,42 @@ export default function TreeFolder({
               >
                 <Icon name="Pencil" size={12} />
               </button>
+            )}
+            {!isRoot && canManage && onRenameFolder && (
+              <button
+                onClick={() => { setFolderNameDraft(node.name); setRenamingFolder(true); }}
+                title="Переименовать папку (переносит все файлы внутри неё)"
+                className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors opacity-0 group-hover/root:opacity-100"
+              >
+                <Icon name="Pencil" size={12} />
+              </button>
+            )}
+            {!isRoot && canDelete && onDeleteFolder && !confirmDeleteFolder && (
+              <button
+                onClick={() => setConfirmDeleteFolder(true)}
+                disabled={deletingFolder === node.path}
+                title="Удалить папку со всем содержимым"
+                className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover/root:opacity-100 disabled:opacity-40"
+              >
+                <Icon name={deletingFolder === node.path ? 'Loader2' : 'Trash2'} size={12} className={deletingFolder === node.path ? 'animate-spin' : ''} />
+              </button>
+            )}
+            {!isRoot && confirmDeleteFolder && (
+              <div className="shrink-0 flex items-center gap-1">
+                <span className="text-[11px] text-muted-foreground">Удалить со всеми файлами?</span>
+                <button
+                  onClick={() => { setConfirmDeleteFolder(false); onDeleteFolder?.(node.path); }}
+                  className="h-6 px-2 rounded-md bg-destructive/90 text-white text-[11px] hover:bg-destructive transition-colors"
+                >
+                  Да
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteFolder(false)}
+                  className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Нет
+                </button>
+              </div>
             )}
             {canManage && (
               <span className="text-[10px] text-muted-foreground ml-auto shrink-0 opacity-0 group-hover/root:opacity-100">перетащите файл или папку сюда</span>
@@ -296,6 +372,9 @@ export default function TreeFolder({
               selectMode={selectMode}
               selectedPaths={selectedPaths}
               onToggleSelectPath={onToggleSelectPath}
+              onRenameFolder={onRenameFolder}
+              onDeleteFolder={onDeleteFolder}
+              deletingFolder={deletingFolder}
             />
           ))}
         </div>

@@ -777,7 +777,11 @@ def handler(event: dict, context) -> dict:
     Помимо фиксированных корней можно создавать (add_root) и удалять (delete_root, только если папка
     пустая) собственные корневые папки для конкретного сервера. Действие rename_root меняет ТОЛЬКО
     отображаемое имя корневой папки (фиксированной или пользовательской) в дереве — реальный путь
-    файлов и путь в XML-реестре лаунчера при заливке не меняются. Поддерживает скачивание отдельного
+    файлов и путь в XML-реестре лаунчера при заливке не меняются. Для ВЛОЖЕННЫХ папок (любого
+    уровня, не только корня) действия rename_folder/delete_folder работают уже физически — переносят
+    (копируют+удаляют в S3) либо удаляют все файлы внутри папки по реальному префиксу пути, так как
+    у вложенных папок нет отдельной сущности в БД (они существуют только как общий префикс пути
+    файлов). Поддерживает скачивание отдельного
     файла, сборку архива файлов конкретной задачи (task_zip) или архива всего дерева сервера целиком
     (zip_all), удаление файла и полную очистку дерева сервера. Действие tasks_with_files возвращает
     список id задач (по всем серверам сразу), к которым прикреплён хотя бы один файл — используется
@@ -927,7 +931,7 @@ def handler(event: dict, context) -> dict:
         return _ok({'ok': True})
 
     if action in ('file_init', 'file_chunk', 'file_complete', 'file_abort',
-                  'toggle_task', 'add_root', 'delete_root', 'rename_root', 'ddf_save', 'ddf_create',
+                  'toggle_task', 'add_root', 'delete_root', 'rename_root', 'rename_folder', 'ddf_save', 'ddf_create',
                   'ddf_delete', 'ddf_save_raw'):
         if not me['can_manage']:
             cur.close(); conn.close()
@@ -935,7 +939,7 @@ def handler(event: dict, context) -> dict:
 
     # Удаление файлов и заливка в лаунчер — точечные права поверх patch_edit (см.
     # patch_launcher_upload/patch_delete_files выше), проверяются отдельно от общего can_manage.
-    if action in ('delete', 'delete_bulk', 'clear_server'):
+    if action in ('delete', 'delete_bulk', 'clear_server', 'delete_folder'):
         if not me['can_delete']:
             cur.close(); conn.close()
             return _forbidden()
@@ -1744,6 +1748,108 @@ def handler(event: dict, context) -> dict:
 
     s3 = _s3_client()
     bucket = _bucket()
+
+    if action == 'rename_folder':
+        # В отличие от rename_root (который меняет только ОТОБРАЖАЕМУЮ подпись корневой папки в
+        # patch_root_labels, не трогая сами файлы), это действие переименовывает ПРОИЗВОЛЬНУЮ
+        # вложенную папку (любого уровня вложенности) физически: у всех файлов внутри нужно
+        # заменить префикс пути и на S3 переложить объект под новым ключом (у S3 нет операции
+        # "переименовать папку" — папок как таковых не существует, есть только плоские ключи
+        # объектов, поэтому клонируем каждый объект под новым ключом и удаляем старый).
+        server = _safe_server(body.get('server'))
+        old_path = (body.get('path') or '').strip().strip('/')
+        new_name = (body.get('newName') or '').strip()
+        if not server or not old_path or '/' not in old_path:
+            # '/' not in old_path — это КОРНЕВАЯ папка (System, l2text и т.п.), для нижнего уровня
+            # переименования используется rename_root (меняет только подпись), а не это действие.
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        if not new_name or not re.match(r'^[a-zA-Zа-яА-ЯёЁ0-9 _.-]+$', new_name):
+            cur.close(); conn.close()
+            return _bad('bad_name')
+        parent, old_name = old_path.rsplit('/', 1)
+        if new_name == old_name:
+            cur.close(); conn.close()
+            return _ok({'ok': True, 'path': old_path})
+        new_path = f"{parent}/{new_name}"
+        cur.execute(
+            f"SELECT id, path, file_key FROM {schema}.patch_files "
+            f"WHERE server = %s AND (path = %s OR path LIKE %s)",
+            (server, old_path, f"{old_path}/%")
+        )
+        rows = cur.fetchall()
+        if not rows:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        cur.execute(
+            f"SELECT 1 FROM {schema}.patch_files WHERE server = %s AND (path = %s OR path LIKE %s) LIMIT 1",
+            (server, new_path, f"{new_path}/%")
+        )
+        if cur.fetchone():
+            cur.close(); conn.close()
+            return _bad('name_taken')
+        for file_id, old_file_path, file_key in rows:
+            new_file_path = new_path + old_file_path[len(old_path):]
+            new_file_key = f"patches/{server}/{new_file_path}"
+            try:
+                s3.copy_object(Bucket=bucket, CopySource={'Bucket': bucket, 'Key': file_key}, Key=new_file_key)
+                s3.delete_object(Bucket=bucket, Key=file_key)
+            except Exception:
+                cur.close(); conn.close()
+                return _bad('s3_move_failed')
+            cur.execute(
+                f"UPDATE {schema}.patch_files SET path = %s, file_key = %s, updated_at = now() WHERE id = %s",
+                (new_file_path, new_file_key, file_id)
+            )
+        cur.execute(
+            f"UPDATE {schema}.patch_launcher_uploads SET path = %s || substring(path from %s) "
+            f"WHERE server = %s AND (path = %s OR path LIKE %s)",
+            (new_path, len(old_path) + 1, server, old_path, f"{old_path}/%")
+        )
+        _log_activity(cur, schema, me['id'], 'patch_folder_rename', 'patch_folder', f"{server}:{new_path}",
+                      new_path, f"сервер {server}, было: {old_path}")
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'path': new_path, 'movedFiles': len(rows)})
+
+    if action == 'delete_folder':
+        # Удаляет ПРОИЗВОЛЬНУЮ вложенную папку целиком (со всеми файлами и подпапками внутри) —
+        # в отличие от delete_root, который удаляет только ПУСТУЮ корневую папку. Требует
+        # patch_delete_files (can_delete), как и удаление отдельных файлов, а не patch_edit —
+        # это разрушительное действие с реальными файлами, а не просто структурой дерева.
+        server = _safe_server(body.get('server'))
+        path = (body.get('path') or '').strip().strip('/')
+        if not server or not path or '/' not in path:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT file_key, task_ids FROM {schema}.patch_files "
+            f"WHERE server = %s AND (path = %s OR path LIKE %s)",
+            (server, path, f"{path}/%")
+        )
+        rows = cur.fetchall()
+        if not rows:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        for file_key, _task_ids in rows:
+            try:
+                s3.delete_object(Bucket=bucket, Key=file_key)
+            except Exception:
+                pass
+        cur.execute(
+            f"DELETE FROM {schema}.patch_files WHERE server = %s AND (path = %s OR path LIKE %s)",
+            (server, path, f"{path}/%")
+        )
+        cur.execute(
+            f"DELETE FROM {schema}.patch_launcher_uploads WHERE server = %s AND (path = %s OR path LIKE %s)",
+            (server, path, f"{path}/%")
+        )
+        touched_task_ids = {tid for (_k, tids) in rows for tid in (tids or [])}
+        for tid in touched_task_ids:
+            _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_folder_delete', 'patch_folder', f"{server}:{path}", path,
+                      f"сервер {server}, файлов: {len(rows)}")
+        cur.close(); conn.close()
+        return _ok({'ok': True, 'deletedCount': len(rows)})
 
     if action == 'file_init':
         # Инициализация загрузки одного файла — каждый файл дерева патча грузится отдельными
