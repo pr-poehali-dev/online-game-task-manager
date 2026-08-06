@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/icon';
-import { collectDroppedFiles } from './patchesUtils';
+import { collectDroppedFiles, collectFilePaths } from './patchesUtils';
 import type { TreeNode, DroppedFile, LauncherUploadsMap } from './patchesUtils';
 import { describeFolder } from './patchesFileDescriptions';
 import InfoHint from './PatchesInfoHint';
@@ -46,6 +46,7 @@ export default function TreeFolder({
   selectMode = false,
   selectedPaths,
   onToggleSelectPath,
+  onToggleSelectFolder,
   rootLabel,
   onRenameRoot,
   onRenameFolder,
@@ -89,6 +90,9 @@ export default function TreeFolder({
   selectMode?: boolean;
   selectedPaths?: Set<string>;
   onToggleSelectPath?: (path: string) => void;
+  // Чекбокс папки отмечает/снимает разом все файлы внутри неё (в т.ч. вложенные подпапки) — см.
+  // toggleSelectFolder в usePatches.ts.
+  onToggleSelectFolder?: (folderPaths: string[]) => void;
   // Пользовательская подпись корневой папки (см. patch_root_labels в backend/patches/index.py) —
   // переопределяет отображаемое имя ТОЛЬКО в дереве, реальный путь файла (node.path) не меняется.
   rootLabel?: string;
@@ -125,6 +129,23 @@ export default function TreeFolder({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [highlightTaskId, node]);
+
+  // Чекбокс папки в режиме выбора файлов — отмечает/снимает разом все файлы внутри (в т.ч.
+  // вложенные подпапки). folderPaths считаем только пока реально нужно (selectMode включён).
+  const folderPaths = useMemo(
+    () => (selectMode && !node.isFile ? collectFilePaths(node) : []),
+    [node, selectMode]
+  );
+  const folderSelectedCount = useMemo(
+    () => (folderPaths.length ? folderPaths.filter((p) => selectedPaths?.has(p)).length : 0),
+    [folderPaths, selectedPaths]
+  );
+  const folderAllSelected = folderPaths.length > 0 && folderSelectedCount === folderPaths.length;
+  const folderSomeSelected = folderSelectedCount > 0 && !folderAllSelected;
+  const folderCheckboxRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (folderCheckboxRef.current) folderCheckboxRef.current.indeterminate = folderSomeSelected;
+  }, [folderSomeSelected]);
 
   if (node.isFile && node.file) {
     return (
@@ -181,6 +202,16 @@ export default function TreeFolder({
         }`}
         style={{ paddingLeft: `${depth * 18 + 4}px` }}
       >
+        {canDelete && selectMode && onToggleSelectFolder && folderPaths.length > 0 && (
+          <input
+            ref={folderCheckboxRef}
+            type="checkbox"
+            checked={folderAllSelected}
+            onChange={() => onToggleSelectFolder(folderPaths)}
+            title="Выбрать все файлы в папке"
+            className="h-3.5 w-3.5 shrink-0 rounded border-border accent-primary cursor-pointer"
+          />
+        )}
         {(folderInfo || (isOwner && isRoot)) && (
           <InfoHint
             title={node.name}
@@ -372,6 +403,7 @@ export default function TreeFolder({
               selectMode={selectMode}
               selectedPaths={selectedPaths}
               onToggleSelectPath={onToggleSelectPath}
+              onToggleSelectFolder={onToggleSelectFolder}
               onRenameFolder={onRenameFolder}
               onDeleteFolder={onDeleteFolder}
               deletingFolder={deletingFolder}

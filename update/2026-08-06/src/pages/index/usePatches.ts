@@ -36,6 +36,7 @@ export function usePatches({
   const [uploadError, setUploadError] = useState('');
   const [zipping, setZipping] = useState(false);
   const [zippingAll, setZippingAll] = useState(false);
+  const [zippingSelected, setZippingSelected] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string>(initialTaskId || '');
   const [dragActive, setDragActive] = useState<string | null>(null);
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[] | null>(null);
@@ -212,6 +213,20 @@ export function usePatches({
     });
   }
 
+  // Отмечает/снимает разом все файлы внутри папки (в т.ч. вложенные подпапки) — folderPaths это
+  // результат collectFilePaths(node) для конкретного узла папки в дереве. Если внутри уже отмечены
+  // все файлы — снимает выбор со всех, иначе выделяет оставшиеся (обычное поведение "выбрать всё").
+  function toggleSelectFolder(folderPaths: string[]) {
+    if (folderPaths.length === 0) return;
+    setSelectedPaths((prev) => {
+      const allSelected = folderPaths.every((p) => prev.has(p));
+      const next = new Set(prev);
+      if (allSelected) folderPaths.forEach((p) => next.delete(p));
+      else folderPaths.forEach((p) => next.add(p));
+      return next;
+    });
+  }
+
   // Удаляет разом все отмеченные чекбоксами файлы — см. action='delete_bulk' в backend/patches.
   async function handleBulkDelete() {
     const paths = Array.from(selectedPaths);
@@ -331,6 +346,22 @@ export function usePatches({
     }
   }
 
+  // Скачивает архивом только отмеченные чекбоксами файлы (см. Patches → "Выбрать файлы") — см.
+  // action='zip_bulk' в backend/patches/index.py.
+  async function handleDownloadSelectedZip() {
+    const paths = Array.from(selectedPaths);
+    if (paths.length === 0) return;
+    setZippingSelected(true);
+    try {
+      const data = await postJson({ action: 'zip_bulk', server: active, paths });
+      if (data.url) window.open(data.url, '_blank');
+    } catch {
+      /* ignore */
+    } finally {
+      setZippingSelected(false);
+    }
+  }
+
   async function handleAddRoot() {
     const name = newRootName.trim();
     if (!name) return;
@@ -413,7 +444,7 @@ export function usePatches({
   return {
     servers, active, setActive,
     files, launcherUploads,
-    loading, uploadError, zipping, zippingAll,
+    loading, uploadError, zipping, zippingAll, zippingSelected,
     selectedTaskId, setSelectedTaskId,
     dragActive, setDragActive,
     uploadQueue, uploadIndex, fileProgress,
@@ -428,7 +459,7 @@ export function usePatches({
     tree, customRootNames, totalSize, activeSrv, tasksForServer, taskFilesCount,
     handleDropFiles, handleCancelUpload, handleDelete, handleToggleTask, handleLauncherUpload,
     handleDownloadTaskZip, handleDownloadAllZip, handleAddRoot, handleDeleteRoot,
-    selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
-    handleBulkDelete,
+    selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, toggleSelectFolder,
+    bulkDeleting, bulkDeleteError, handleBulkDelete, handleDownloadSelectedZip,
   };
 }

@@ -2390,6 +2390,40 @@ def handler(event: dict, context) -> dict:
         )
         return _ok({'url': _public_url(archive_key)})
 
+    if action == 'zip_bulk':
+        # Архив произвольного набора файлов, отмеченных чекбоксами в дереве (см. Patches → "Выбрать
+        # файлы") — тот же паттерн упаковки, что zip_all/task_zip, но список путей приходит явно от
+        # фронта (а не вычисляется по серверу/задаче целиком).
+        server = _safe_server(qs.get('server') or body.get('server'))
+        paths = body.get('paths')
+        if not server or not isinstance(paths, list) or not paths or len(paths) > 500:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        paths = [p for p in paths if isinstance(p, str) and p]
+        if not paths:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT path, file_key FROM {schema}.patch_files WHERE server = %s AND path = ANY(%s) ORDER BY path",
+            (server, paths)
+        )
+        rows = cur.fetchall()
+        cur.close(); conn.close()
+        if not rows:
+            return _bad('empty', 404)
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for path, file_key in rows:
+                obj = s3.get_object(Bucket=bucket, Key=file_key)
+                zf.writestr(path, obj['Body'].read())
+        buf.seek(0)
+        archive_key = f"patches/_archives/{server}-selected-{uuid.uuid4().hex}.zip"
+        s3.put_object(
+            Bucket=bucket, Key=archive_key, Body=buf.getvalue(), ContentType='application/zip',
+            ContentDisposition=_content_disposition(f'{server}-selected.zip'),
+        )
+        return _ok({'url': _public_url(archive_key)})
+
     if action == 'task_zip':
         server = _safe_server(qs.get('server') or body.get('server'))
         task_id = qs.get('taskId') or body.get('taskId')
