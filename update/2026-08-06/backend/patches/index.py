@@ -410,7 +410,7 @@ def _ok(payload):
 def _s3_client():
     return boto3.client(
         's3',
-        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
         config=_S3_CONFIG,
@@ -432,8 +432,8 @@ def _public_url(key: str) -> str:
         # https://forge.la2era.com/files/<key>
         return f"{base_url}/{key}"
 
-    # если ни одна переменная не задана — как запасной вариант (облако poehali.dev)
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+    # если ни одна переменная не задана — запасной вариант: локальный MinIO по адресу S3_ENDPOINT/S3_BUCKET
+    return f"http://{os.environ.get('S3_ENDPOINT', '127.0.0.1:9000')}/{os.environ.get('S3_BUCKET', 'files')}/{key}"
 
 
 def _content_disposition(name):
