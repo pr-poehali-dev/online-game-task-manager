@@ -107,9 +107,12 @@ export default function Patches({
         toggleSelectMode={p.toggleSelectMode}
         selectedPaths={p.selectedPaths}
         toggleSelectPath={p.toggleSelectPath}
+        toggleSelectFolder={p.toggleSelectFolder}
         bulkDeleting={p.bulkDeleting}
         bulkDeleteError={p.bulkDeleteError}
         handleBulkDelete={p.handleBulkDelete}
+        zippingSelected={p.zippingSelected}
+        handleDownloadSelectedZip={p.handleDownloadSelectedZip}
         rootLabels={p.rootLabels}
         renamingRootError={p.renamingRootError}
         handleRenameRoot={p.handleRenameRoot}

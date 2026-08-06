@@ -36,6 +36,18 @@ export interface TreeNode {
 // не меняются (см. rename_root в backend/patches/index.py). Ключ — реальное имя корня (node.path).
 export type RootLabelsMap = Record<string, string>;
 
+// Рекурсивно собирает пути всех файлов внутри узла дерева (для узла-файла — просто его путь,
+// для папки — обходит все вложенные подпапки). Используется чекбоксом папки в режиме выбора
+// файлов (см. Patches → "Выбрать файлы") — отмечает/снимает разом все файлы внутри.
+export function collectFilePaths(node: TreeNode): string[] {
+  if (node.isFile) return node.file ? [node.file.path] : [];
+  const out: string[] = [];
+  for (const child of node.children.values()) {
+    out.push(...collectFilePaths(child));
+  }
+  return out;
+}
+
 export function fmtSize(bytes: number) {
   if (!bytes && bytes !== 0) return '';
   if (bytes < 1024) return `${bytes} Б`;

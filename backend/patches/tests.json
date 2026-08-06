@@ -51,6 +51,15 @@
       "bodyMatcher": "partial"
     },
     {
+      "name": "POST zip_bulk without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "zip_bulk", "server": "c4x1", "paths": ["System/test.txt"]},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
       "name": "POST ddf_search without token unauthorized",
       "method": "POST",
       "path": "/",

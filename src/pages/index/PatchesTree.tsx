@@ -15,8 +15,8 @@ export default function PatchesTree({
   handleDeleteRoot, deletingRoot, setEditingDdfPath, isOwner, customFiles, customFolders,
   savingDescKey, saveDescription, deleteDescription, launcherUploads, handleLauncherUpload,
   launcherUploadingKey, descError, editingDdfPath, active,
-  selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, bulkDeleting, bulkDeleteError,
-  handleBulkDelete,
+  selectMode, toggleSelectMode, selectedPaths, toggleSelectPath, toggleSelectFolder,
+  bulkDeleting, bulkDeleteError, handleBulkDelete, zippingSelected, handleDownloadSelectedZip,
   rootLabels, renamingRootError, handleRenameRoot,
   renameFolderError, handleRenameFolder, deletingFolder, deleteFolderError, handleDeleteFolder,
 }: {
@@ -64,9 +64,12 @@ export default function PatchesTree({
   toggleSelectMode: () => void;
   selectedPaths: Set<string>;
   toggleSelectPath: (path: string) => void;
+  toggleSelectFolder: (folderPaths: string[]) => void;
   bulkDeleting: boolean;
   bulkDeleteError: string;
   handleBulkDelete: () => void;
+  zippingSelected: boolean;
+  handleDownloadSelectedZip: () => void;
   rootLabels: RootLabelsMap;
   renamingRootError: string;
   handleRenameRoot: (rootName: string, label: string) => void;
@@ -148,14 +151,25 @@ export default function PatchesTree({
                 </button>
               </div>
             ) : (
-              <button
-                onClick={() => setConfirmBulk(true)}
-                disabled={selectedPaths.size === 0 || bulkDeleting}
-                className="h-7 px-2.5 ml-auto rounded-md bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors disabled:opacity-30 flex items-center gap-1.5"
-              >
-                <Icon name="Trash2" size={13} />
-                Удалить выбранное
-              </button>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <button
+                  onClick={handleDownloadSelectedZip}
+                  disabled={selectedPaths.size === 0 || zippingSelected}
+                  title="Скачать выбранные файлы одним архивом"
+                  className="h-7 px-2.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-30 flex items-center gap-1.5"
+                >
+                  <Icon name={zippingSelected ? 'Loader2' : 'FolderDown'} size={13} className={zippingSelected ? 'animate-spin' : ''} />
+                  {zippingSelected ? 'Собираю...' : 'Скачать архивом'}
+                </button>
+                <button
+                  onClick={() => setConfirmBulk(true)}
+                  disabled={selectedPaths.size === 0 || bulkDeleting}
+                  className="h-7 px-2.5 rounded-md bg-destructive/10 text-destructive text-xs font-medium hover:bg-destructive/20 transition-colors disabled:opacity-30 flex items-center gap-1.5"
+                >
+                  <Icon name="Trash2" size={13} />
+                  Удалить выбранное
+                </button>
+              </div>
             )}
             {bulkDeleteError && <p className="text-xs text-destructive w-full">{bulkDeleteError}</p>}
           </div>
@@ -227,6 +241,7 @@ export default function PatchesTree({
                   selectMode={selectMode}
                   selectedPaths={selectedPaths}
                   onToggleSelectPath={toggleSelectPath}
+                  onToggleSelectFolder={toggleSelectFolder}
                   rootLabel={rootLabels[node.path]}
                   onRenameRoot={handleRenameRoot}
                   onRenameFolder={handleRenameFolder}
