@@ -266,7 +266,7 @@ export function usePatches({
       } else if (code === 'xml_verify_failed') {
         setLauncherError('Файл отправлен, но не удалось подтвердить запись в XML-реестре на хостинге — попробуйте залить ещё раз');
       } else {
-        setLauncherError('Не удалось залить файл на сервер лаунчера — проверьте подключение и попробуйте ещё раз');
+        setLauncherError(`Не удалось залить файл на сервер лаунчера — проверьте подключение и попробуйте ещё раз${code ? ` (код: ${code})` : ''}`);
       }
     } finally {
       setLauncherUploadingKey(null);
@@ -295,7 +295,7 @@ export function usePatches({
       } else if (code === 'ssh_not_configured') {
         setLauncherError('SSH-доступ к серверу лаунчера не настроен — заполните его в «Управление проектом → Служебные ключи»');
       } else {
-        setLauncherError('Не удалось сверить статусы с лаунчером — проверьте подключение и попробуйте ещё раз');
+        setLauncherError(`Не удалось сверить статусы с лаунчером — проверьте подключение и попробуйте ещё раз${code ? ` (код: ${code})` : ''}`);
       }
     } finally {
       setLauncherSyncing(false);
