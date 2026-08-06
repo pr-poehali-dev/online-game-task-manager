@@ -383,6 +383,18 @@ def _recompute_launcher_flag_and_notify(cur, schema, task_id, actor_id):
         _notify_launcher_required(cur, schema, task_id, title, actor_id)
 
 
+def _log_activity(cur, schema, user_id, action, entity_type=None, entity_id=None, entity_title=None, details=None):
+    '''Записывает значимое действие пользователя в общий журнал активности проекта (раздел
+    «Журнал» в кабинете, хранится 7 дней — см. activity_log в backend/admin/index.py). Используется
+    для всех операций с файлами патчей: загрузка, редактирование .dat-записей, удаление, заливка
+    в лаунчер и управление папками — чтобы руководитель видел, кто и когда что залил/поменял.'''
+    cur.execute(
+        f"INSERT INTO {schema}.activity_log (user_id, action, entity_type, entity_id, entity_title, details) "
+        f"VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, action, entity_type, str(entity_id) if entity_id is not None else None, entity_title, details)
+    )
+
+
 def _forbidden():
     return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
@@ -1277,6 +1289,8 @@ def handler(event: dict, context) -> dict:
             (len(new_raw), new_hash, server, path)
         )
         _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_ddf_edit', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}, запись №{idx}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': idx, 'size': len(new_raw)})
 
@@ -1385,6 +1399,8 @@ def handler(event: dict, context) -> dict:
             (len(new_raw), new_hash, server, path)
         )
         _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_ddf_edit', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}, запись №{idx}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'index': new_index, 'size': len(new_raw), 'moved': new_index != idx})
 
@@ -1586,6 +1602,8 @@ def handler(event: dict, context) -> dict:
             (len(new_raw), new_hash, server, path)
         )
         _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_ddf_create', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}, добавлено записей: {len(new_rows)}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'added': len(new_rows), 'size': len(new_raw)})
 
@@ -1638,6 +1656,8 @@ def handler(event: dict, context) -> dict:
             (len(new_raw), new_hash, server, path)
         )
         _recompute_launcher_flag_for_file(cur, schema, server, path, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_ddf_delete', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}, запись №{idx}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'size': len(new_raw)})
 
@@ -1652,6 +1672,8 @@ def handler(event: dict, context) -> dict:
             f"ON CONFLICT (server, name) DO NOTHING",
             (server, name, me['id'])
         )
+        _log_activity(cur, schema, me['id'], 'patch_folder_add', 'patch_folder', f"{server}:{name}", name,
+                      f"сервер {server}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'name': name})
 
@@ -1676,6 +1698,8 @@ def handler(event: dict, context) -> dict:
             f"DELETE FROM {schema}.patch_root_labels WHERE server = %s AND root_name = %s",
             (server, name)
         )
+        _log_activity(cur, schema, me['id'], 'patch_folder_delete', 'patch_folder', f"{server}:{name}", name,
+                      f"сервер {server}")
         cur.close(); conn.close()
         return _ok({'ok': True})
 
@@ -1713,6 +1737,8 @@ def handler(event: dict, context) -> dict:
                 f"updated_by = EXCLUDED.updated_by, updated_at = now()",
                 (server, root_name, label, me['id'])
             )
+        _log_activity(cur, schema, me['id'], 'patch_folder_rename', 'patch_folder', f"{server}:{root_name}",
+                      label or root_name, f"сервер {server}, было: {root_name}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'rootName': root_name, 'label': label or None})
 
@@ -1836,6 +1862,8 @@ def handler(event: dict, context) -> dict:
         # patch_launcher_uploads, бейдж должен автоматически вернуться (см. LAUNCHER_UPLOAD.md).
         for tid in task_ids:
             _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_file_upload', 'patch_file', f"{server}:{rel_path}", rel_path,
+                      f"сервер {server}, {len(raw)} байт")
         cur.close(); conn.close()
         return _ok({'ok': True, 'path': rel_path, 'size': len(raw)})
 
@@ -1892,6 +1920,8 @@ def handler(event: dict, context) -> dict:
         # в одну цель — бейдж снимается, иначе при необходимости появляется, с уведомлением тем, у
         # кого есть право launcher_notify, см. _recompute_launcher_flag_and_notify выше).
         _recompute_launcher_flag_and_notify(cur, schema, task_id_int, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_file_attach_task' if attached else 'patch_file_detach_task',
+                      'patch_file', f"{server}:{path}", path, f"сервер {server}, задача #{task_id_int}")
         cur.close(); conn.close()
         return _ok({'ok': True, 'taskIds': [str(t) for t in task_ids]})
 
@@ -1918,6 +1948,8 @@ def handler(event: dict, context) -> dict:
         # снятия бейджа «Требуется залить в лаунчер» — пересчитываем под факт.
         for tid in (row[1] or []):
             _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_file_delete', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}")
         cur.close(); conn.close()
         return _ok({'ok': True})
 
@@ -1947,6 +1979,8 @@ def handler(event: dict, context) -> dict:
         touched_task_ids = {tid for (_p, _k, tids) in rows for tid in (tids or [])}
         for tid in touched_task_ids:
             _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_files_delete_bulk', 'patch_file', server,
+                      f"сервер {server}", f"{len(rows)} файлов")
         cur.close(); conn.close()
         return _ok({'ok': True, 'deletedCount': len(rows), 'deletedPaths': [r[0] for r in rows]})
 
@@ -1965,6 +1999,8 @@ def handler(event: dict, context) -> dict:
             except Exception:
                 pass
         cur.execute(f"DELETE FROM {schema}.patch_files WHERE server = %s", (server,))
+        _log_activity(cur, schema, me['id'], 'patch_server_clear', 'patch_file', server,
+                      f"сервер {server}", f"{len(keys)} файлов")
         cur.close(); conn.close()
         return _ok({'ok': True, 'deletedCount': len(keys)})
 
@@ -2095,6 +2131,8 @@ def handler(event: dict, context) -> dict:
         file_task_row = cur.fetchone()
         for tid in (file_task_row[0] if file_task_row and file_task_row[0] else []):
             _recompute_launcher_flag_and_notify(cur, schema, tid, me['id'])
+        _log_activity(cur, schema, me['id'], 'patch_launcher_upload', 'patch_file', f"{server}:{path}", path,
+                      f"сервер {server}, цель: {'быстрое' if target == 'fast' else 'полное'} обновление")
         cur.close(); conn.close()
         return _ok({'ok': True, 'target': target, 'path': path, 'hash': file_hash})
 

@@ -206,6 +206,19 @@ export const ACTIVITY_META: Record<string, ActivityMeta> = {
   user_set_name: { label: 'Изменил имя участника', icon: 'Pencil', color: '35 85% 58%' },
   user_set_tg_muted: { label: 'Изменил переписку в Telegram', icon: 'BellOff', color: '35 85% 58%' },
   user_set_show_tg_contact: { label: 'Изменил кнопку Telegram в команде', icon: 'Send', color: '35 85% 58%' },
+  patch_file_upload: { label: 'Загрузил файл патча', icon: 'Upload', color: '210 80% 62%' },
+  patch_file_delete: { label: 'Удалил файл патча', icon: 'Trash2', color: '0 65% 60%' },
+  patch_files_delete_bulk: { label: 'Удалил несколько файлов патчей', icon: 'Trash2', color: '0 65% 60%' },
+  patch_server_clear: { label: 'Очистил дерево патчей сервера', icon: 'Trash2', color: '0 65% 60%' },
+  patch_ddf_edit: { label: 'Отредактировал запись в .dat-файле', icon: 'Pencil', color: '270 65% 65%' },
+  patch_ddf_create: { label: 'Добавил записи в .dat-файл', icon: 'Plus', color: '270 65% 65%' },
+  patch_ddf_delete: { label: 'Удалил запись из .dat-файла', icon: 'Trash2', color: '0 65% 60%' },
+  patch_launcher_upload: { label: 'Залил файл в лаунчер', icon: 'Rocket', color: '45 90% 55%' },
+  patch_folder_add: { label: 'Создал папку патчей', icon: 'FolderPlus', color: '152 55% 50%' },
+  patch_folder_delete: { label: 'Удалил папку патчей', icon: 'FolderMinus', color: '0 65% 60%' },
+  patch_folder_rename: { label: 'Переименовал папку патчей', icon: 'Pencil', color: '35 85% 58%' },
+  patch_file_attach_task: { label: 'Прикрепил файл к задаче', icon: 'Link', color: '210 80% 62%' },
+  patch_file_detach_task: { label: 'Открепил файл от задачи', icon: 'Unlink', color: '215 15% 55%' },
 };
 
 export function activityMeta(action: string): ActivityMeta {
