@@ -6,6 +6,7 @@ import Restart from './Restart';
 import Ideas from './Ideas';
 import Patchnotes from './Patchnotes';
 import Patches from './Patches';
+import Logs from './Logs';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
 import type { PermissionKey } from '@/lib/auth';
@@ -266,6 +267,11 @@ export default function IndexMain({
               initialServerId={patchesServerId}
               onFileTaskLinkChange={reloadTasksWithPatchFiles}
             />
+          </div>
+        )}
+        {visited.has('logs') && (
+          <div className={view === 'logs' ? '' : 'hidden'}>
+            <Logs />
           </div>
         )}
       </div>

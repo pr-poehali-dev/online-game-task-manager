@@ -81,6 +81,7 @@ export default function IndexTopbar({
     { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
     { k: 'patchnotes', label: 'Патчноуты', icon: 'ScrollText' },
     { k: 'patches', label: 'Патчи', icon: 'FolderTree' },
+    { k: 'logs', label: 'Логи', icon: 'FileText' },
     { k: 'archive', label: 'Архив', icon: 'Archive' },
   ] as const;
 
@@ -113,10 +114,11 @@ export default function IndexTopbar({
             {view === 'ideas' && 'Идеи'}
             {view === 'patchnotes' && 'Патчноуты'}
             {view === 'patches' && 'Патчи'}
+            {view === 'logs' && 'Логи'}
           </span>
         </div>
         <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
-          {NAV_ITEMS.map((t) => (
+          {NAV_ITEMS.filter((t) => t.k !== 'logs' || can('logs_view')).map((t) => (
             <button
               key={t.k}
               onClick={() => setView(t.k as typeof view)}
