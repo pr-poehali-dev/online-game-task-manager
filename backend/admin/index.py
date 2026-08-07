@@ -66,6 +66,7 @@ ALL_PERMISSIONS = [
     'launcher_notify',
     'private_notes_view_others',
     'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
+    'logs_view',
     'team_manage',
 ]
 
@@ -80,26 +81,31 @@ ALL_PERMISSIONS = [
 # файлов из дерева патчей) — точечная донастройка ПОВЕРХ patch_edit, но НЕ входят в
 # PRIVILEGED_PERMISSIONS: их может выдавать любой администратор с доступом к "Команде", как и
 # остальные обычные права (см. _effective_perms ниже за логикой предусловия patch_edit).
+# logs_view (доступ к разделу "Логи": ники, торговля и другие игровые действия ВСЕХ игроков)
+# добавлен по той же причине, что patch_edit — чувствительные данные, выдавать должен только
+# владелец проекта, а не любой администратор с доступом к "Команде".
 OWNER_USER_ID = 1
-PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit'}
+PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit', 'logs_view'}
 
 
 def _effective_perms(role, raw):
     '''Индивидуальные права (если заданы явно) имеют приоритет выше роли. Если право не задано —
-    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit и team_manage — по
-    требованию пользователя эти права по умолчанию не должны доставаться всем администраторам
-    автоматически (в отличие от остальных привилегий): patch_edit изначально есть только у
-    владельца проекта (OWNER_USER_ID, ему выдано явно через миграцию db_migrations), team_manage —
-    делегируется точечно каждому конкретному участнику. patch_launcher_upload/patch_delete_files
-    дополнительно требуют patch_edit=true как предусловие (см. ниже) — без него всегда False,
-    даже если сохранённое значение в БД было true (например patch_edit отозвали позже).'''
+    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit, logs_view и
+    team_manage — по требованию пользователя эти права по умолчанию не должны доставаться всем
+    администраторам автоматически (в отличие от остальных привилегий): patch_edit изначально есть
+    только у владельца проекта (OWNER_USER_ID, ему выдано явно через миграцию db_migrations),
+    logs_view — доступ к разделу "Логи" (персональные данные игроков — ники, торговля, действия),
+    выдаётся владельцу той же миграцией и дальше делегируется точечно, team_manage — делегируется
+    точечно каждому конкретному участнику. patch_launcher_upload/patch_delete_files дополнительно
+    требуют patch_edit=true как предусловие (см. ниже) — без него всегда False, даже если
+    сохранённое значение в БД было true (например patch_edit отозвали позже).'''
     result = {}
     for key in ALL_PERMISSIONS:
         if key in ('patch_launcher_upload', 'patch_delete_files'):
             continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
-        elif key in ('patch_edit', 'team_manage'):
+        elif key in ('patch_edit', 'logs_view', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')

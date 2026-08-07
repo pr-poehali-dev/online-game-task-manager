@@ -24,11 +24,12 @@ interface ServerFormState {
   launcherFastXml: string;
   launcherFullDir: string;
   launcherFullXml: string;
+  logsDir: string;
 }
 
 const EMPTY_FORM: ServerFormState = {
   label: '', color: COLOR_PALETTE[0], protocol: 'hf', description: '',
-  launcherFastDir: '', launcherFastXml: '', launcherFullDir: '', launcherFullXml: '',
+  launcherFastDir: '', launcherFastXml: '', launcherFullDir: '', launcherFullXml: '', logsDir: '',
 };
 
 function ServerForm({ initial, saving, error, onCancel, onSave }: {
@@ -154,6 +155,25 @@ function ServerForm({ initial, saving, error, onCancel, onSave }: {
         </div>
       </div>
 
+      {/* Директория логов — база на SFTP-хосте логов (см. раздел "Логи", хост/логин/пароль общие
+          на все сервера задаются один раз в "Служебные ключи" → SFTP-доступ к логам), путь свой
+          у каждого сервера. Внутри ожидаются подпапки cached/server/npc. */}
+      <div className="rounded-lg border border-border p-3 space-y-3">
+        <div className="flex items-center gap-1.5 text-xs font-medium">
+          <Icon name="FileText" size={13} />
+          Директория логов
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Путь на SFTP-хосте логов для этого сервера — внутри ожидаются подпапки cached/server/npc
+        </p>
+        <input
+          value={form.logsDir}
+          onChange={(e) => setForm((p) => ({ ...p, logsDir: e.target.value }))}
+          placeholder="/logs/hfx3old"
+          className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+        />
+      </div>
+
       {error && (
         <p className="text-xs text-destructive flex items-center gap-1.5">
           <Icon name="AlertCircle" size={13} />
@@ -197,6 +217,7 @@ export default function CabinetServers() {
       action: 'create_server', label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim(),
       launcherFastDir: form.launcherFastDir.trim(), launcherFastXml: form.launcherFastXml.trim(),
       launcherFullDir: form.launcherFullDir.trim(), launcherFullXml: form.launcherFullXml.trim(),
+      logsDir: form.logsDir.trim(),
     });
     setSaving(false);
     if (!res.ok) {
@@ -214,6 +235,7 @@ export default function CabinetServers() {
       action: 'update_server', id, label: form.label.trim(), color: form.color, protocol: form.protocol, description: form.description.trim(),
       launcherFastDir: form.launcherFastDir.trim(), launcherFastXml: form.launcherFastXml.trim(),
       launcherFullDir: form.launcherFullDir.trim(), launcherFullXml: form.launcherFullXml.trim(),
+      logsDir: form.logsDir.trim(),
     });
     setSaving(false);
     if (!res.ok) {
@@ -276,6 +298,7 @@ export default function CabinetServers() {
                     label: s.label, color: s.color, protocol: (s.protocol as ProtocolId) ?? 'hf', description: s.description ?? '',
                     launcherFastDir: s.launcherFastDir ?? '', launcherFastXml: s.launcherFastXml ?? '',
                     launcherFullDir: s.launcherFullDir ?? '', launcherFullXml: s.launcherFullXml ?? '',
+                    logsDir: s.logsDir ?? '',
                   }}
                   saving={saving}
                   error={error}

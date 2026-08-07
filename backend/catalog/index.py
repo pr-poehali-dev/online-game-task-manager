@@ -77,6 +77,7 @@ def _server_row(r):
         'protocol': r[4], 'description': r[5],
         'launcherFastDir': r[6], 'launcherFastXml': r[7],
         'launcherFullDir': r[8], 'launcherFullXml': r[9],
+        'logsDir': r[10],
     }
 
 
@@ -114,7 +115,7 @@ def handler(event: dict, context) -> dict:
         cats = [_category_row(r) for r in cur.fetchall()]
         cur.execute(
             f"SELECT id, label, color, sort_order, protocol, description, "
-            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir "
             f"FROM {schema}.servers ORDER BY sort_order ASC, id ASC"
         )
         srvs = [_server_row(r) for r in cur.fetchall()]
@@ -204,6 +205,7 @@ def handler(event: dict, context) -> dict:
         launcher_fast_xml = (body.get('launcherFastXml') or '').strip() or None
         launcher_full_dir = (body.get('launcherFullDir') or '').strip() or None
         launcher_full_xml = (body.get('launcherFullXml') or '').strip() or None
+        logs_dir = (body.get('logsDir') or '').strip() or None
         base_id = _slugify(label)
         new_id = base_id
         n = 1
@@ -218,12 +220,12 @@ def handler(event: dict, context) -> dict:
         cur.execute(
             f"INSERT INTO {schema}.servers "
             f"(id, label, color, sort_order, protocol, description, "
-            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING id, label, color, sort_order, protocol, description, "
-            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml",
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir",
             (new_id, label, color, sort_order, protocol, description,
-             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml)
+             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir)
         )
         srv = _server_row(cur.fetchone())
         cur.close(); conn.close()
@@ -245,14 +247,16 @@ def handler(event: dict, context) -> dict:
         launcher_fast_xml = (body.get('launcherFastXml') or '').strip() or None
         launcher_full_dir = (body.get('launcherFullDir') or '').strip() or None
         launcher_full_xml = (body.get('launcherFullXml') or '').strip() or None
+        logs_dir = (body.get('logsDir') or '').strip() or None
         cur.execute(
             f"UPDATE {schema}.servers SET label = %s, color = %s, protocol = %s, description = %s, "
-            f"launcher_fast_dir = %s, launcher_fast_xml = %s, launcher_full_dir = %s, launcher_full_xml = %s "
+            f"launcher_fast_dir = %s, launcher_fast_xml = %s, launcher_full_dir = %s, launcher_full_xml = %s, "
+            f"logs_dir = %s "
             f"WHERE id = %s "
             f"RETURNING id, label, color, sort_order, protocol, description, "
-            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml",
+            f"launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir",
             (label, color, protocol, description,
-             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, srv_id)
+             launcher_fast_dir, launcher_fast_xml, launcher_full_dir, launcher_full_xml, logs_dir, srv_id)
         )
         row = cur.fetchone()
         cur.close(); conn.close()

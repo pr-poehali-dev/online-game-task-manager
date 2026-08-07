@@ -20,6 +20,18 @@ const FIELDS: { key: string; label: string; placeholder: string; secret: boolean
   { key: 'LAUNCHER_SSH_PASSWORD', label: 'Пароль SSH', placeholder: '••••••••', secret: true },
 ];
 
+// Раздел "Логи" — один SFTP-хост обслуживает логи ВСЕХ серверов проекта (пути до конкретных
+// серверов задаются отдельно, в форме сервера — см. CabinetServers.tsx, поле "Директория логов").
+// См. backend/logs/RESEARCH_NOTES.md за контекстом задачи.
+const LOGS_FIELDS: { key: string; label: string; placeholder: string; secret: boolean }[] = [
+  { key: 'LOGS_SFTP_HOST', label: 'Хост VPS с логами', placeholder: 'logs.la2era.com', secret: false },
+  { key: 'LOGS_SFTP_PORT', label: 'Порт SFTP', placeholder: '22', secret: false },
+  { key: 'LOGS_SFTP_USER', label: 'Логин SFTP', placeholder: 'l2logs', secret: false },
+  { key: 'LOGS_SFTP_PASSWORD', label: 'Пароль SFTP', placeholder: '••••••••', secret: true },
+];
+
+const ALL_FIELDS = [...FIELDS, ...LOGS_FIELDS];
+
 interface FieldValue {
   value: string;
   isSet: boolean;
@@ -48,7 +60,7 @@ export default function CabinetServiceKeys() {
         for (const item of data.items || []) map[item.key] = { value: item.value, isSet: item.isSet };
         setValues(map);
         const initialForm: Record<string, string> = {};
-        for (const f of FIELDS) {
+        for (const f of ALL_FIELDS) {
           if (!f.secret) initialForm[f.key] = map[f.key]?.value || '';
         }
         setForm(initialForm);
@@ -66,7 +78,7 @@ export default function CabinetServiceKeys() {
     setSaving(true);
     setError('');
     setSaved(false);
-    const entries = FIELDS.map((f) => ({ key: f.key, value: form[f.key] ?? '', isSecret: f.secret }));
+    const entries = ALL_FIELDS.map((f) => ({ key: f.key, value: form[f.key] ?? '', isSecret: f.secret }));
     const res = await fetch(SERVICE_KEYS_URL, {
       method: 'POST',
       headers: authHeaders(),
@@ -118,6 +130,34 @@ export default function CabinetServiceKeys() {
           Используется при заливке файлов из дерева патчей на сервер игрового лаунчера
         </p>
         {FIELDS.map((f) => (
+          <div key={f.key}>
+            <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
+            <input
+              type={f.secret ? 'password' : 'text'}
+              value={form[f.key] ?? ''}
+              onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+              placeholder={f.secret && values[f.key]?.isSet ? values[f.key].value : f.placeholder}
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+            {f.secret && values[f.key]?.isSet && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <Icon name="CheckCircle2" size={11} className="text-primary" />
+                Текущее значение сохранено — оставьте поле пустым, чтобы не менять
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon name="FileText" size={13} />
+          SFTP-доступ к логам
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Один хост обслуживает логи всех серверов — путь до логов конкретного сервера задаётся в разделе «Серверы»
+        </p>
+        {LOGS_FIELDS.map((f) => (
           <div key={f.key}>
             <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
             <input

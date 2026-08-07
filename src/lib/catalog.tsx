@@ -34,12 +34,17 @@ export interface ServerItem {
   launcherFastXml: string | null;
   launcherFullDir: string | null;
   launcherFullXml: string | null;
+  // Базовая директория логов этого сервера на SFTP-хосте логов (см. раздел "Логи",
+  // backend/logs/index.py) — хост/логин/пароль общие на все сервера (service_keys:
+  // LOGS_SFTP_HOST/USER/PASSWORD/PORT), а путь до логов — свой у каждого сервера. Внутри
+  // ожидаются подпапки cached/server/npc.
+  logsDir: string | null;
 }
 
 const FALLBACK_CATEGORY: CategoryItem = { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%', sortOrder: 0 };
 const FALLBACK_SERVER: ServerItem = {
   id: 'default', label: 'Сервер', color: '215 15% 55%', sortOrder: 0, protocol: 'hf', description: null,
-  launcherFastDir: null, launcherFastXml: null, launcherFullDir: null, launcherFullXml: null,
+  launcherFastDir: null, launcherFastXml: null, launcherFullDir: null, launcherFullXml: null, logsDir: null,
 };
 
 interface CatalogContextValue {

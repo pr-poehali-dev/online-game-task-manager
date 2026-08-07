@@ -20,6 +20,7 @@ export type PermissionKey =
   | 'patch_edit'
   | 'patch_launcher_upload'
   | 'patch_delete_files'
+  | 'logs_view'
   | 'team_manage';
 
 export interface AuthUser {
