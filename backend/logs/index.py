@@ -157,10 +157,44 @@ FIELD_TARGET_ACC_ID = 5
 FIELD_LOC_X = 6
 FIELD_LOC_Y = 7
 FIELD_LOC_Z = 8
+FIELD_STR1 = 9
+FIELD_STR2 = 10
+FIELD_STR3 = 11
 FIELD_ACTOR_NAME = 22
 FIELD_ACTOR_LOGIN = 23
 FIELD_TARGET_NAME = 24
 FIELD_TARGET_LOGIN = 25
+
+# --- Str1/Str2/Str3 (поля [9]/[10]/[11]) — РАСШИФРОВАНО частично в этой сессии ------------------
+# В подавляющем большинстве строк ВСЕХ трёх логов (cached/server/npc) эти поля пусты — они
+# используются только у горстки action_id, где несут РАЗНЫЙ смысл по контексту конкретного
+# действия (не единая раскладка, как у item/skill/npc-полей выше). Расшифровано сверкой на
+# реальных данных сервера c4x1 (сотни просмотренных строк server-лога):
+#   803 EnterWorld        -> [9] = IP-адрес игрока при входе (уже использовалось раньше отдельно,
+#                            см. ниже в _parse_log_line, здесь просто для полноты списка).
+#   233 SetDoorOpenClose  -> [9] = имя/id игровой двери (например "hubris_8F_001", "Eva_010").
+#   839 SetPrivateStoreItems character -> [9] = список item_id через пробел, выставленных в личном
+#                            магазине персонажа (например "11033 5352") — резолвится в имена через
+#                            game_lookup построчным разбором каждого id.
+#   930 SetPrivateMsg     -> [9] = текст объявления личного магазина продажи (например "TMH SET",
+#                            "Дешевле уже не будет").
+#   941 SetBuyPrivateMsg  -> [9] = текст объявления личного магазина СКУПКИ (аналог 930 для buy).
+#   969 OpenFish item     -> [9] = какой-то id (не до конца расшифровано, оставляем как сырое
+#                            значение "заметки" без специальной подписи).
+#   940 RelatedItem       -> ИСКЛЮЧЕНИЕ: [9]/[10] здесь НЕ текстовая заметка, а имя/логин ДРУГОГО
+#                            персонажа (стандартные позиции [22]/[23] для этого action почему-то
+#                            пусты) — не подключаем в общую карту STR1_LABEL ниже, требует отдельной
+#                            обработки, если понадобится (не сделано — узкий кейс, редкий action).
+# Для action_id НЕ из списка ниже Str1/Str2/Str3 просто не резолвятся в отдельное поле "note" (но
+# по-прежнему доступны через debugRaw=1, если нужно проверить конкретную строку вручную).
+STR1_LABEL = {
+    '233': 'Дверь',
+    '839': 'Товары в магазине',
+    '930': 'Сообщение магазина',
+    '941': 'Сообщение скупки',
+}
+# action_id, для которых Str1 — список item_id через пробел (резолвится в имена).
+STR1_ITEM_LIST_ACTIONS = ('839',)
 
 # Раскладка полей для СОБЫТИЙ С ПРЕДМЕТОМ (item_id/count/dbid) — сверена дважды на реальных HTML-
 # экспортах desktop-парсера пользователя (персонажи Воробушек и Saffeida, см. RESEARCH_NOTES.md) и
@@ -297,6 +331,24 @@ def _parse_log_line(fields, refs):
                 npc_target_name = _resolve_name(refs['npc'], npc_target_id)
                 target = f'Npc: {npc_target_name}' if npc_target_name else f'Npc #{npc_target_id}'
 
+    # Str1 (см. STR1_LABEL выше) — текстовая "заметка" события, смысл зависит от action_id: имя
+    # двери, объявление личного магазина, список товаров и т.п. Показываем ТОЛЬКО для известных
+    # action_id из STR1_LABEL (для остальных — не показываем, чтобы не путать пользователя сырыми
+    # данными без подписи; сырые Str1/2/3 всё равно доступны через debugRaw=1 при отладке).
+    note_label = None
+    note_value = None
+    str1_raw = (fields[FIELD_STR1] if FIELD_STR1 < len(fields) else '').strip()
+    if str1_raw and action_id in STR1_LABEL:
+        note_label = STR1_LABEL[action_id]
+        if action_id in STR1_ITEM_LIST_ACTIONS:
+            names = []
+            for raw_item_id in str1_raw.split():
+                item_name = _resolve_name(refs['item'], raw_item_id)
+                names.append(item_name if item_name else f'#{raw_item_id}')
+            note_value = ', '.join(names)
+        else:
+            note_value = str1_raw
+
     return {
         'time': (fields[FIELD_TIME] or '').strip(),
         'actionId': action_id or None,
@@ -319,6 +371,8 @@ def _parse_log_line(fields, refs):
         'itemEnchant': item_enchant,
         'skillId': skill_id,
         'skillName': skill_name,
+        'noteLabel': note_label,
+        'noteValue': note_value,
         # Сырые поля — на случай, если известной раскладки для этого action_id ещё нет, фронт
         # может показать их как запасной вариант (см. RESEARCH_NOTES.md).
         'raw': fields,

@@ -52,6 +52,8 @@ interface LogEvent {
   itemEnchant: string | null;
   skillId: string | null;
   skillName: string | null;
+  noteLabel: string | null;
+  noteValue: string | null;
 }
 
 function fmtSize(bytes: number): string {
@@ -332,18 +334,19 @@ export default function Logs() {
               <TableHead>Кол-во</TableHead>
               <TableHead>DB item id</TableHead>
               <TableHead>Координаты</TableHead>
+              <TableHead>Заметка</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {eventsLoading ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-16">
+                <TableCell colSpan={9} className="text-center py-16">
                   <Icon name="Loader2" size={22} className="animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
             ) : eventsError ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-16">
+                <TableCell colSpan={9} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-destructive">
                     <Icon name="AlertCircle" size={24} />
                     <div className="text-sm">{eventsError}</div>
@@ -352,7 +355,7 @@ export default function Logs() {
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="text-center py-16">
+                <TableCell colSpan={9} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Icon name="Inbox" size={24} className="opacity-50" />
                     <div className="text-sm">Событий не найдено</div>
@@ -425,6 +428,14 @@ export default function Logs() {
                   <TableCell className="font-mono text-xs text-muted-foreground">{e.itemDbId}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
                     {e.locX && e.locY && e.locZ && `${e.locX}, ${e.locY}, ${e.locZ}`}
+                  </TableCell>
+                  <TableCell className="text-sm text-muted-foreground max-w-xs">
+                    {e.noteValue && (
+                      <div>
+                        <span className="text-xs opacity-70">{e.noteLabel}: </span>
+                        {e.noteValue}
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))
