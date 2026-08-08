@@ -243,6 +243,12 @@ ACTION_SKILL_FIELD = {
     '403': 16,   # CastSkill
     '1112': 16,  # PCKilledNPC
 }
+# Уровень скилла — только для 401 LearnSkill подтверждён отдельно (level=[17], сверено на
+# скриншоте пользователя: "1238,2" в сырых данных = "Freezing Skin" уровень 2). Для 403/1112 не
+# проверялось отдельно — оставляем незаполненным, чтобы не показывать непроверенное значение.
+ACTION_SKILL_LEVEL_FIELD = {
+    '401': 17,
+}
 
 # --- Цель-NPC (не игрок) — расшифровано в этой сессии --------------------------------------
 # Поля [24]/[25] (target_name/login) ПУСТЫ, когда целью действия является NPC, а не другой
@@ -301,10 +307,14 @@ def _parse_log_line(fields, refs):
 
     skill_id = None
     skill_name = None
+    skill_level = None
     skill_field_idx = ACTION_SKILL_FIELD.get(action_id)
     if skill_field_idx is not None and skill_field_idx < len(fields):
         skill_id = (fields[skill_field_idx] or '').strip() or None
         skill_name = _resolve_name(refs['skill'], skill_id) if skill_id else None
+        level_idx = ACTION_SKILL_LEVEL_FIELD.get(action_id)
+        if level_idx is not None and level_idx < len(fields):
+            skill_level = (fields[level_idx] or '').strip() or None
 
     actor = (fields[FIELD_ACTOR_NAME] if FIELD_ACTOR_NAME < len(fields) else '').strip() or None
     actor_login = (fields[FIELD_ACTOR_LOGIN] if FIELD_ACTOR_LOGIN < len(fields) else '').strip() or None
@@ -371,8 +381,17 @@ def _parse_log_line(fields, refs):
         'itemEnchant': item_enchant,
         'skillId': skill_id,
         'skillName': skill_name,
+        'skillLevel': skill_level,
         'noteLabel': note_label,
         'noteValue': note_value,
+        # Полный набор "сырых" числовых/текстовых полей строки в нотации desktop-парсера
+        # пользователя (Num1-10 = [12..21], Str1-3 = [9..11]) — ВСЕГДА отдаётся (не только под
+        # debugRaw=1, в отличие от 'raw' ниже), т.к. пользователь прямо попросил не терять эти
+        # поля даже там, где точный смысл конкретного action_id ещё не расшифрован. Показывается
+        # во фронтенде как раскрываемая деталь строки, а не отдельными колонками (иначе таблица
+        # станет нечитаемой — 10 Num + 3 Str колонок поверх уже имеющихся).
+        'nums': [(fields[12 + i] or '').strip() or None for i in range(10)],
+        'strs': [(fields[9 + i] or '').strip() or None for i in range(3)],
         # Сырые поля — на случай, если известной раскладки для этого action_id ещё нет, фронт
         # может показать их как запасной вариант (см. RESEARCH_NOTES.md).
         'raw': fields,

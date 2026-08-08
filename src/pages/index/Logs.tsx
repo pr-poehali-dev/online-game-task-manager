@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import {
@@ -52,8 +52,11 @@ interface LogEvent {
   itemEnchant: string | null;
   skillId: string | null;
   skillName: string | null;
+  skillLevel: string | null;
   noteLabel: string | null;
   noteValue: string | null;
+  nums: (string | null)[];
+  strs: (string | null)[];
 }
 
 function fmtSize(bytes: number): string {
@@ -106,6 +109,7 @@ export default function Logs() {
   const [eventsError, setEventsError] = useState('');
   const [totalPages, setTotalPages] = useState(1);
   const [totalMatched, setTotalMatched] = useState(0);
+  const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
   const loadFiles = useCallback(async (server: ServerId, type: LogType) => {
     if (!server) return;
@@ -335,18 +339,19 @@ export default function Logs() {
               <TableHead>DB item id</TableHead>
               <TableHead>Координаты</TableHead>
               <TableHead>Заметка</TableHead>
+              <TableHead className="w-8" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {eventsLoading ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-16">
+                <TableCell colSpan={10} className="text-center py-16">
                   <Icon name="Loader2" size={22} className="animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
             ) : eventsError ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-16">
+                <TableCell colSpan={10} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-destructive">
                     <Icon name="AlertCircle" size={24} />
                     <div className="text-sm">{eventsError}</div>
@@ -355,7 +360,7 @@ export default function Logs() {
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center py-16">
+                <TableCell colSpan={10} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Icon name="Inbox" size={24} className="opacity-50" />
                     <div className="text-sm">Событий не найдено</div>
@@ -364,7 +369,8 @@ export default function Logs() {
               </TableRow>
             ) : (
               events.map((e, i) => (
-                <TableRow key={i}>
+                <Fragment key={i}>
+                <TableRow>
                   <TableCell className="font-mono text-xs whitespace-nowrap">{e.time}</TableCell>
                   <TableCell className="text-sm">
                     {e.actionName || <span className="text-muted-foreground">#{e.actionId}</span>}
@@ -414,6 +420,7 @@ export default function Logs() {
                     {e.skillName && (
                       <div>
                         {e.skillName}
+                        {e.skillLevel && ` Lv.${e.skillLevel}`}
                         {e.skillId && <span className="text-xs opacity-70"> ({e.skillId})</span>}
                       </div>
                     )}
@@ -437,7 +444,37 @@ export default function Logs() {
                       </div>
                     )}
                   </TableCell>
+                  <TableCell>
+                    <button
+                      onClick={() => setExpandedRow(expandedRow === i ? null : i)}
+                      title="Показать все поля (Num1-10, Str1-3)"
+                      className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                    >
+                      <Icon name={expandedRow === i ? 'ChevronUp' : 'ChevronDown'} size={14} />
+                    </button>
+                  </TableCell>
                 </TableRow>
+                {expandedRow === i && (
+                  <TableRow className="bg-secondary/30 hover:bg-secondary/30">
+                    <TableCell colSpan={10} className="py-3">
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-x-4 gap-y-1.5 text-xs">
+                        {e.nums.map((v, idx) => (
+                          <div key={idx} className="flex gap-1.5">
+                            <span className="text-muted-foreground shrink-0">Num{idx + 1}:</span>
+                            <span className="font-mono">{v ?? '—'}</span>
+                          </div>
+                        ))}
+                        {e.strs.map((v, idx) => (
+                          <div key={idx} className="flex gap-1.5">
+                            <span className="text-muted-foreground shrink-0">Str{idx + 1}:</span>
+                            <span className="font-mono break-all">{v ?? '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                </Fragment>
               ))
             )}
           </TableBody>
