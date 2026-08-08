@@ -40,6 +40,8 @@ interface LogEvent {
   targetLogin: string | null;
   itemId: string | null;
   itemName: string | null;
+  itemCount: string | null;
+  itemDbId: string | null;
   skillId: string | null;
   skillName: string | null;
 }
@@ -294,19 +296,21 @@ export default function Logs() {
               <TableHead>Действие</TableHead>
               <TableHead>Игрок</TableHead>
               <TableHead>Цель</TableHead>
-              <TableHead>Детали</TableHead>
+              <TableHead>Предмет</TableHead>
+              <TableHead>Кол-во</TableHead>
+              <TableHead>DB item id</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {eventsLoading ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-16">
+                <TableCell colSpan={7} className="text-center py-16">
                   <Icon name="Loader2" size={22} className="animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
             ) : eventsError ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-16">
+                <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-destructive">
                     <Icon name="AlertCircle" size={24} />
                     <div className="text-sm">{eventsError}</div>
@@ -315,7 +319,7 @@ export default function Logs() {
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center py-16">
+                <TableCell colSpan={7} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Icon name="Inbox" size={24} className="opacity-50" />
                     <div className="text-sm">Событий не найдено</div>
@@ -338,9 +342,17 @@ export default function Logs() {
                     {e.targetLogin && <div className="text-xs text-muted-foreground">{e.targetLogin}</div>}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {e.itemName && <div>{e.itemName}</div>}
+                    {(e.itemName || e.itemId) && <div>{e.itemName || `#${e.itemId}`}</div>}
                     {e.skillName && <div>{e.skillName}</div>}
                   </TableCell>
+                  <TableCell className="text-sm">
+                    {e.itemCount && (
+                      <span className={Number(e.itemCount) < 0 ? 'text-destructive' : 'text-emerald-500'}>
+                        {Number(e.itemCount) > 0 ? '+' : ''}{e.itemCount}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground">{e.itemDbId}</TableCell>
                 </TableRow>
               ))
             )}

@@ -8,6 +8,7 @@ import paramiko
 import psycopg2
 
 import game_lookup
+from action_ids_data import ACTION_IDS
 
 
 # Три фиксированных вида логов (папки на SFTP-хосте) — см. RESEARCH_NOTES.md за полным контекстом
@@ -119,37 +120,17 @@ def _logs_sftp_client(cur, schema):
     return client
 
 
-# --- Справочники id → имя (см. RESEARCH_NOTES.md) --------------------------------------------
+# --- Справочник action_id → имя (см. RESEARCH_NOTES.md) ---------------------------------------
 # action_id есть ТОЛЬКО в этом статичном снимке (не игровой ресурс, в дереве патчей его нет).
-# item/npc/skill — тот же статичный снимок как fallback для MVP (актуальные версии через DDF из
-# дерева патчей — отдельная задача, backend-функции изолированы друг от друга, см.
-# RESEARCH_NOTES.md "Важная находка этапа 3" — не делаем в этом этапе).
-_REFERENCE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reference')
-_reference_cache = {}
-
-
-def _load_reference(name, has_level=False):
-    '''Читает backend/logs/reference/{name}.tsv (id\tName или id\tlevel\tName) один раз за
-    "тёплый" процесс функции (кэш в памяти между вызовами одного и того же инстанса).'''
-    if name in _reference_cache:
-        return _reference_cache[name]
-    path = os.path.join(_REFERENCE_DIR, f'{name}.tsv')
-    result = {}
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = line.rstrip('\n')
-                if not line:
-                    continue
-                parts = line.split('\t')
-                if has_level and len(parts) >= 3:
-                    result[parts[0]] = parts[2]
-                elif not has_level and len(parts) >= 2:
-                    result[parts[0]] = parts[1]
-    except FileNotFoundError:
-        pass
-    _reference_cache[name] = result
-    return result
+# ВАЖНО: словарь встроен прямо в код (action_ids_data.py), а НЕ читается из отдельного .tsv-файла
+# в подпапке reference/ — платформа деплоя cloud-функций упаковывает ТОЛЬКО .py файлы папки
+# функции, произвольные подкаталоги с данными физически не попадают в облако (проверено на
+# практике: reference/ существовала в проекте и в git, но в облачном рантайме отсутствовала —
+# см. RESEARCH_NOTES.md). item/npc/skill резолвятся отдельно из дерева патчей, см. game_lookup.py.
+def _load_reference(name):
+    if name == 'action_ids':
+        return ACTION_IDS
+    return {}
 
 
 def _resolve_name(ref, raw_id):
@@ -173,14 +154,43 @@ FIELD_ACTOR_LOGIN = 23
 FIELD_TARGET_NAME = 24
 FIELD_TARGET_LOGIN = 25
 
-# action_id → (индекс поля item_id, индекс поля skill_id) — только для action_id, которые уже
-# расшифрованы вручную сверкой со справочниками (см. RESEARCH_NOTES.md). Остальные action_id
-# просто не найдут item/skill в этой карте — это ожидаемо, не баг.
-ACTION_ITEM_FIELD = {
-    '901': 19,  # BuyItem
-    '902': 19,  # SellItem
-}
+# Раскладка полей для СОБЫТИЙ С ПРЕДМЕТОМ (item_id/count/dbid) — сверена дважды на реальных HTML-
+# экспортах desktop-парсера пользователя (персонажи Воробушек и Saffeida, см. RESEARCH_NOTES.md) и
+# оказалась ОДИНАКОВОЙ для всех перечисленных ниже action_id, а не специфичной под каждый из них:
+#   [19] = item_id / itemtype — общий id ТИПА предмета (резолвится в имя через itemname-e.dat из
+#          дерева патчей сервера, см. game_lookup.py) — одинаковый у всех экземпляров этого
+#          предмета у любых игроков.
+#   [20] = count/level — дельта количества (может быть отрицательной при списании).
+#   [26] = dbid — уникальный id КОНКРЕТНОГО ЭКЗЕМПЛЯРА предмета в БД сервера (свой у каждого
+#          стака/игрока), НЕ резолвится в имя — это просто идентификатор записи, не игровой
+#          справочник (уточнение пользователя: "у предметов есть уникальный dbid... и общий
+#          item_id (он же itemtype, берётся из itemname-e)").
+ITEM_EVENT_ACTIONS = (
+    '111',  # GiveItemToPet
+    '113',  # PetUseItem (dbid есть, count/item_id тоже — is item id пета)
+    '901',  # BuyItem
+    '902',  # SellItem
+    '903',  # RemovFromInven (снятие с продажи в личном магазине/со склада)
+    '904',  # RetrieveFromInven
+    '906',  # GetItem
+    '907',  # DeleteItem
+    '909',  # TradeGive
+    '910',  # TradeGet
+    '927',  # AddedToWarehouse
+    '929',  # RetrieveFromWarehouse
+)
+ACTION_ITEM_FIELD = {a: 19 for a in ITEM_EVENT_ACTIONS}
+ACTION_ITEM_COUNT_FIELD = {a: 20 for a in ITEM_EVENT_ACTIONS}
+ACTION_ITEM_DBID_FIELD = {a: 26 for a in ITEM_EVENT_ACTIONS}
+
+# 928 (FeeForWarehouse) — тоже item-событие (обычно списание Adena за хранение), но БЕЗ dbid
+# (поле [26] пусто в реальных данных — комиссия не привязана к конкретному экземпляру предмета).
+ACTION_ITEM_FIELD['928'] = 19
+ACTION_ITEM_COUNT_FIELD['928'] = 20
+
 ACTION_SKILL_FIELD = {
+    '401': 16,   # LearnSkill (skill_id=[16], level=[17] — level указывается ОТДЕЛЬНО от
+                 # CastSkill/PCKilledNPC ниже, т.к. позиция level разная)
     '403': 16,   # CastSkill
     '1112': 16,  # PCKilledNPC
 }
@@ -195,10 +205,18 @@ def _parse_log_line(fields, refs):
 
     item_id = None
     item_name = None
+    item_count = None
+    item_dbid = None
     item_field_idx = ACTION_ITEM_FIELD.get(action_id)
     if item_field_idx is not None and item_field_idx < len(fields):
         item_id = (fields[item_field_idx] or '').strip() or None
         item_name = _resolve_name(refs['item'], item_id) if item_id else None
+        count_idx = ACTION_ITEM_COUNT_FIELD.get(action_id)
+        if count_idx is not None and count_idx < len(fields):
+            item_count = (fields[count_idx] or '').strip() or None
+        dbid_idx = ACTION_ITEM_DBID_FIELD.get(action_id)
+        if dbid_idx is not None and dbid_idx < len(fields):
+            item_dbid = (fields[dbid_idx] or '').strip() or None
 
     skill_id = None
     skill_name = None
@@ -222,6 +240,8 @@ def _parse_log_line(fields, refs):
         'targetLogin': target_login,
         'itemId': item_id,
         'itemName': item_name,
+        'itemCount': item_count,
+        'itemDbId': item_dbid,
         'skillId': skill_id,
         'skillName': skill_name,
         # Сырые поля — на случай, если известной раскладки для этого action_id ещё нет, фронт
@@ -383,6 +403,12 @@ def handler(event: dict, context) -> dict:
                     cur.close(); conn.close()
                     return _bad('file_too_large')
                 with sftp.open(remote_path, 'rb') as f:
+                    # По умолчанию SFTPFile.read() без prefetch() тянет файл СИНХРОННЫМИ запросами
+                    # мелкими кусками одна за другой — на реальных файлах в несколько МБ (обычные
+                    # для этих логов) это упирается в таймаут облачной функции (5 сек) просто на
+                    # сетевых round-trip'ах. prefetch() отправляет все запросы на чтение сразу
+                    # (конвейером), после чего read() их просто дожидается — на порядок быстрее.
+                    f.prefetch(st.st_size)
                     raw = f.read()
             finally:
                 sftp.close()
@@ -422,8 +448,12 @@ def handler(event: dict, context) -> dict:
         total_matched = len(matched)
         start = (page - 1) * page_size
         page_items = matched[start:start + page_size]
-        for it in page_items:
-            del it['raw']
+        # debugRaw=1 — техническая возможность для будущей отладки новых action_id (см.
+        # RESEARCH_NOTES.md), НЕ используется фронтендом в обычной работе.
+        debug_raw = (qs.get('debugRaw') or body.get('debugRaw')) == '1'
+        if not debug_raw:
+            for it in page_items:
+                del it['raw']
 
         return _ok({
             'events': page_items,
