@@ -91,7 +91,7 @@ export default function Logs() {
     if (!active && servers.length > 0) setActive(servers[0].id);
   }, [servers, active]);
 
-  const [logType, setLogType] = useState<LogType>('server');
+  const [logType, setLogType] = useState<LogType>('cached');
   const [coverage, setCoverage] = useState<Coverage | null>(null);
   const [coverageLoading, setCoverageLoading] = useState(false);
   const [coverageError, setCoverageError] = useState('');
