@@ -346,10 +346,22 @@ export default function Logs() {
                     {(e.itemName || e.itemId) && (
                       <div>
                         {e.itemEnchant && <span className="text-primary">+{e.itemEnchant} </span>}
-                        {e.itemName || `#${e.itemId}`}
+                        {e.itemName ? (
+                          <>
+                            {e.itemName}
+                            <span className="text-xs opacity-70"> ({e.itemId})</span>
+                          </>
+                        ) : (
+                          `#${e.itemId}`
+                        )}
                       </div>
                     )}
-                    {e.skillName && <div>{e.skillName}</div>}
+                    {e.skillName && (
+                      <div>
+                        {e.skillName}
+                        {e.skillId && <span className="text-xs opacity-70"> ({e.skillId})</span>}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">
                     {e.itemCount && (
