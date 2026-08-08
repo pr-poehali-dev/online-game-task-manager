@@ -1,0 +1,34 @@
+# systemd-сервис индексатора логов — ОДНОРАЗОВЫЙ запуск (Type=oneshot), не постоянный процесс.
+# Запускается регулярно таймером era-logs-indexer.timer (см. рядом), не через `enable --now`.
+#
+# Установка:
+#   sudo cp era-logs-indexer.service /etc/systemd/system/
+#   sudo cp era-logs-indexer.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now era-logs-indexer.timer
+#
+# Проверить, что таймер работает:
+#   systemctl list-timers era-logs-indexer.timer
+# Посмотреть логи последнего запуска:
+#   journalctl -u era-logs-indexer.service -n 50
+
+[Unit]
+Description=ERA Task Manager — индексатор логов (разбор файлов в БД для быстрого поиска)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+
+# Папка, куда вы разложили indexer.py и остальные файлы этой папки logs-indexer/
+WorkingDirectory=/var/www/era-logs-indexer
+
+# Секреты и настройки — см. .env.example в этой же папке
+EnvironmentFile=/var/www/era-logs-indexer/.env
+
+ExecStart=/var/www/era-logs-indexer/venv/bin/python3 /var/www/era-logs-indexer/indexer.py
+
+# Разбор большого объёма файлов при первом запуске может занять несколько минут — таймаут
+# systemd по умолчанию (90с) для этого мал, увеличиваем с запасом.
+TimeoutStartSec=1800

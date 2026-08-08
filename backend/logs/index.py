@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 
 import paramiko
 import psycopg2
+import psycopg2.extras
 
 import game_lookup
 from action_ids_data import ACTION_IDS
@@ -105,6 +106,70 @@ def _logs_dir_for_server(cur, schema, server):
     cur.execute(f"SELECT logs_dir FROM {schema}.servers WHERE id = %s", (server,))
     row = cur.fetchone()
     return row[0] if row and row[0] else None
+
+
+# --- Режим "База логов" (self-hosted, см. logs-indexer/README.md) -----------------------------
+# Альтернатива SFTP-режиму ниже: если в service_keys заполнен LOGS_DB_URL, это означает, что
+# на хостинге логов запущен отдельный скрипт-индексатор (logs-indexer/indexer.py), который САМ
+# разбирает файлы логов и складывает результат в отдельную PostgreSQL-базу (таблица logs_events,
+# см. logs-indexer/schema.sql). В этом режиме backend читает уже готовые разобранные события
+# напрямую SQL-запросом — быстро для ЛЮБОГО диапазона дат, не только последних файлов. Если
+# LOGS_DB_URL не заполнен — используется ИСХОДНЫЙ SFTP-режим (см. ниже), без изменений: он же
+# остаётся единственным рабочим способом в облачной dev-песочнице poehali.dev, где отдельную
+# БД логов развернуть негде. Оба режима сосуществуют в одном файле — action=='check_coverage'/
+# 'get_log' в начале проверяют, настроен ли LOGS_DB_URL, и идут по одной из двух веток.
+def _logs_db_conn(cur, schema):
+    '''Возвращает psycopg2-соединение к отдельной базе логов, либо None, если LOGS_DB_URL не
+    заполнен в service_keys (self-hosted ещё не настроил индексатор, либо это dev-песочница).'''
+    db_url = _service_key(cur, schema, 'LOGS_DB_URL')
+    if not db_url:
+        return None
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = True
+    return conn
+
+
+# Формат поля 'time' в ответе API — тот же текстовый вид, что раньше отдавал SFTP-режим
+# (MM/DD/YYYY HH:MM:SS.mmm, см. LOG_TIME_FORMAT ниже) — чтобы фронтенд (Logs.tsx, просто
+# показывает event.time как есть) не пришлось менять при переключении режима чтения.
+_DB_TIME_OUTPUT_FORMAT = '%m/%d/%Y %H:%M:%S.%f'
+
+
+def _db_row_to_event(row_dict):
+    '''row_dict — строка из logs_events (psycopg2 RealDictCursor). Приводит к ТОЙ ЖЕ форме,
+    что _parse_log_line отдаёт для SFTP-режима — фронтенд не должен видеть разницы в формате
+    ответа между двумя режимами чтения.'''
+    event_time = row_dict['event_time']
+    return {
+        'time': event_time.strftime(_DB_TIME_OUTPUT_FORMAT)[:-3] if event_time else '',
+        'actionId': row_dict['action_id'],
+        'actionName': row_dict['action_name'],
+        'actor': row_dict['actor'],
+        'actorLogin': row_dict['actor_login'],
+        'actorId': row_dict['actor_id'],
+        'actorAccId': row_dict['actor_acc_id'],
+        'target': row_dict['target'],
+        'targetLogin': row_dict['target_login'],
+        'targetId': row_dict['target_id'],
+        'targetAccId': row_dict['target_acc_id'],
+        'locX': row_dict['loc_x'],
+        'locY': row_dict['loc_y'],
+        'locZ': row_dict['loc_z'],
+        'itemId': row_dict['item_id'],
+        'itemName': row_dict['item_name'],
+        'itemCount': row_dict['item_count'],
+        'itemDbId': row_dict['item_dbid'],
+        'itemEnchant': row_dict['item_enchant'],
+        'itemStockAfter': row_dict['item_stock_after'],
+        'itemStockBefore': row_dict['item_stock_before'],
+        'skillId': row_dict['skill_id'],
+        'skillName': row_dict['skill_name'],
+        'skillLevel': row_dict['skill_level'],
+        'noteLabel': row_dict['note_label'],
+        'noteValue': row_dict['note_value'],
+        'nums': list(row_dict['nums']) if row_dict['nums'] is not None else [None] * 10,
+        'strs': list(row_dict['strs']) if row_dict['strs'] is not None else [None] * 3,
+    }
 
 
 def _logs_sftp_client(cur, schema):
@@ -494,12 +559,18 @@ def _matches_filters(event, player, item, action, time_from, time_to):
 
 
 def handler(event: dict, context) -> dict:
-    '''Раздел "Логи" — просмотр игровых логов (cached/server/npc) с внешнего VPS по SFTP.
-    Действия: check_coverage (диапазон дат/времени доступных на VPS логов по серверу+типу),
-    get_log (чтение и парсинг логов за период timeFrom/timeTo с фильтрами и пагинацией — файлы
-    подбираются автоматически, ручной выбор конкретного файла убран по просьбе пользователя).
-    Доступ — только с правом logs_view (отдельное от patch_edit, см. db_migrations V0075). См.
-    backend/logs/RESEARCH_NOTES.md за полным контекстом.'''
+    '''Раздел "Логи" — просмотр игровых логов (cached/server/npc). ДВА режима чтения (автоматически
+    определяется по наличию LOGS_SFTP_HOST в service_keys — см. logs-indexer/README.md):
+    1) Режим "База логов" — если настроен LOGS_DB_URL, читает УЖЕ РАЗОБРАННЫЕ события из отдельной
+       БД логов (её наполняет self-hosted-скрипт logs-indexer/indexer.py) — быстро для ЛЮБОГО
+       диапазона дат (неделя, месяц), т.к. работает через SQL-индексы.
+    2) SFTP-режим (фолбэк, единственный рабочий способ в облачной dev-песочнице poehali.dev) —
+       читает и разбирает файлы логов "на лету" с VPS по SFTP, ограничен разумным диапазоном дат
+       (открытые файлы на VPS хранят короткую историю).
+    Действия: check_coverage (диапазон дат/времени доступных логов по серверу+типу), get_log
+    (чтение логов за период timeFrom/timeTo с фильтрами и пагинацией). Доступ — только с правом
+    logs_view (отдельное от patch_edit, см. db_migrations V0075). См. backend/logs/RESEARCH_NOTES.md
+    за полным контекстом.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -544,6 +615,34 @@ def handler(event: dict, context) -> dict:
         if log_type not in LOG_TYPES:
             cur.close(); conn.close()
             return _bad('bad_type')
+
+        # Режим "База логов" (см. logs-indexer/README.md) — если настроен, покрытие считается
+        # ПО РЕАЛЬНЫМ данным в logs_events (min/max event_time), это ЧЕСТНЫЙ диапазон (не по
+        # mtime файла, как в SFTP-режиме ниже) — с индексатором точность выше.
+        try:
+            logs_db = _logs_db_conn(cur, schema)
+        except Exception as e:
+            logs_db = None
+            print(f'[logs] LOGS_DB_URL configured but connection failed: {type(e).__name__}: {e}')
+        if logs_db is not None:
+            cur.close(); conn.close()
+            db_cur = logs_db.cursor()
+            db_cur.execute(
+                'SELECT MIN(event_time), MAX(event_time), COUNT(DISTINCT source_file) '
+                'FROM logs_events WHERE server = %s AND log_type = %s',
+                (server, log_type)
+            )
+            row = db_cur.fetchone()
+            db_cur.close(); logs_db.close()
+            if not row or row[0] is None:
+                return _ok({'available': False, 'from': None, 'to': None, 'fileCount': 0})
+            return _ok({
+                'available': True,
+                'from': int(row[0].timestamp()),
+                'to': int(row[1].timestamp()),
+                'fileCount': row[2],
+            })
+
         base_dir = _logs_dir_for_server(cur, schema, server)
         if not base_dir:
             cur.close(); conn.close()
@@ -600,10 +699,6 @@ def handler(event: dict, context) -> dict:
             return _bad('bad_server')
         if log_type not in LOG_TYPES:
             return _bad('bad_type')
-        base_dir = _logs_dir_for_server(cur, schema, server)
-        if not base_dir:
-            cur.close(); conn.close()
-            return _bad('logs_dir_not_configured')
 
         try:
             page = int(qs.get('page') or body.get('page') or 1)
@@ -643,6 +738,67 @@ def handler(event: dict, context) -> dict:
                 time_from = parsed
             else:
                 time_to = parsed
+
+        # --- Режим "База логов" (см. logs-indexer/README.md) --------------------------------
+        # Если настроен LOGS_DB_URL — читаем УЖЕ РАЗОБРАННЫЕ события напрямую SQL-запросом,
+        # без похода на SFTP вообще. Быстро для любого диапазона (неделя, месяц), т.к. работает
+        # через индексы БД, а не построчный разбор файлов при каждом запросе.
+        try:
+            logs_db = _logs_db_conn(cur, schema)
+        except Exception as e:
+            logs_db = None
+            print(f'[logs] LOGS_DB_URL configured but connection failed: {type(e).__name__}: {e}')
+        if logs_db is not None:
+            cur.close(); conn.close()
+            where = ['server = %s', 'log_type = %s']
+            params = [server, log_type]
+            if time_from:
+                where.append('event_time >= %s')
+                params.append(time_from)
+            if time_to:
+                where.append('event_time <= %s')
+                params.append(time_to)
+            if player_filter:
+                where.append('(actor ILIKE %s OR actor_login ILIKE %s OR target ILIKE %s OR target_login ILIKE %s)')
+                p = f'%{player_filter}%'
+                params.extend([p, p, p, p])
+            if item_filter:
+                where.append('(item_name ILIKE %s OR item_id ILIKE %s)')
+                p = f'%{item_filter}%'
+                params.extend([p, p])
+            if action_filter:
+                where.append('(action_name ILIKE %s OR action_id ILIKE %s)')
+                p = f'%{action_filter}%'
+                params.extend([p, p])
+            where_sql = ' AND '.join(where)
+
+            db_cur = logs_db.cursor()
+            db_cur.execute(f'SELECT COUNT(*) FROM logs_events WHERE {where_sql}', params)
+            total_matched = db_cur.fetchone()[0]
+
+            offset = (page - 1) * page_size
+            db_cur.execute(
+                f'SELECT * FROM logs_events WHERE {where_sql} ORDER BY event_time ASC LIMIT %s OFFSET %s',
+                params + [page_size, offset]
+            )
+            col_names = [d[0] for d in db_cur.description]
+            page_items = [_db_row_to_event(dict(zip(col_names, r))) for r in db_cur.fetchall()]
+            db_cur.close(); logs_db.close()
+
+            return _ok({
+                'events': page_items,
+                'page': page,
+                'pageSize': page_size,
+                'totalMatched': total_matched,
+                'totalLines': total_matched,
+                'totalPages': max(1, (total_matched + page_size - 1) // page_size),
+            })
+
+        # --- SFTP-режим (см. LOGS_DB_URL выше — фолбэк, если база логов не настроена) --------
+        base_dir = _logs_dir_for_server(cur, schema, server)
+        if not base_dir:
+            cur.close(); conn.close()
+            return _bad('logs_dir_not_configured')
 
         try:
             ssh = _logs_sftp_client(cur, schema)

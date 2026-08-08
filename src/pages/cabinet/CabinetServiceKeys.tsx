@@ -30,7 +30,16 @@ const LOGS_FIELDS: { key: string; label: string; placeholder: string; secret: bo
   { key: 'LOGS_SFTP_PASSWORD', label: 'Пароль SFTP', placeholder: '••••••••', secret: true },
 ];
 
-const ALL_FIELDS = [...FIELDS, ...LOGS_FIELDS];
+// Ускоренный self-hosted поиск по логам за недели истории — см. logs-indexer/README.md.
+// Если это поле заполнено, backend/logs/index.py автоматически читает уже разобранные события
+// из отдельной базы (её наполняет скрипт logs-indexer/indexer.py на хостинге логов) вместо
+// медленного SFTP-обхода файлов. Не заполнено — раздел «Логи» продолжает работать через SFTP
+// (единственный доступный режим в облачной dev-песочнице poehali.dev).
+const LOGS_DB_FIELDS: { key: string; label: string; placeholder: string; secret: boolean }[] = [
+  { key: 'LOGS_DB_URL', label: 'Подключение к базе логов', placeholder: 'postgresql://era_logs_user:пароль@host:5432/era_logs', secret: true },
+];
+
+const ALL_FIELDS = [...FIELDS, ...LOGS_FIELDS, ...LOGS_DB_FIELDS];
 
 interface FieldValue {
   value: string;
@@ -158,6 +167,38 @@ export default function CabinetServiceKeys() {
           Один хост обслуживает логи всех серверов — путь до логов конкретного сервера задаётся в разделе «Серверы»
         </p>
         {LOGS_FIELDS.map((f) => (
+          <div key={f.key}>
+            <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
+            <input
+              type={f.secret ? 'password' : 'text'}
+              value={form[f.key] ?? ''}
+              onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+              placeholder={f.secret && values[f.key]?.isSet ? values[f.key].value : f.placeholder}
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+            {f.secret && values[f.key]?.isSet && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <Icon name="CheckCircle2" size={11} className="text-primary" />
+                Текущее значение сохранено — оставьте поле пустым, чтобы не менять
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon name="Database" size={13} />
+          База логов (ускоренный поиск)
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Необязательно. Если у вас self-hosted развёртывание с отдельным индексатором логов
+          (см. <code className="text-[11px]">logs-indexer/README.md</code> в коде проекта) —
+          укажите подключение к этой базе, и раздел «Логи» будет искать по неделям истории
+          мгновенно вместо медленного обхода файлов. Оставьте пустым — логи продолжат работать
+          через SFTP как раньше.
+        </p>
+        {LOGS_DB_FIELDS.map((f) => (
           <div key={f.key}>
             <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
             <input
