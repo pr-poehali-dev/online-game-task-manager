@@ -20,8 +20,13 @@ PAGE_SIZE_DEFAULT = 50
 PAGE_SIZE_MAX = 200
 MAX_FILE_READ = 60 * 1024 * 1024  # 60 МБ — щедрый предел на один файл лога (реальные ~5 МБ/час)
 
-# Имя файла лога: {ГГГГ-ММ-ДД}-{HHMM}-{NN}-{тип}-in{0|1}.log — см. RESEARCH_NOTES.md.
+# Имя файла лога: {ГГГГ-ММ-ДД}-{HHMM}-{NN}-{тип}-in{0|1}.log — см. RESEARCH_NOTES.md. Сами файлы
+# называются "...-cached-...", НО папка на диске сервера называется "cashed" (опечатка в реальной
+# структуре VPS, подтверждено скриншотом пользователя) — см. LOG_TYPE_DIR ниже.
 LOG_FILENAME_RE = re.compile(r'^(\d{4}-\d{2}-\d{2})-(\d+)-(\d+)-(cached|server|npc)-in(\d+)\.log$')
+
+# log_type (используется в API и в имени файла) -> реальное имя подпапки на SFTP-сервере.
+LOG_TYPE_DIR = {'cached': 'cashed', 'server': 'server', 'npc': 'npc'}
 
 
 def _cors_headers():
@@ -301,7 +306,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('sftp_not_configured')
         cur.close(); conn.close()
-        remote_dir = base_dir.rstrip('/') + '/' + log_type
+        remote_dir = base_dir.rstrip('/') + '/' + LOG_TYPE_DIR[log_type]
         try:
             sftp = ssh.open_sftp()
             try:
@@ -369,7 +374,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('sftp_not_configured')
 
-        remote_path = base_dir.rstrip('/') + '/' + log_type + '/' + filename
+        remote_path = base_dir.rstrip('/') + '/' + LOG_TYPE_DIR[log_type] + '/' + filename
         try:
             sftp = ssh.open_sftp()
             try:
