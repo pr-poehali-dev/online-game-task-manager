@@ -3,7 +3,7 @@ import io
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import paramiko
 import psycopg2
@@ -20,7 +20,14 @@ LOG_TYPES = ('cached', 'server', 'npc')
 LOG_ENCODING = 'cp1251'
 PAGE_SIZE_DEFAULT = 50
 PAGE_SIZE_MAX = 200
-MAX_FILE_READ = 60 * 1024 * 1024  # 60 МБ — щедрый предел на один файл лога (реальные ~5 МБ/час)
+# 60 МБ — предел на СУММАРНЫЙ размер файлов, читаемых за один запрос get_log (может быть
+# несколько файлов сразу, если период timeFrom/timeTo пересекает границу нарезки, или период не
+# указан вовсе — тогда читаются ВСЕ доступные файлы). Реальные файлы ~5 МБ/получаса, обычно на
+# VPS хранится 2-3 файла на тип лога (см. check_coverage) — 60 МБ с большим запасом.
+MAX_FILE_READ = 60 * 1024 * 1024
+# Нарезка файлов на практике ~30 минут — берём небольшой запас, чтобы не промахнуться при отборе
+# файлов, покрывающих запрошенный период (см. action=get_log).
+_FILE_DURATION_GUESS = timedelta(minutes=35)
 
 # Имя файла лога: {ГГГГ-ММ-ДД}-{HHMM}-{NN}-{тип}-in{0|1}.log — см. RESEARCH_NOTES.md. Сами файлы
 # называются "...-cached-...", НО папка на диске сервера называется "cashed" (опечатка в реальной
@@ -119,6 +126,27 @@ def _logs_sftp_client(cur, schema):
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(hostname=host, port=port, username=user, password=password, timeout=15)
     return client
+
+
+def _list_log_files(entries):
+    '''entries — результат sftp.listdir_attr(). Возвращает список файлов лога (только те, что
+    матчат LOG_FILENAME_RE), каждый — dict с именем/размером/mtime, отсортированный по имени
+    (свежие первыми). Общая логика для check_coverage и get_log (вместо дублирования кода).'''
+    files = []
+    for entry in entries:
+        m = LOG_FILENAME_RE.match(entry.filename)
+        if not m:
+            continue
+        date_str, hhmm, seq, ftype, instance = m.groups()
+        files.append({
+            'name': entry.filename,
+            'date': date_str,
+            'size': entry.st_size,
+            'modifiedAt': entry.st_mtime,
+            'instance': instance,
+        })
+    files.sort(key=lambda f: f['name'], reverse=True)
+    return files
 
 
 # --- Справочник action_id → имя (см. RESEARCH_NOTES.md) ---------------------------------------
@@ -467,9 +495,11 @@ def _matches_filters(event, player, item, action, time_from, time_to):
 
 def handler(event: dict, context) -> dict:
     '''Раздел "Логи" — просмотр игровых логов (cached/server/npc) с внешнего VPS по SFTP.
-    Действия: list_files (список файлов лога по серверу+типу), get_log (чтение и парсинг
-    конкретного файла с фильтрами и пагинацией). Доступ — только с правом logs_view (отдельное от
-    patch_edit, см. db_migrations V0075). См. backend/logs/RESEARCH_NOTES.md за полным контекстом.'''
+    Действия: check_coverage (диапазон дат/времени доступных на VPS логов по серверу+типу),
+    get_log (чтение и парсинг логов за период timeFrom/timeTo с фильтрами и пагинацией — файлы
+    подбираются автоматически, ручной выбор конкретного файла убран по просьбе пользователя).
+    Доступ — только с правом logs_view (отдельное от patch_edit, см. db_migrations V0075). См.
+    backend/logs/RESEARCH_NOTES.md за полным контекстом.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -497,12 +527,17 @@ def handler(event: dict, context) -> dict:
             body = {}
 
     qs = event.get('queryStringParameters') or {}
-    action = body.get('action') or qs.get('action') or ('list_files' if method == 'GET' else '')
+    action = body.get('action') or qs.get('action') or ('check_coverage' if method == 'GET' else '')
 
     server = _safe_server(qs.get('server') or body.get('server'))
     log_type = qs.get('type') or body.get('type')
 
-    if action == 'list_files':
+    if action == 'check_coverage':
+        # Заменяет собой старый выбор конкретного файла в интерфейсе — вместо этого показываем
+        # пользователю, какой диапазон дат/времени логов реально доступен на VPS прямо сейчас
+        # (VPS хранит короткую историю, файлы регулярно перезаписываются/удаляются). Раньше
+        # пользователь выбирал файл из выпадающего списка вручную — теперь список файлов вообще
+        # не нужен пользователю: get_log сам подбирает нужные файлы по указанному периоду.
         if not server:
             cur.close(); conn.close()
             return _bad('bad_server')
@@ -530,37 +565,41 @@ def handler(event: dict, context) -> dict:
             finally:
                 sftp.close()
         except FileNotFoundError:
+            ssh.close()
             return _bad('remote_dir_not_found', 404)
         except Exception as e:
+            ssh.close()
             return _bad(f'sftp_error_{type(e).__name__}')
-        finally:
+        else:
             ssh.close()
 
-        files = []
-        for entry in entries:
-            m = LOG_FILENAME_RE.match(entry.filename)
-            if not m:
-                continue
-            date_str, hhmm, seq, ftype, instance = m.groups()
-            files.append({
-                'name': entry.filename,
-                'date': date_str,
-                'size': entry.st_size,
-                'modifiedAt': entry.st_mtime,
-                'instance': instance,
-            })
-        files.sort(key=lambda f: f['name'], reverse=True)
-        return _ok({'files': files})
+        files = _list_log_files(entries)
+        if not files:
+            return _ok({'available': False, 'from': None, 'to': None, 'fileCount': 0})
+
+        # modifiedAt (mtime на диске VPS) — момент последней записи в файл, а не время первой
+        # строки, но для отображения ПОКРЫТИЯ ("логи есть с ... по ...") этого достаточно: берём
+        # самый старый и самый новый файл по mtime, обвязка про реальные окна времени внутри
+        # файла (± полчаса на нарезку) не нужна пользователю на этом экране.
+        oldest = min(files, key=lambda f: f['modifiedAt'])
+        newest = max(files, key=lambda f: f['modifiedAt'])
+        return _ok({
+            'available': True,
+            'from': oldest['modifiedAt'],
+            'to': newest['modifiedAt'],
+            'fileCount': len(files),
+        })
 
     if action == 'get_log':
+        # ВАЖНО: раздел больше НЕ требует ручного выбора конкретного файла (по прямой просьбе
+        # пользователя) — вместо этого файлы, покрывающие запрошенный период timeFrom/timeTo,
+        # подбираются автоматически (см. _FILE_DURATION_GUESS ниже). Если период не указан —
+        # читаются ВСЕ доступные файлы этого типа лога (на практике VPS хранит короткую историю,
+        # обычно 2-3 файла на тип, см. check_coverage).
         if not server:
             return _bad('bad_server')
         if log_type not in LOG_TYPES:
             return _bad('bad_type')
-        filename = qs.get('file') or body.get('file') or ''
-        if not LOG_FILENAME_RE.match(filename):
-            cur.close(); conn.close()
-            return _bad('bad_file')
         base_dir = _logs_dir_for_server(cur, schema, server)
         if not base_dir:
             cur.close(); conn.close()
@@ -614,34 +653,67 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('sftp_not_configured')
 
-        remote_path = base_dir.rstrip('/') + '/' + LOG_TYPE_DIR[log_type] + '/' + filename
+        remote_dir = base_dir.rstrip('/') + '/' + LOG_TYPE_DIR[log_type]
+        empty_result = {'events': [], 'page': 1, 'pageSize': page_size, 'totalMatched': 0, 'totalLines': 0, 'totalPages': 1}
         try:
             sftp = ssh.open_sftp()
             try:
-                st = sftp.stat(remote_path)
-                if st.st_size > MAX_FILE_READ:
+                entries = sftp.listdir_attr(remote_dir)
+                all_files = _list_log_files(entries)
+                if not all_files:
+                    cur.close(); conn.close()
+                    return _ok(empty_result)
+
+                # Грубый отбор файлов, пересекающихся с запрошенным периодом: modifiedAt —
+                # момент ПОСЛЕДНЕЙ записи (конец файла), реальная длительность нарезки ~30
+                # минут на практике — берём запас 35 минут, чтобы не промахнуться мимо файла
+                # из-за небольшого расхождения. Период не указан — берём все файлы (их немного).
+                selected = all_files
+                if time_from or time_to:
+                    selected = []
+                    for f in all_files:
+                        file_end = datetime.fromtimestamp(f['modifiedAt'])
+                        file_start = file_end - _FILE_DURATION_GUESS
+                        if time_from and file_end < time_from:
+                            continue
+                        if time_to and file_start > time_to:
+                            continue
+                        selected.append(f)
+                    if not selected:
+                        cur.close(); conn.close()
+                        return _ok(empty_result)
+
+                total_size = sum(f['size'] for f in selected)
+                if total_size > MAX_FILE_READ:
                     cur.close(); conn.close()
                     return _bad('file_too_large')
-                with sftp.open(remote_path, 'rb') as f:
-                    # По умолчанию SFTPFile.read() без prefetch() тянет файл СИНХРОННЫМИ запросами
-                    # мелкими кусками одна за другой — на реальных файлах в несколько МБ (обычные
-                    # для этих логов) это упирается в таймаут облачной функции (5 сек) просто на
-                    # сетевых round-trip'ах. prefetch() отправляет все запросы на чтение сразу
-                    # (конвейером), после чего read() их просто дожидается — на порядок быстрее.
-                    f.prefetch(st.st_size)
-                    raw = f.read()
+
+                # Открываем ВСЕ файлы и запускаем prefetch() на каждом СРАЗУ (до чтения любого
+                # из них) — так конвейерные запросы на все файлы летят параллельно, а не
+                # последовательно (файл1 полностью → файл2 полностью → ...), что при нескольких
+                # файлах суммарно легко превышает таймаут функции (5 сек), даже если каждый
+                # файл по отдельности укладывается в лимит.
+                handles = []
+                try:
+                    for f in selected:
+                        rf = sftp.open(remote_dir + '/' + f['name'], 'rb')
+                        rf.prefetch(f['size'])
+                        handles.append(rf)
+                    texts = [rf.read().decode(LOG_ENCODING, errors='replace') for rf in handles]
+                finally:
+                    for rf in handles:
+                        rf.close()
             finally:
                 sftp.close()
         except FileNotFoundError:
             cur.close(); conn.close()
-            return _bad('remote_file_not_found', 404)
+            return _bad('remote_dir_not_found', 404)
         except Exception as e:
             cur.close(); conn.close()
             return _bad(f'sftp_error_{type(e).__name__}')
         finally:
             ssh.close()
 
-        text = raw.decode(LOG_ENCODING, errors='replace')
         # item/npc/skill — резолвятся ИЗ ДЕРЕВА ПАТЧЕЙ этого сервера (itemname-e/npcname-e/
         # skillname-e.dat, уже загруженных в раздел "Патчи"), НЕ из статичного снимка настроек —
         # см. game_lookup.py. action_id — только из статичного справочника (не игровой ресурс).
@@ -653,17 +725,21 @@ def handler(event: dict, context) -> dict:
         }
         cur.close(); conn.close()
 
-        reader = csv.reader(io.StringIO(text))
         matched = []
         total_lines = 0
-        for row in reader:
-            if not row or len(row) < 2:
-                continue
-            total_lines += 1
-            row = [c.strip() for c in row]
-            evt = _parse_log_line(row, refs)
-            if _matches_filters(evt, player_filter, item_filter, action_filter, time_from, time_to):
-                matched.append(evt)
+        # Файлы читаются от старых к новым (all_files отсортирован свежими первыми, selected —
+        # подмножество в том же порядке) — разворачиваем, чтобы события шли в хронологическом
+        # порядке от старых к новым, как ожидает пользователь.
+        for text in reversed(texts):
+            reader = csv.reader(io.StringIO(text))
+            for row in reader:
+                if not row or len(row) < 2:
+                    continue
+                total_lines += 1
+                row = [c.strip() for c in row]
+                evt = _parse_log_line(row, refs)
+                if _matches_filters(evt, player_filter, item_filter, action_filter, time_from, time_to):
+                    matched.append(evt)
 
         total_matched = len(matched)
         start = (page - 1) * page_size

@@ -22,12 +22,11 @@ const LOG_TYPES: { id: LogType; label: string; hint: string }[] = [
 
 const PAGE_SIZE = 50;
 
-interface LogFile {
-  name: string;
-  date: string;
-  size: number;
-  modifiedAt: number;
-  instance: string;
+interface Coverage {
+  available: boolean;
+  from: number | null;
+  to: number | null;
+  fileCount: number;
 }
 
 interface LogEvent {
@@ -61,18 +60,17 @@ interface LogEvent {
   strs: (string | null)[];
 }
 
-function fmtSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+function fmtDateTime(ts: number): string {
+  return new Date(ts * 1000).toLocaleString('ru-RU', {
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
 }
 
 const ERROR_MESSAGES: Record<string, string> = {
   sftp_not_configured: 'SFTP-доступ к логам не настроен — заполните хост/логин/пароль в разделе «Служебные ключи»',
   logs_dir_not_configured: 'Для этого сервера не указана директория логов — заполните её в настройках сервера',
   remote_dir_not_found: 'Папка с логами не найдена на VPS — проверьте директорию логов сервера',
-  remote_file_not_found: 'Файл лога не найден на VPS',
-  file_too_large: 'Файл лога слишком большой',
+  file_too_large: 'Слишком много данных за выбранный период — сократите диапазон дат',
   forbidden: 'Нет доступа к разделу «Логи»',
   bad_time_from: 'Неверный формат даты «От»',
   bad_time_to: 'Неверный формат даты «До»',
@@ -94,10 +92,9 @@ export default function Logs() {
   }, [servers, active]);
 
   const [logType, setLogType] = useState<LogType>('server');
-  const [files, setFiles] = useState<LogFile[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [filesError, setFilesError] = useState('');
-  const [activeFile, setActiveFile] = useState('');
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
+  const [coverageError, setCoverageError] = useState('');
 
   const [playerFilter, setPlayerFilter] = useState('');
   const [itemFilter, setItemFilter] = useState('');
@@ -113,36 +110,33 @@ export default function Logs() {
   const [totalMatched, setTotalMatched] = useState(0);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
 
-  const loadFiles = useCallback(async (server: ServerId, type: LogType) => {
+  const loadCoverage = useCallback(async (server: ServerId, type: LogType) => {
     if (!server) return;
-    setFilesLoading(true);
-    setFilesError('');
-    setFiles([]);
-    setActiveFile('');
+    setCoverageLoading(true);
+    setCoverageError('');
+    setCoverage(null);
     try {
       const res = await fetch(
-        `${LOGS_URL}?action=list_files&server=${encodeURIComponent(server)}&type=${type}`,
+        `${LOGS_URL}?action=check_coverage&server=${encodeURIComponent(server)}&type=${type}`,
         { method: 'GET', headers: authHeaders() },
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setFilesError(errorText(data.error || ''));
+        setCoverageError(errorText(data.error || ''));
         return;
       }
-      const list: LogFile[] = data.files || [];
-      setFiles(list);
-      if (list.length > 0) setActiveFile(list[0].name);
+      setCoverage(data);
     } catch {
-      setFilesError('Не удалось получить список файлов — проверьте соединение');
+      setCoverageError('Не удалось проверить наличие логов — проверьте соединение');
     } finally {
-      setFilesLoading(false);
+      setCoverageLoading(false);
     }
   }, []);
 
-  useEffect(() => { if (active) loadFiles(active, logType); }, [active, logType, loadFiles]);
+  useEffect(() => { if (active) loadCoverage(active, logType); }, [active, logType, loadCoverage]);
 
-  const loadEvents = useCallback(async (server: ServerId, type: LogType, file: string, pageNum: number) => {
-    if (!server || !file) return;
+  const loadEvents = useCallback(async (server: ServerId, type: LogType, pageNum: number) => {
+    if (!server) return;
     setEventsLoading(true);
     setEventsError('');
     try {
@@ -150,7 +144,6 @@ export default function Logs() {
         action: 'get_log',
         server,
         type,
-        file,
         page: String(pageNum),
         pageSize: String(PAGE_SIZE),
       });
@@ -180,12 +173,12 @@ export default function Logs() {
   }, [playerFilter, itemFilter, actionFilter, timeFrom, timeTo]);
 
   useEffect(() => {
-    if (active && activeFile) loadEvents(active, logType, activeFile, page);
-  }, [active, logType, activeFile, page, loadEvents]);
+    if (active && coverage?.available) loadEvents(active, logType, page);
+  }, [active, logType, coverage, page, loadEvents]);
 
   function applyFilters() {
     setPage(1);
-    if (active && activeFile) loadEvents(active, logType, activeFile, 1);
+    if (active && coverage?.available) loadEvents(active, logType, 1);
   }
 
   const activeId = active || servers[0]?.id || '';
@@ -235,34 +228,28 @@ export default function Logs() {
         ))}
       </div>
 
-      {/* Выбор файла */}
+      {/* Сверка наличия логов на VPS */}
       <div className="flex flex-wrap items-center gap-2 mb-4">
-        <Icon name="File" size={13} className="text-muted-foreground shrink-0" />
-        {filesLoading ? (
+        <Icon name="History" size={13} className="text-muted-foreground shrink-0" />
+        {coverageLoading ? (
           <span className="text-xs text-muted-foreground flex items-center gap-1.5">
             <Icon name="Loader2" size={12} className="animate-spin" />
-            Загрузка списка файлов…
+            Проверка наличия логов на сервере…
           </span>
-        ) : filesError ? (
+        ) : coverageError ? (
           <span className="text-xs text-destructive flex items-center gap-1.5">
             <Icon name="AlertCircle" size={12} />
-            {filesError}
+            {coverageError}
           </span>
-        ) : files.length === 0 ? (
-          <span className="text-xs text-muted-foreground">Файлов лога пока нет</span>
-        ) : (
-          <select
-            value={activeFile}
-            onChange={(e) => { setActiveFile(e.target.value); setPage(1); }}
-            className="h-9 px-2.5 rounded-lg border border-border bg-background text-sm max-w-full"
-          >
-            {files.map((f) => (
-              <option key={f.name} value={f.name}>
-                {f.name} · {fmtSize(f.size)}
-              </option>
-            ))}
-          </select>
-        )}
+        ) : coverage && !coverage.available ? (
+          <span className="text-xs text-muted-foreground">Логов этого типа на сервере пока нет</span>
+        ) : coverage ? (
+          <span className="text-xs text-muted-foreground">
+            Логи есть с <span className="text-foreground font-medium">{fmtDateTime(coverage.from!)}</span> по{' '}
+            <span className="text-foreground font-medium">{fmtDateTime(coverage.to!)}</span>
+            {' '}({coverage.fileCount} {coverage.fileCount === 1 ? 'файл' : 'файла'})
+          </span>
+        ) : null}
       </div>
 
       {/* Фильтры */}
