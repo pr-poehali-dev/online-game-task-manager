@@ -182,6 +182,13 @@ ITEM_EVENT_ACTIONS = (
 ACTION_ITEM_FIELD = {a: 19 for a in ITEM_EVENT_ACTIONS}
 ACTION_ITEM_COUNT_FIELD = {a: 20 for a in ITEM_EVENT_ACTIONS}
 ACTION_ITEM_DBID_FIELD = {a: 26 for a in ITEM_EVENT_ACTIONS}
+# [18] (Num7 в нотации desktop-парсера) — ЧАЩЕ ВСЕГО энчант предмета (подтверждено: Iron Boots
+# +3 энчанта -> [18]="3", неэнчантируемые предметы вроде Adena/руды/зелий -> [18]="0"), но по
+# прямому уточнению пользователя "не всегда" — то есть для каких-то action_id это поле может
+# означать что-то другое (не проверено на всех 13 action из ITEM_EVENT_ACTIONS по отдельности,
+# сверка была только на нескольких примерах). Показываем как "предположительно энчант" — если
+# окажется 0 у предмета, который умеет быть заточен, не считать это опровержением расшифровки.
+ACTION_ITEM_ENCHANT_FIELD = {a: 18 for a in ITEM_EVENT_ACTIONS}
 
 # 928 (FeeForWarehouse) — тоже item-событие (обычно списание Adena за хранение), но БЕЗ dbid
 # (поле [26] пусто в реальных данных — комиссия не привязана к конкретному экземпляру предмета).
@@ -207,6 +214,7 @@ def _parse_log_line(fields, refs):
     item_name = None
     item_count = None
     item_dbid = None
+    item_enchant = None
     item_field_idx = ACTION_ITEM_FIELD.get(action_id)
     if item_field_idx is not None and item_field_idx < len(fields):
         item_id = (fields[item_field_idx] or '').strip() or None
@@ -217,6 +225,13 @@ def _parse_log_line(fields, refs):
         dbid_idx = ACTION_ITEM_DBID_FIELD.get(action_id)
         if dbid_idx is not None and dbid_idx < len(fields):
             item_dbid = (fields[dbid_idx] or '').strip() or None
+        enchant_idx = ACTION_ITEM_ENCHANT_FIELD.get(action_id)
+        if enchant_idx is not None and enchant_idx < len(fields):
+            enchant_raw = (fields[enchant_idx] or '').strip()
+            # "0" означает "без энчанта" (или предмет не энчантируется) — не показываем как
+            # отдельное значение, чтобы не засорять UI нулями у обычных предметов (см. заметку
+            # выше про то, что поле "не всегда" энчант — 0 не обязательно значит "+0").
+            item_enchant = enchant_raw if enchant_raw and enchant_raw != '0' else None
 
     skill_id = None
     skill_name = None
@@ -242,6 +257,7 @@ def _parse_log_line(fields, refs):
         'itemName': item_name,
         'itemCount': item_count,
         'itemDbId': item_dbid,
+        'itemEnchant': item_enchant,
         'skillId': skill_id,
         'skillName': skill_name,
         # Сырые поля — на случай, если известной раскладки для этого action_id ещё нет, фронт

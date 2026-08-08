@@ -42,6 +42,7 @@ interface LogEvent {
   itemName: string | null;
   itemCount: string | null;
   itemDbId: string | null;
+  itemEnchant: string | null;
   skillId: string | null;
   skillName: string | null;
 }
@@ -342,7 +343,12 @@ export default function Logs() {
                     {e.targetLogin && <div className="text-xs text-muted-foreground">{e.targetLogin}</div>}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    {(e.itemName || e.itemId) && <div>{e.itemName || `#${e.itemId}`}</div>}
+                    {(e.itemName || e.itemId) && (
+                      <div>
+                        {e.itemEnchant && <span className="text-primary">+{e.itemEnchant} </span>}
+                        {e.itemName || `#${e.itemId}`}
+                      </div>
+                    )}
                     {e.skillName && <div>{e.skillName}</div>}
                   </TableCell>
                   <TableCell className="text-sm">
