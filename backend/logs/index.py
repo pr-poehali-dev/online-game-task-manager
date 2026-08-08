@@ -149,6 +149,9 @@ def _resolve_name(ref, raw_id):
 # Индексы ниже — 0-based (в заметках они 1-based, т.к. считались по логам вручную).
 FIELD_TIME = 0
 FIELD_ACTION = 1
+FIELD_LOC_X = 6
+FIELD_LOC_Y = 7
+FIELD_LOC_Z = 8
 FIELD_ACTOR_NAME = 22
 FIELD_ACTOR_LOGIN = 23
 FIELD_TARGET_NAME = 24
@@ -268,6 +271,9 @@ def _parse_log_line(fields, refs):
     actor_login = (fields[FIELD_ACTOR_LOGIN] if FIELD_ACTOR_LOGIN < len(fields) else '').strip() or None
     target = (fields[FIELD_TARGET_NAME] if FIELD_TARGET_NAME < len(fields) else '').strip() or None
     target_login = (fields[FIELD_TARGET_LOGIN] if FIELD_TARGET_LOGIN < len(fields) else '').strip() or None
+    loc_x = (fields[FIELD_LOC_X] if FIELD_LOC_X < len(fields) else '').strip() or None
+    loc_y = (fields[FIELD_LOC_Y] if FIELD_LOC_Y < len(fields) else '').strip() or None
+    loc_z = (fields[FIELD_LOC_Z] if FIELD_LOC_Z < len(fields) else '').strip() or None
 
     # Цель-NPC: [24]/[25] пусты для действий с NPC (продавец/кладовщик/питомец), реальный
     # target_name в этом случае берём из резолва составного числа npc_id+1000000 (см. выше).
@@ -290,6 +296,9 @@ def _parse_log_line(fields, refs):
         'actorLogin': actor_login,
         'target': target,
         'targetLogin': target_login,
+        'locX': loc_x,
+        'locY': loc_y,
+        'locZ': loc_z,
         'itemId': item_id,
         'itemName': item_name,
         'itemCount': item_count,

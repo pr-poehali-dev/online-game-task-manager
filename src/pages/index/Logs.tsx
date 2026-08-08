@@ -38,6 +38,9 @@ interface LogEvent {
   actorLogin: string | null;
   target: string | null;
   targetLogin: string | null;
+  locX: string | null;
+  locY: string | null;
+  locZ: string | null;
   itemId: string | null;
   itemName: string | null;
   itemCount: string | null;
@@ -300,18 +303,19 @@ export default function Logs() {
               <TableHead>Предмет</TableHead>
               <TableHead>Кол-во</TableHead>
               <TableHead>DB item id</TableHead>
+              <TableHead>Координаты</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {eventsLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-16">
+                <TableCell colSpan={8} className="text-center py-16">
                   <Icon name="Loader2" size={22} className="animate-spin text-primary mx-auto" />
                 </TableCell>
               </TableRow>
             ) : eventsError ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-16">
+                <TableCell colSpan={8} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-destructive">
                     <Icon name="AlertCircle" size={24} />
                     <div className="text-sm">{eventsError}</div>
@@ -320,7 +324,7 @@ export default function Logs() {
               </TableRow>
             ) : events.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-16">
+                <TableCell colSpan={8} className="text-center py-16">
                   <div className="flex flex-col items-center gap-2 text-muted-foreground">
                     <Icon name="Inbox" size={24} className="opacity-50" />
                     <div className="text-sm">Событий не найдено</div>
@@ -371,6 +375,9 @@ export default function Logs() {
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{e.itemDbId}</TableCell>
+                  <TableCell className="font-mono text-xs text-muted-foreground whitespace-nowrap">
+                    {e.locX && e.locY && e.locZ && `${e.locX}, ${e.locY}, ${e.locZ}`}
+                  </TableCell>
                 </TableRow>
               ))
             )}
