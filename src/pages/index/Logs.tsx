@@ -60,6 +60,9 @@ interface LogEvent {
   strs: (string | null)[];
 }
 
+const TIME_FROM_KEY = 'logs_time_from';
+const TIME_TO_KEY = 'logs_time_to';
+
 function fmtDateTime(ts: number): string {
   return new Date(ts * 1000).toLocaleString('ru-RU', {
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -99,8 +102,11 @@ export default function Logs() {
   const [playerFilter, setPlayerFilter] = useState('');
   const [itemFilter, setItemFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
-  const [timeFrom, setTimeFrom] = useState('');
-  const [timeTo, setTimeTo] = useState('');
+  const [timeFrom, setTimeFrom] = useState(() => localStorage.getItem(TIME_FROM_KEY) || '');
+  const [timeTo, setTimeTo] = useState(() => localStorage.getItem(TIME_TO_KEY) || '');
+
+  useEffect(() => { localStorage.setItem(TIME_FROM_KEY, timeFrom); }, [timeFrom]);
+  useEffect(() => { localStorage.setItem(TIME_TO_KEY, timeTo); }, [timeTo]);
   const [page, setPage] = useState(1);
 
   const [events, setEvents] = useState<LogEvent[]>([]);
