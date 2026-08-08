@@ -7,6 +7,8 @@ import re
 import paramiko
 import psycopg2
 
+import game_lookup
+
 
 # Три фиксированных вида логов (папки на SFTP-хосте) — см. RESEARCH_NOTES.md за полным контекстом
 # формата. Каждый файл лога имеет ровно 27 CSV-полей (проверено на реальных образцах), разделитель
@@ -366,7 +368,6 @@ def handler(event: dict, context) -> dict:
         if ssh is None:
             cur.close(); conn.close()
             return _bad('sftp_not_configured')
-        cur.close(); conn.close()
 
         remote_path = base_dir.rstrip('/') + '/' + log_type + '/' + filename
         try:
@@ -374,25 +375,32 @@ def handler(event: dict, context) -> dict:
             try:
                 st = sftp.stat(remote_path)
                 if st.st_size > MAX_FILE_READ:
+                    cur.close(); conn.close()
                     return _bad('file_too_large')
                 with sftp.open(remote_path, 'rb') as f:
                     raw = f.read()
             finally:
                 sftp.close()
         except FileNotFoundError:
+            cur.close(); conn.close()
             return _bad('remote_file_not_found', 404)
         except Exception as e:
+            cur.close(); conn.close()
             return _bad(f'sftp_error_{type(e).__name__}')
         finally:
             ssh.close()
 
         text = raw.decode(LOG_ENCODING, errors='replace')
+        # item/npc/skill — резолвятся ИЗ ДЕРЕВА ПАТЧЕЙ этого сервера (itemname-e/npcname-e/
+        # skillname-e.dat, уже загруженных в раздел "Патчи"), НЕ из статичного снимка настроек —
+        # см. game_lookup.py. action_id — только из статичного справочника (не игровой ресурс).
         refs = {
             'action': _load_reference('action_ids'),
-            'item': _load_reference('item_ids'),
-            'npc': _load_reference('npc_ids'),
-            'skill': _load_reference('skill_ids', has_level=True),
+            'item': game_lookup.build_lookup(cur, schema, server, 'item'),
+            'npc': game_lookup.build_lookup(cur, schema, server, 'npc'),
+            'skill': game_lookup.build_lookup(cur, schema, server, 'skill'),
         }
+        cur.close(); conn.close()
 
         reader = csv.reader(io.StringIO(text))
         matched = []
