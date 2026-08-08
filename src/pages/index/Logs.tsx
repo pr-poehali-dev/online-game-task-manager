@@ -50,6 +50,8 @@ interface LogEvent {
   itemCount: string | null;
   itemDbId: string | null;
   itemEnchant: string | null;
+  itemStockAfter: string | null;
+  itemStockBefore: string | null;
   skillId: string | null;
   skillName: string | null;
   skillLevel: string | null;
@@ -427,9 +429,16 @@ export default function Logs() {
                   </TableCell>
                   <TableCell className="text-sm">
                     {e.itemCount && (
-                      <span className={Number(e.itemCount) < 0 ? 'text-destructive' : 'text-emerald-500'}>
-                        {Number(e.itemCount) > 0 ? '+' : ''}{e.itemCount}
-                      </span>
+                      <div>
+                        <span className={Number(e.itemCount) < 0 ? 'text-destructive' : 'text-emerald-500'}>
+                          {Number(e.itemCount) > 0 ? '+' : ''}{e.itemCount}
+                        </span>
+                        {e.itemStockAfter && (
+                          <span className="text-xs text-muted-foreground">
+                            {' '}({e.itemStockBefore ?? '?'} → {e.itemStockAfter})
+                          </span>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{e.itemDbId}</TableCell>

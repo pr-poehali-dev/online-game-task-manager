@@ -224,6 +224,14 @@ ITEM_EVENT_ACTIONS = (
 ACTION_ITEM_FIELD = {a: 19 for a in ITEM_EVENT_ACTIONS}
 ACTION_ITEM_COUNT_FIELD = {a: 20 for a in ITEM_EVENT_ACTIONS}
 ACTION_ITEM_DBID_FIELD = {a: 26 for a in ITEM_EVENT_ACTIONS}
+# [21] (Num10) = "Items count" в desktop-парсере — остаток предмета ПОСЛЕ операции (не путать с
+# item_count на [20], который является ДЕЛЬТОЙ). Desktop-парсер иногда показывает это значение
+# как "622 (742)" — второе число в скобках НЕ отдельное сырое поле, а ВЫЧИСЛЯЕТСЯ им же:
+# "было" = "стало" + |дельта| — формула подтверждена на 5 реальных примерах (622+120=742,
+# 249+1=250, 0+3=3, 13065+2000=15065, 784+5=789 — все совпали с числом в скобках desktop-
+# парсера). Реализуем ту же логику здесь, а не только показываем сырое [21] — см. итоговое поле
+# 'itemStockBefore'/'itemStockAfter' в _parse_log_line.
+ACTION_ITEM_STOCK_FIELD = {a: 21 for a in ITEM_EVENT_ACTIONS}
 # [18] (Num7 в нотации desktop-парсера) — ЧАЩЕ ВСЕГО энчант предмета (подтверждено: Iron Boots
 # +3 энчанта -> [18]="3", неэнчантируемые предметы вроде Adena/руды/зелий -> [18]="0"), но по
 # прямому уточнению пользователя "не всегда" — то есть для каких-то action_id это поле может
@@ -287,6 +295,8 @@ def _parse_log_line(fields, refs):
     item_count = None
     item_dbid = None
     item_enchant = None
+    item_stock_after = None
+    item_stock_before = None
     item_field_idx = ACTION_ITEM_FIELD.get(action_id)
     if item_field_idx is not None and item_field_idx < len(fields):
         item_id = (fields[item_field_idx] or '').strip() or None
@@ -304,6 +314,17 @@ def _parse_log_line(fields, refs):
             # отдельное значение, чтобы не засорять UI нулями у обычных предметов (см. заметку
             # выше про то, что поле "не всегда" энчант — 0 не обязательно значит "+0").
             item_enchant = enchant_raw if enchant_raw and enchant_raw != '0' else None
+        stock_idx = ACTION_ITEM_STOCK_FIELD.get(action_id)
+        if stock_idx is not None and stock_idx < len(fields):
+            stock_raw = (fields[stock_idx] or '').strip()
+            item_stock_after = stock_raw or None
+            # "Было" = "стало" + |дельта| — см. комментарий у ACTION_ITEM_STOCK_FIELD выше.
+            # Считаем только если оба числа реально парсятся, иначе оставляем None (не гадаем).
+            if item_stock_after is not None and item_count is not None:
+                try:
+                    item_stock_before = str(int(item_stock_after) + abs(int(item_count)))
+                except ValueError:
+                    item_stock_before = None
 
     skill_id = None
     skill_name = None
@@ -379,6 +400,8 @@ def _parse_log_line(fields, refs):
         'itemCount': item_count,
         'itemDbId': item_dbid,
         'itemEnchant': item_enchant,
+        'itemStockAfter': item_stock_after,
+        'itemStockBefore': item_stock_before,
         'skillId': skill_id,
         'skillName': skill_name,
         'skillLevel': skill_level,
