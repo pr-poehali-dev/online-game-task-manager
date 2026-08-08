@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import {
@@ -141,8 +141,17 @@ export default function Logs() {
 
   useEffect(() => { if (active) loadCoverage(active, logType); }, [active, logType, loadCoverage]);
 
+  // Значения фильтров читаем через ref, а не напрямую из state в зависимостях useCallback —
+  // иначе каждое нажатие клавиши в поле "Игрок"/"Предмет"/"Действие" меняло бы identity
+  // loadEvents, что через useEffect ниже запускало бы новый запрос на КАЖДУЮ букву (именно это
+  // и вызывало каскад параллельных запросов к SFTP и таймауты). Запрос теперь уходит только по
+  // кнопке "Найти" (applyFilters) или смене страницы/сервера/типа лога.
+  const filtersRef = useRef({ playerFilter, itemFilter, actionFilter, timeFrom, timeTo });
+  filtersRef.current = { playerFilter, itemFilter, actionFilter, timeFrom, timeTo };
+
   const loadEvents = useCallback(async (server: ServerId, type: LogType, pageNum: number) => {
     if (!server) return;
+    const { playerFilter, itemFilter, actionFilter, timeFrom, timeTo } = filtersRef.current;
     setEventsLoading(true);
     setEventsError('');
     try {
@@ -176,11 +185,12 @@ export default function Logs() {
     } finally {
       setEventsLoading(false);
     }
-  }, [playerFilter, itemFilter, actionFilter, timeFrom, timeTo]);
+  }, []);
 
   useEffect(() => {
     if (active && coverage?.available) loadEvents(active, logType, page);
-  }, [active, logType, coverage, page, loadEvents]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, logType, coverage, page]);
 
   function applyFilters() {
     setPage(1);
