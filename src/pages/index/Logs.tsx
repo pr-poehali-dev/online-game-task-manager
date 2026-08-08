@@ -36,8 +36,12 @@ interface LogEvent {
   actionName: string | null;
   actor: string | null;
   actorLogin: string | null;
+  actorId: string | null;
+  actorAccId: string | null;
   target: string | null;
   targetLogin: string | null;
+  targetId: string | null;
+  targetAccId: string | null;
   locX: string | null;
   locY: string | null;
   locZ: string | null;
@@ -339,12 +343,32 @@ export default function Logs() {
                     {e.actionName || <span className="text-muted-foreground">#{e.actionId}</span>}
                   </TableCell>
                   <TableCell className="text-sm">
-                    {e.actor && <div>{e.actor}</div>}
-                    {e.actorLogin && <div className="text-xs text-muted-foreground">{e.actorLogin}</div>}
+                    {e.actor && (
+                      <div>
+                        {e.actor}
+                        {e.actorId && <span className="text-xs opacity-70"> ({e.actorId})</span>}
+                      </div>
+                    )}
+                    {e.actorLogin && (
+                      <div className="text-xs text-muted-foreground">
+                        {e.actorLogin}
+                        {e.actorAccId && <span className="opacity-70"> ({e.actorAccId})</span>}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm">
-                    {e.target && <div>{e.target}</div>}
-                    {e.targetLogin && <div className="text-xs text-muted-foreground">{e.targetLogin}</div>}
+                    {e.target && (
+                      <div>
+                        {e.target}
+                        {e.targetId && <span className="text-xs opacity-70"> ({e.targetId})</span>}
+                      </div>
+                    )}
+                    {e.targetLogin && (
+                      <div className="text-xs text-muted-foreground">
+                        {e.targetLogin}
+                        {e.targetAccId && <span className="opacity-70"> ({e.targetAccId})</span>}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {(e.itemName || e.itemId) && (

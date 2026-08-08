@@ -149,6 +149,10 @@ def _resolve_name(ref, raw_id):
 # Индексы ниже — 0-based (в заметках они 1-based, т.к. считались по логам вручную).
 FIELD_TIME = 0
 FIELD_ACTION = 1
+FIELD_ACTOR_ID = 2
+FIELD_ACTOR_ACC_ID = 3
+FIELD_TARGET_ID = 4
+FIELD_TARGET_ACC_ID = 5
 FIELD_LOC_X = 6
 FIELD_LOC_Y = 7
 FIELD_LOC_Z = 8
@@ -271,6 +275,10 @@ def _parse_log_line(fields, refs):
     actor_login = (fields[FIELD_ACTOR_LOGIN] if FIELD_ACTOR_LOGIN < len(fields) else '').strip() or None
     target = (fields[FIELD_TARGET_NAME] if FIELD_TARGET_NAME < len(fields) else '').strip() or None
     target_login = (fields[FIELD_TARGET_LOGIN] if FIELD_TARGET_LOGIN < len(fields) else '').strip() or None
+    actor_id = (fields[FIELD_ACTOR_ID] if FIELD_ACTOR_ID < len(fields) else '').strip() or None
+    actor_acc_id = (fields[FIELD_ACTOR_ACC_ID] if FIELD_ACTOR_ACC_ID < len(fields) else '').strip() or None
+    target_id = (fields[FIELD_TARGET_ID] if FIELD_TARGET_ID < len(fields) else '').strip() or None
+    target_acc_id = (fields[FIELD_TARGET_ACC_ID] if FIELD_TARGET_ACC_ID < len(fields) else '').strip() or None
     loc_x = (fields[FIELD_LOC_X] if FIELD_LOC_X < len(fields) else '').strip() or None
     loc_y = (fields[FIELD_LOC_Y] if FIELD_LOC_Y < len(fields) else '').strip() or None
     loc_z = (fields[FIELD_LOC_Z] if FIELD_LOC_Z < len(fields) else '').strip() or None
@@ -294,8 +302,12 @@ def _parse_log_line(fields, refs):
         'actionName': action_name,
         'actor': actor,
         'actorLogin': actor_login,
+        'actorId': actor_id,
+        'actorAccId': actor_acc_id,
         'target': target,
         'targetLogin': target_login,
+        'targetId': target_id,
+        'targetAccId': target_acc_id,
         'locX': loc_x,
         'locY': loc_y,
         'locZ': loc_z,
