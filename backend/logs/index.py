@@ -3,6 +3,7 @@ import io
 import json
 import os
 import re
+from datetime import datetime
 
 import paramiko
 import psycopg2
@@ -324,7 +325,22 @@ def _parse_log_line(fields, refs):
     }
 
 
-def _matches_filters(event, player, item, action):
+LOG_TIME_FORMAT = '%m/%d/%Y %H:%M:%S.%f'
+
+
+def _parse_event_time(time_str):
+    '''Парсит время события лога ("MM/DD/YYYY HH:MM:SS.mmm") в datetime, либо None, если формат
+    не совпал (пустая строка/повреждённая строка — не должно роняться на этом, просто не попадёт
+    под time-фильтр).'''
+    if not time_str:
+        return None
+    try:
+        return datetime.strptime(time_str, LOG_TIME_FORMAT)
+    except ValueError:
+        return None
+
+
+def _matches_filters(event, player, item, action, time_from, time_to):
     if player:
         p = player.lower()
         hay = f"{event['actor'] or ''} {event['actorLogin'] or ''} {event['target'] or ''} {event['targetLogin'] or ''}".lower()
@@ -339,6 +355,16 @@ def _matches_filters(event, player, item, action):
         a = action.lower()
         hay = f"{event['actionName'] or ''} {event['actionId'] or ''}".lower()
         if a not in hay:
+            return False
+    if time_from or time_to:
+        evt_time = _parse_event_time(event['time'])
+        if evt_time is None:
+            # Не смогли разобрать время строки — не показываем её при активном фильтре по
+            # времени (безопаснее спрятать неразобранную строку, чем ошибочно её включить).
+            return False
+        if time_from and evt_time < time_from:
+            return False
+        if time_to and evt_time > time_to:
             return False
     return True
 
@@ -458,6 +484,30 @@ def handler(event: dict, context) -> dict:
         player_filter = (qs.get('player') or body.get('player') or '').strip()
         item_filter = (qs.get('item') or body.get('item') or '').strip()
         action_filter = (qs.get('actionQuery') or body.get('actionQuery') or '').strip()
+        # timeFrom/timeTo — datetime-local со фронтенда, формат "YYYY-MM-DDTHH:MM" (иногда с
+        # секундами "YYYY-MM-DDTHH:MM:SS") — не путать с форматом времени В САМОМ логе
+        # (MM/DD/YYYY HH:MM:SS.mmm, см. LOG_TIME_FORMAT), это разные форматы разбираются отдельно.
+        time_from_raw = (qs.get('timeFrom') or body.get('timeFrom') or '').strip()
+        time_to_raw = (qs.get('timeTo') or body.get('timeTo') or '').strip()
+        time_from = None
+        time_to = None
+        for raw_val, attr in ((time_from_raw, 'from'), (time_to_raw, 'to')):
+            if not raw_val:
+                continue
+            parsed = None
+            for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M'):
+                try:
+                    parsed = datetime.strptime(raw_val, fmt)
+                    break
+                except ValueError:
+                    continue
+            if parsed is None:
+                cur.close(); conn.close()
+                return _bad(f'bad_time_{attr}')
+            if attr == 'from':
+                time_from = parsed
+            else:
+                time_to = parsed
 
         try:
             ssh = _logs_sftp_client(cur, schema)
@@ -516,7 +566,7 @@ def handler(event: dict, context) -> dict:
             total_lines += 1
             row = [c.strip() for c in row]
             evt = _parse_log_line(row, refs)
-            if _matches_filters(evt, player_filter, item_filter, action_filter):
+            if _matches_filters(evt, player_filter, item_filter, action_filter, time_from, time_to):
                 matched.append(evt)
 
         total_matched = len(matched)

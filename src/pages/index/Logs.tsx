@@ -67,6 +67,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   remote_file_not_found: 'Файл лога не найден на VPS',
   file_too_large: 'Файл лога слишком большой',
   forbidden: 'Нет доступа к разделу «Логи»',
+  bad_time_from: 'Неверный формат даты «От»',
+  bad_time_to: 'Неверный формат даты «До»',
 };
 
 function errorText(err: string): string {
@@ -93,6 +95,8 @@ export default function Logs() {
   const [playerFilter, setPlayerFilter] = useState('');
   const [itemFilter, setItemFilter] = useState('');
   const [actionFilter, setActionFilter] = useState('');
+  const [timeFrom, setTimeFrom] = useState('');
+  const [timeTo, setTimeTo] = useState('');
   const [page, setPage] = useState(1);
 
   const [events, setEvents] = useState<LogEvent[]>([]);
@@ -145,6 +149,8 @@ export default function Logs() {
       if (playerFilter.trim()) params.set('player', playerFilter.trim());
       if (itemFilter.trim()) params.set('item', itemFilter.trim());
       if (actionFilter.trim()) params.set('actionQuery', actionFilter.trim());
+      if (timeFrom) params.set('timeFrom', timeFrom);
+      if (timeTo) params.set('timeTo', timeTo);
       const res = await fetch(`${LOGS_URL}?${params.toString()}`, { method: 'GET', headers: authHeaders() });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -163,7 +169,7 @@ export default function Logs() {
     } finally {
       setEventsLoading(false);
     }
-  }, [playerFilter, itemFilter, actionFilter]);
+  }, [playerFilter, itemFilter, actionFilter, timeFrom, timeTo]);
 
   useEffect(() => {
     if (active && activeFile) loadEvents(active, logType, activeFile, page);
@@ -281,6 +287,24 @@ export default function Logs() {
             onKeyDown={(e) => { if (e.key === 'Enter') applyFilters(); }}
             placeholder="Действие"
             className="h-9 pl-8 pr-3 rounded-lg border border-border bg-background text-sm w-40 focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Icon name="Calendar" size={13} className="text-muted-foreground shrink-0" />
+          <input
+            type="datetime-local"
+            step="1"
+            value={timeFrom}
+            onChange={(e) => setTimeFrom(e.target.value)}
+            className="h-9 px-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+          <span className="text-xs text-muted-foreground">—</span>
+          <input
+            type="datetime-local"
+            step="1"
+            value={timeTo}
+            onChange={(e) => setTimeTo(e.target.value)}
+            className="h-9 px-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <button
