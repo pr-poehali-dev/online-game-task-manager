@@ -202,6 +202,30 @@ ACTION_SKILL_FIELD = {
     '1112': 16,  # PCKilledNPC
 }
 
+# --- Цель-NPC (не игрок) — расшифровано в этой сессии --------------------------------------
+# Поля [24]/[25] (target_name/login) ПУСТЫ, когда целью действия является NPC, а не другой
+# персонаж (например оплата хранения складу, снятие/добавление товара продавцу-нпс). Вместо
+# этого где-то в Num-полях лежит СОСТАВНОЕ число: npc_template_id + 1_000_000 (например
+# 1007083 -> реальный npc_id 7083 = "Pochi", 1036096 -> 36096 = "Improved Baby Kookaburra") —
+# подтверждено напрямую через game_lookup.build_lookup(..., 'npc') на реальных данных сервера
+# c4x1 (несколько разных id сошлись с ожидаемыми именами из npcname-e.dat). Позиция этого
+# составного числа ОТЛИЧАЕТСЯ по action_id:
+#   [16] — для складских операций с NPC-хранителем (продавец/кладовщик как цель действия)
+#   [17] — для событий, связанных с питомцем (там [16] занят другим числом — вероятно dbid
+#          самого питомца, НЕ расшифровано отдельно, не критично для отображения цели)
+NPC_TARGET_OFFSET = 1_000_000
+ACTION_NPC_TARGET_FIELD = {
+    '903': 16,  # RemovFromInven (снятие с продажи NPC-магазину/складу)
+    '927': 16,  # AddedToWarehouse
+    '928': 16,  # FeeForWarehouse
+    '929': 16,  # RetrieveFromWarehouse (по аналогии с 903/927/928, не проверено отдельно —
+                # в данных Saffeida цель для этого action_id всегда была пустой, т.к. это
+                # получение СВОЕГО предмета со склада без NPC-взаимодействия в кадре лога)
+    '105': 17,  # WithDrawPet (питомец — тоже "NPC" с точки зрения игрового движка)
+    '111': 17,  # GiveItemToPet
+    '113': 17,  # PetUseItem
+}
+
 
 def _parse_log_line(fields, refs):
     '''fields — список из 27 строк (уже декодированных из cp1251). Возвращает структурированный
@@ -244,6 +268,19 @@ def _parse_log_line(fields, refs):
     actor_login = (fields[FIELD_ACTOR_LOGIN] if FIELD_ACTOR_LOGIN < len(fields) else '').strip() or None
     target = (fields[FIELD_TARGET_NAME] if FIELD_TARGET_NAME < len(fields) else '').strip() or None
     target_login = (fields[FIELD_TARGET_LOGIN] if FIELD_TARGET_LOGIN < len(fields) else '').strip() or None
+
+    # Цель-NPC: [24]/[25] пусты для действий с NPC (продавец/кладовщик/питомец), реальный
+    # target_name в этом случае берём из резолва составного числа npc_id+1000000 (см. выше).
+    npc_target_id = None
+    npc_target_name = None
+    if not target:
+        npc_field_idx = ACTION_NPC_TARGET_FIELD.get(action_id)
+        if npc_field_idx is not None and npc_field_idx < len(fields):
+            raw_val = (fields[npc_field_idx] or '').strip()
+            if raw_val.isdigit() and int(raw_val) > NPC_TARGET_OFFSET:
+                npc_target_id = str(int(raw_val) - NPC_TARGET_OFFSET)
+                npc_target_name = _resolve_name(refs['npc'], npc_target_id)
+                target = f'Npc: {npc_target_name}' if npc_target_name else f'Npc #{npc_target_id}'
 
     return {
         'time': (fields[FIELD_TIME] or '').strip(),
