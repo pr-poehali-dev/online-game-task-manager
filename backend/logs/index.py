@@ -736,6 +736,23 @@ def handler(event: dict, context) -> dict:
                 if not row or len(row) < 2:
                     continue
                 total_lines += 1
+                # Дешёвая проверка времени ДО полного разбора строки — пропускаем дорогой
+                # резолв item/npc/skill для строк вне запрошенного периода. Строки ВНУТРИ
+                # одного файла лога идут СТРОГО по возрастанию времени (подтверждено на
+                # реальных данных) — если время строки уже превысило верхнюю границу time_to,
+                # все ОСТАЛЬНЫЕ строки этого файла тем более превысят её -> сразу переходим к
+                # следующему файлу вместо построчной проверки до конца. КРИТИЧНО при больших
+                # файлах (выросли до 40-80 тыс. строк) — раньше весь файл разбирался целиком
+                # даже при диапазоне в 1 минуту, упиралось в таймаут функции.
+                raw_time = (row[FIELD_TIME] or '').strip()
+                if time_from or time_to:
+                    evt_time = _parse_event_time(raw_time)
+                    if evt_time is None:
+                        continue
+                    if time_to and evt_time > time_to:
+                        break
+                    if time_from and evt_time < time_from:
+                        continue
                 row = [c.strip() for c in row]
                 evt = _parse_log_line(row, refs)
                 if _matches_filters(evt, player_filter, item_filter, action_filter, time_from, time_to):
