@@ -26,3 +26,8 @@ builds
 
 # warmup/handoff артефакты
 tmp/
+
+# Python cache (backend/*, logs-indexer/) — скомпилированные .pyc не нужны в репозитории,
+# пересоздаются автоматически при каждом запуске интерпретатора.
+__pycache__/
+*.pyc
