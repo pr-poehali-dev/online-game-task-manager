@@ -17,6 +17,11 @@ export interface AiAttachment {
   url: string;
   size: number;
   contentType: string;
+  // text — извлечённое на backend содержимое обычных текстовых файлов (.txt/.csv/.json/.md и
+  // т.п.), см. backend/ai/index.py _extract_attachment_text — так модель может прочитать файл
+  // без специального multi-part формата, как у картинок/PDF. Фронту само поле не нужно для
+  // отображения (превью показывает просто иконку файла), но приходит в объекте с backend.
+  text?: string;
 }
 
 export interface AiMessage {

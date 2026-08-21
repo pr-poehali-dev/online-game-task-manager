@@ -184,15 +184,56 @@ def _aitunnel_get(path, api_key, timeout=15):
         return None, (502, {'error': 'aitunnel_unreachable', 'message': str(e.reason)})
 
 
+# Обычные текстовые файлы (.txt/.csv/.json/.md и т.п.) не нужно передавать модели особым
+# multi-part форматом, как картинки/PDF/видео — модель прекрасно читает их как обычный текст.
+# Поэтому при ЗАГРУЗКЕ такого файла (см. upload_attachment/file_complete) мы один раз декодируем
+# его содержимое и сохраняем прямо в JSON вложения (поле 'text') — дальше _history_row_to_message
+# просто вставляет этот текст в сообщение, без повторного похода в S3 при каждой отправке.
+TEXT_FILE_EXTENSIONS = {
+    'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
+    'log', 'ini', 'conf', 'cfg', 'sql', 'srt', 'vtt', 'html', 'htm', 'py', 'js', 'ts',
+}
+# ~60 000 символов (примерно 15-20 тыс. токенов с запасом) — чтобы один вложенный файл не съедал
+# весь контекст диалога и не раздувал стоимость запроса; при превышении текст обрезается с пометкой.
+MAX_TEXT_ATTACHMENT_CHARS = 60000
+
+
+def _looks_like_text_attachment(name, content_type):
+    content_type = (content_type or '').lower()
+    if content_type.startswith('text/'):
+        return True
+    if content_type in ('application/json', 'application/xml', 'application/x-yaml', 'application/sql'):
+        return True
+    ext = (name or '').rsplit('.', 1)[-1].lower() if '.' in (name or '') else ''
+    return ext in TEXT_FILE_EXTENSIONS
+
+
+def _extract_attachment_text(raw: bytes, name: str, content_type: str):
+    '''Если вложение похоже на обычный текстовый файл — декодирует его как UTF-8 (с заменой
+    "плохих" байтов, чтобы не падать на неожиданной кодировке) и возвращает готовый текст,
+    обрезанный до MAX_TEXT_ATTACHMENT_CHARS. Иначе — None (файл не текстовый, не трогаем).'''
+    if not _looks_like_text_attachment(name, content_type):
+        return None
+    try:
+        text = raw[:MAX_TEXT_ATTACHMENT_CHARS * 4].decode('utf-8', errors='replace')
+    except Exception:
+        return None
+    if len(text) > MAX_TEXT_ATTACHMENT_CHARS:
+        text = text[:MAX_TEXT_ATTACHMENT_CHARS] + '\n…(файл обрезан, слишком длинный)'
+    return text
+
+
 def _history_row_to_message(role, text, attachments):
     '''Преобразует строку истории ai_messages в формат сообщения для AI Tunnel — multi-part
     content по типу вложения (см. docs/ai-tunnel-api-reference.md): image/* → image_url,
     application/pdf → file (AI Tunnel сам разбирает PDF через mistral-ocr/native, если модель не
     умеет файлы нативно — см. раздел "PDF"), video/* → video_url (только модели с "video" в
-    modalities.input реально понимают контент, для остальных AI Tunnel вернёт понятную ошибку).
-    Аудио НЕ поддерживается здесь: AI Tunnel требует для аудио сырой base64 в поле data (не
-    публичный URL), а вложения уже загружены в S3 как файлы — это отдельная доработка. Текст
-    ставится первым элементом, затем вложения — так рекомендует документация AI Tunnel.'''
+    modalities.input реально понимают контент, для остальных AI Tunnel вернёт понятную ошибку),
+    обычный текстовый файл (заранее извлечённый в поле 'text' при загрузке, см.
+    _extract_attachment_text) → вставляется прямо в текст запроса. Аудио НЕ поддерживается здесь:
+    AI Tunnel требует для аудио сырой base64 в поле data (не публичный URL), а вложения уже
+    загружены в S3 как файлы — это отдельная доработка. Текст ставится первым элементом, затем
+    вложения — так рекомендует документация AI Tunnel.'''
     atts = [a for a in (attachments or []) if isinstance(a, dict)]
     if not atts:
         return {'role': role, 'content': text}
@@ -205,6 +246,8 @@ def _history_row_to_message(role, text, attachments):
             parts.append({'type': 'file', 'file': {'filename': a.get('name', 'document.pdf'), 'file_data': a['url']}})
         elif content_type.startswith('video/'):
             parts.append({'type': 'video_url', 'video_url': {'url': a['url']}})
+        elif a.get('text'):
+            parts.append({'type': 'text', 'text': f"Содержимое файла «{a.get('name', 'file.txt')}»:\n```\n{a['text']}\n```"})
         # Остальные типы (архивы, аудио и т.п.) прикреплены к сообщению и видны сотруднику по
         # ссылке в интерфейсе, но не прикладываются в запрос к модели — она не умеет их читать.
     return {'role': role, 'content': parts}
@@ -262,13 +305,15 @@ def handler(event: dict, context) -> dict:
     list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя),
     list_templates/create_template/update_template/delete_template (CRUD индивидуальных шаблонов
     промптов пользователя в ai_prompt_templates — полностью приватны, не общие для команды),
-    upload_attachment (загрузка МАЛЕНЬКОГО файла/картинки в S3 одним запросом — base64 → CDN-URL),
-    file_init/file_chunk/file_complete/file_abort (загрузка БОЛЬШОГО файла кусочками — до
-    MAX_UPLOAD_SIZE=200 МБ; одиночный запрос к функции ограничен ~3.5 МБ на уровне платформы,
-    поэтому крупные файлы режутся на части на фронте — паттерн 1:1 с backend/patches/index.py),
-    send_message (отправка текстового сообщения — принимает опционально attachments
-    [{url,contentType,...}] от upload_attachment/file_complete, картинки/PDF/видео автоматически
-    прикладываются в формате, который понимает модель (см. _history_row_to_message); mode='code' у чата подставляет
+    upload_attachment (загрузка МАЛЕНЬКОГО файла/картинки в S3 одним запросом — base64 → CDN-URL,
+    для обычных текстовых файлов .txt/.csv/.json/.md и т.п. сразу извлекает содержимое в поле
+    'text' — см. _extract_attachment_text), file_init/file_chunk/file_complete/file_abort
+    (загрузка БОЛЬШОГО файла кусочками — до MAX_UPLOAD_SIZE=200 МБ; одиночный запрос к функции
+    ограничен ~3.5 МБ на уровне платформы, поэтому крупные файлы режутся на части на фронте —
+    паттерн 1:1 с backend/patches/index.py), send_message (отправка текстового сообщения —
+    принимает опционально attachments [{url,contentType,text?,...}] от upload_attachment/
+    file_complete, картинки/PDF/видео/текстовые файлы автоматически прикладываются в формате,
+    который понимает модель (см. _history_row_to_message); mode='code' у чата подставляет
     системный промпт для код-ревью; создаёт чат при отсутствии chat_id, проверяет месячный лимит
     сотрудника в ai_usage, шлёт запрос в AI Tunnel НЕ в потоковом режиме — эта облачная платформа
     не даёт проксировать Server-Sent Events через функцию дольше её таймаута, поэтому используется
@@ -536,10 +581,12 @@ def handler(event: dict, context) -> dict:
         ext = (body.get('ext') or (name.rsplit('.', 1)[-1] if '.' in name else '')).lstrip('.').lower() or 'bin'
         content_type = body.get('contentType') or 'application/octet-stream'
         url = _upload_bytes(raw, ext, content_type, 'uploads')
+        attachment_text = _extract_attachment_text(raw, name, content_type)
         cur.close(); conn.close()
-        return _ok({'attachment': {
-            'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type,
-        }})
+        attachment = {'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type}
+        if attachment_text is not None:
+            attachment['text'] = attachment_text
+        return _ok({'attachment': attachment})
 
     # --- Загрузка больших файлов по частям (до MAX_UPLOAD_SIZE = 200 МБ) — тот же паттерн, что
     # file_init/file_chunk/file_complete/file_abort в backend/patches/index.py. upload_attachment
@@ -607,6 +654,7 @@ def handler(event: dict, context) -> dict:
         content_type = meta['contentType']
         ext = (name.rsplit('.', 1)[-1] if '.' in name else '').lower() or 'bin'
         url = _upload_bytes(raw, ext, content_type, 'uploads')
+        attachment_text = _extract_attachment_text(raw, name, content_type)
 
         for key in chunk_keys:
             try:
@@ -619,9 +667,10 @@ def handler(event: dict, context) -> dict:
             pass
 
         cur.close(); conn.close()
-        return _ok({'attachment': {
-            'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type,
-        }})
+        attachment = {'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type}
+        if attachment_text is not None:
+            attachment['text'] = attachment_text
+        return _ok({'attachment': attachment})
 
     if action == 'file_abort':
         file_id = body.get('fileId')
