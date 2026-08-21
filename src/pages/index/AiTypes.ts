@@ -84,3 +84,19 @@ export function providerLabel(provider: string): string {
 }
 
 export const AI_ACTIVE_CHAT_KEY = 'ai_active_chat_id';
+
+// Режим текущего диалога/композера — определяет какой набор моделей показывать и какой action
+// вызывать при отправке (см. Ai.tsx). 'code' использует ту же группу моделей chat, что и обычный
+// текстовый режим, но backend подставляет системный промпт код-ревью (см. backend/ai/index.py,
+// CODE_SYSTEM_PROMPT).
+export type AiMode = 'chat' | 'code' | 'image' | 'video';
+
+export const MODE_TABS: { id: AiMode; label: string; icon: string; modelGroup: 'chat' | 'images' | 'videos' }[] = [
+  { id: 'chat', label: 'Чат', icon: 'MessageSquare', modelGroup: 'chat' },
+  { id: 'code', label: 'Код', icon: 'Code2', modelGroup: 'chat' },
+  { id: 'image', label: 'Изображения', icon: 'Image', modelGroup: 'images' },
+  { id: 'video', label: 'Видео', icon: 'Video', modelGroup: 'videos' },
+];
+
+export const IMAGE_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'];
+export const VIDEO_DURATIONS = [5, 10];

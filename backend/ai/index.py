@@ -1,10 +1,14 @@
+import base64
 import json
 import os
 import time
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 
+import boto3
+from botocore.config import Config
 import psycopg2
 
 
@@ -66,6 +70,41 @@ def _service_key(cur, schema, key):
     return row[0] if row and row[0] else None
 
 
+# --- S3 (вложения в чат, сгенерированные картинки/видео) — тот же паттерн, что _upload_image в
+# backend/knowledge/index.py, но со своим префиксом ключа ai/... -------------------------------
+MAX_UPLOAD_SIZE = 30 * 1024 * 1024  # 30 МБ на файл, загружаемый пользователем в чат
+
+
+def _s3_client():
+    return boto3.client(
+        's3',
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+        config=Config(),
+    )
+
+
+def _public_url(key: str) -> str:
+    base_url = (os.environ.get('S3_PUBLIC_URL') or os.environ.get('CDN_BASE_URL', '')).rstrip('/')
+    if base_url:
+        return f"{base_url}/{key}"
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+
+def _decode_data(data_b64):
+    if ',' in data_b64 and data_b64.strip().startswith('data:'):
+        data_b64 = data_b64.split(',', 1)[1]
+    return base64.b64decode(data_b64)
+
+
+def _upload_bytes(raw: bytes, ext: str, content_type: str, prefix: str) -> str:
+    key = f"ai/{prefix}/{uuid.uuid4().hex}.{ext}"
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    _s3_client().put_object(Bucket=bucket, Key=key, Body=raw, ContentType=content_type)
+    return _public_url(key)
+
+
 AITUNNEL_BASE = 'https://api.aitunnel.ru/v1'
 AITUNNEL_PUBLIC_BASE = 'https://api.aitunnel.ru/public/aitunnel'
 
@@ -119,6 +158,47 @@ def _aitunnel_request(path, api_key, payload, timeout=45):
         return None, (502, {'error': 'aitunnel_unreachable', 'message': str(e.reason)})
 
 
+def _aitunnel_get(path, api_key, timeout=15):
+    '''GET-запрос к AI Tunnel (баланс, опрос статуса видео) — тот же формат ошибок, что
+    _aitunnel_request.'''
+    req = urllib.request.Request(f'{AITUNNEL_BASE}{path}', method='GET', headers={'Authorization': f'Bearer {api_key}'})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode('utf-8')), None
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode('utf-8', 'ignore')
+        try:
+            parsed = json.loads(raw)
+            message = (parsed.get('error') or {}).get('message') or raw
+        except Exception:
+            message = raw or str(e)
+        return None, (e.code if 400 <= e.code < 600 else 502, {'error': 'aitunnel_error', 'message': message})
+    except urllib.error.URLError as e:
+        return None, (502, {'error': 'aitunnel_unreachable', 'message': str(e.reason)})
+
+
+def _history_row_to_message(role, text, attachments):
+    '''Преобразует строку истории ai_messages в формат сообщения для AI Tunnel. Если у сообщения
+    есть картинки-вложения — отдаём multi-part content (text + image_url), как того требует
+    vision-формат (см. docs/ai-tunnel-api-reference.md, раздел "Картинки": сначала текст, потом
+    изображения). Не-картиночные вложения (например PDF) пока не прикладываются как file — это
+    отдельная доработка, не критичная для базового Этапа 4.'''
+    images = [a for a in (attachments or []) if isinstance(a, dict) and str(a.get('contentType', '')).startswith('image/')]
+    if not images:
+        return {'role': role, 'content': text}
+    parts = [{'type': 'text', 'text': text}] if text else []
+    for img in images:
+        parts.append({'type': 'image_url', 'image_url': {'url': img['url']}})
+    return {'role': role, 'content': parts}
+
+
+CODE_SYSTEM_PROMPT = (
+    'Ты — опытный senior-разработчик, помогаешь команде с код-ревью, рефакторингом и поиском '
+    'багов. Отвечай по существу, приводи исправленный код в блоках ```язык, кратко объясняй '
+    'причину изменений. Если код корректен — так и скажи, не выдумывай проблемы.'
+)
+
+
 def _current_month():
     return datetime.now(timezone.utc).date().replace(day=1)
 
@@ -148,28 +228,36 @@ def _chat_to_dict(row):
 
 
 def _message_to_dict(row):
-    mid, role, content, attachments, model, cost_rub, job_status, created_at = row
+    mid, role, content, attachments, model, cost_rub, job_id, job_status, created_at = row
     return {
         'id': mid, 'role': role, 'content': content, 'attachments': attachments,
         'model': model, 'costRub': float(cost_rub) if cost_rub is not None else None,
-        'jobStatus': job_status, 'createdAt': created_at.isoformat() if created_at else None,
+        'jobId': job_id, 'jobStatus': job_status, 'createdAt': created_at.isoformat() if created_at else None,
     }
 
 
 def handler(event: dict, context) -> dict:
     '''Раздел "AI" — чат сотрудников с ИИ-моделями через единый ключ AI Tunnel (aitunnel.ru,
-    OpenAI-совместимый API, оплата в рублях). Этап 2 плана (AI_MANAGER_PLAN.md): только текстовый
-    чат, без вложений/генерации картинок и видео (это Этап 4). Действия:
-    list_models (каталог моделей AI Tunnel, публичный, кешируется), list_chats/get_chat/
-    rename_chat/delete_chat (CRUD диалогов пользователя), send_message (отправка сообщения —
-    создаёт чат при отсутствии chat_id, проверяет месячный лимит сотрудника в ai_usage, шлёт
-    запрос в AI Tunnel НЕ в потоковом режиме — эта облачная платформа не даёт проксировать
-    Server-Sent Events через функцию дольше её таймаута, поэтому используется обычный
-    request/response; для медленных моделей администратору может понадобиться поднять таймаут
-    функции в Ядро → Функции), usage (остаток месячного лимита текущего пользователя),
-    balance (общий остаток аккаунта AI Tunnel — только для team_manage/admin). Доступ ко всем
-    действиям — только с правом ai_access (отдельное привилегированное право, см. db_migrations
-    V0076).'''
+    OpenAI-совместимый API, оплата в рублях). Действия:
+    list_models (каталог моделей AI Tunnel, публичный, кешируется, group=chat|images|videos),
+    list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя),
+    upload_attachment (загрузка файла/картинки в S3 для последующей отправки в чат — base64 →
+    CDN-URL, паттерн как в backend/knowledge/index.py), send_message (отправка текстового
+    сообщения — принимает опционально attachments [{url,contentType,...}] от upload_attachment,
+    картинки автоматически прикладываются в vision-формате; mode='code' у чата подставляет
+    системный промпт для код-ревью; создаёт чат при отсутствии chat_id, проверяет месячный лимит
+    сотрудника в ai_usage, шлёт запрос в AI Tunnel НЕ в потоковом режиме — эта облачная платформа
+    не даёт проксировать Server-Sent Events через функцию дольше её таймаута, поэтому используется
+    обычный request/response; для медленных моделей администратору может понадобиться поднять
+    таймаут функции в Ядро → Функции), generate_image (POST /images/generations, синхронный —
+    декодирует b64_json из ответа и заливает в S3), generate_video (POST /videos, АСИНХРОННЫЙ —
+    создаёт сообщение с job_status='pending' и возвращает jobId, деньги списываются у AI Tunnel
+    сразу при старте независимо от результата), check_video_job (опрос статуса задачи видео по
+    messageId — при completed скачивает MP4 и заливает в S3, фронт должен поллить этот action раз
+    в несколько секунд, пока jobStatus='pending'), usage (остаток месячного лимита текущего
+    пользователя), balance (общий остаток аккаунта AI Tunnel — только для team_manage/admin).
+    Доступ ко всем действиям — только с правом ai_access (отдельное привилегированное право, см.
+    db_migrations V0076).'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -262,7 +350,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('not_found', 404)
         cur.execute(
-            f"SELECT id, role, content, attachments, model, cost_rub, job_status, created_at "
+            f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at "
             f"FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id ASC",
             (chat_id,)
         )
@@ -312,10 +400,34 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({'ok': True})
 
+    if action == 'upload_attachment':
+        data_b64 = body.get('data')
+        if not data_b64:
+            cur.close(); conn.close()
+            return _bad('no_data')
+        try:
+            raw = _decode_data(data_b64)
+        except Exception:
+            cur.close(); conn.close()
+            return _bad('bad_data')
+        if len(raw) > MAX_UPLOAD_SIZE:
+            cur.close(); conn.close()
+            return _bad('file_too_large', 413)
+        name = (body.get('name') or 'file').strip() or 'file'
+        ext = (body.get('ext') or (name.rsplit('.', 1)[-1] if '.' in name else '')).lstrip('.').lower() or 'bin'
+        content_type = body.get('contentType') or 'application/octet-stream'
+        url = _upload_bytes(raw, ext, content_type, 'uploads')
+        cur.close(); conn.close()
+        return _ok({'attachment': {
+            'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type,
+        }})
+
     if action == 'send_message':
         model = (body.get('model') or '').strip()
         content = (body.get('content') or '').strip()
         chat_id = body.get('chatId')
+        mode = body.get('mode') if body.get('mode') in ('chat', 'code') else 'chat'
+        attachments = body.get('attachments') or []
         if not model or not content:
             cur.close(); conn.close()
             return _bad('bad_request')
@@ -331,30 +443,34 @@ def handler(event: dict, context) -> dict:
             return _bad('aitunnel_not_configured')
 
         if chat_id:
-            cur.execute(f"SELECT id FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
-            if not cur.fetchone():
+            cur.execute(f"SELECT id, mode FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
+            row = cur.fetchone()
+            if not row:
                 cur.close(); conn.close()
                 return _bad('not_found', 404)
+            mode = row[1] or mode
         else:
             title = content[:60] + ('…' if len(content) > 60 else '')
             cur.execute(
-                f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'chat', %s) RETURNING id",
-                (me['id'], title, model)
+                f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, %s, %s) RETURNING id",
+                (me['id'], title, mode, model)
             )
             chat_id = cur.fetchone()[0]
 
         cur.execute(
-            f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
-            (chat_id, content)
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments) VALUES (%s, 'user', %s, %s) RETURNING id, created_at",
+            (chat_id, content, json.dumps(attachments) if attachments else None)
         )
         user_msg_id, user_created_at = cur.fetchone()
 
         cur.execute(
-            f"SELECT role, content FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id DESC LIMIT %s",
+            f"SELECT role, content, attachments FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id DESC LIMIT %s",
             (chat_id, MAX_HISTORY_MESSAGES)
         )
         history = list(reversed(cur.fetchall()))
-        messages = [{'role': role, 'content': text} for role, text in history]
+        messages = [_history_row_to_message(role, text, atts) for role, text, atts in history]
+        if mode == 'code':
+            messages = [{'role': 'system', 'content': CODE_SYSTEM_PROMPT}] + messages
 
         data, err = _aitunnel_request('/chat/completions', api_key, {
             'model': model, 'messages': messages, 'max_tokens': 4000,
@@ -388,13 +504,243 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({
             'chatId': chat_id,
-            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': content, 'createdAt': user_created_at.isoformat()},
+            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': content, 'attachments': attachments or None, 'createdAt': user_created_at.isoformat()},
             'assistantMessage': {
                 'id': assistant_msg_id, 'role': 'assistant', 'content': answer, 'model': used_model,
                 'costRub': float(cost_rub), 'createdAt': assistant_created_at.isoformat(),
             },
             'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
         })
+
+    if action == 'generate_image':
+        model = (body.get('model') or '').strip()
+        prompt = (body.get('prompt') or '').strip()
+        chat_id = body.get('chatId')
+        aspect_ratio = body.get('aspectRatio')
+        resolution = body.get('resolution')
+        if not model or not prompt:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+
+        spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
+        if spent >= limit_:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+        api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+        if not api_key:
+            cur.close(); conn.close()
+            return _bad('aitunnel_not_configured')
+
+        if chat_id:
+            cur.execute(f"SELECT id FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
+            if not cur.fetchone():
+                cur.close(); conn.close()
+                return _bad('not_found', 404)
+        else:
+            title = 'Изображение: ' + (prompt[:45] + ('…' if len(prompt) > 45 else ''))
+            cur.execute(
+                f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'image', %s) RETURNING id",
+                (me['id'], title, model)
+            )
+            chat_id = cur.fetchone()[0]
+
+        cur.execute(
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
+            (chat_id, prompt)
+        )
+        user_msg_id, user_created_at = cur.fetchone()
+
+        payload = {'model': model, 'prompt': prompt}
+        if aspect_ratio:
+            payload['aspect_ratio'] = aspect_ratio
+        if resolution:
+            payload['resolution'] = resolution
+        data, err = _aitunnel_request('/images/generations', api_key, payload, timeout=90)
+        if err:
+            cur.close(); conn.close()
+            status, payload_err = err
+            payload_err['userMessageId'] = user_msg_id
+            payload_err['chatId'] = chat_id
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
+
+        items = data.get('data') or []
+        used_model = data.get('model') or model
+        usage = data.get('usage') or {}
+        cost_rub = usage.get('cost_rub') or 0
+        attachments = []
+        for item in items:
+            b64 = item.get('b64_json')
+            if not b64:
+                continue
+            media_type = item.get('media_type') or 'image/png'
+            ext = media_type.split('/')[-1] or 'png'
+            raw = base64.b64decode(b64)
+            url = _upload_bytes(raw, ext, media_type, 'images')
+            attachments.append({'id': uuid.uuid4().hex, 'name': f'image.{ext}', 'url': url, 'size': len(raw), 'contentType': media_type})
+
+        cur.execute(
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments, model, cost_rub) "
+            f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
+            (chat_id, '', json.dumps(attachments) if attachments else None, used_model, cost_rub)
+        )
+        assistant_msg_id, assistant_created_at = cur.fetchone()
+
+        cur.execute(
+            f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+            (cost_rub, me['id'], _current_month())
+        )
+        cur.execute(f"UPDATE {schema}.ai_chats SET updated_at = NOW() WHERE id = %s", (chat_id,))
+
+        cur.close(); conn.close()
+        return _ok({
+            'chatId': chat_id,
+            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'createdAt': user_created_at.isoformat()},
+            'assistantMessage': {
+                'id': assistant_msg_id, 'role': 'assistant', 'content': '', 'attachments': attachments,
+                'model': used_model, 'costRub': float(cost_rub), 'createdAt': assistant_created_at.isoformat(),
+            },
+            'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
+        })
+
+    if action == 'generate_video':
+        model = (body.get('model') or '').strip()
+        prompt = (body.get('prompt') or '').strip()
+        chat_id = body.get('chatId')
+        duration = body.get('duration')
+        size = body.get('size')
+        if not model or not prompt:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+
+        spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
+        if spent >= limit_:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+        api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+        if not api_key:
+            cur.close(); conn.close()
+            return _bad('aitunnel_not_configured')
+
+        if chat_id:
+            cur.execute(f"SELECT id FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
+            if not cur.fetchone():
+                cur.close(); conn.close()
+                return _bad('not_found', 404)
+        else:
+            title = 'Видео: ' + (prompt[:45] + ('…' if len(prompt) > 45 else ''))
+            cur.execute(
+                f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'video', %s) RETURNING id",
+                (me['id'], title, model)
+            )
+            chat_id = cur.fetchone()[0]
+
+        cur.execute(
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
+            (chat_id, prompt)
+        )
+        user_msg_id, user_created_at = cur.fetchone()
+
+        payload = {'model': model, 'prompt': prompt}
+        if duration:
+            payload['duration'] = duration
+        if size:
+            payload['size'] = size
+        # Задача отправляется через _aitunnel_request (POST), но это НЕ chat/completions — путь
+        # передаётся явно. AI Tunnel сразу начисляет резерв стоимости при старте (см.
+        # docs/ai-tunnel-api-reference.md, "Отмены задач нет") — job_status='pending' до готовности.
+        data, err = _aitunnel_request('/videos', api_key, payload, timeout=30)
+        if err:
+            cur.close(); conn.close()
+            status, payload_err = err
+            payload_err['userMessageId'] = user_msg_id
+            payload_err['chatId'] = chat_id
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
+
+        job_id = data.get('id')
+        cur.execute(
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, job_id, job_status) "
+            f"VALUES (%s, 'assistant', '', %s, %s, 'pending') RETURNING id, created_at",
+            (chat_id, model, job_id)
+        )
+        assistant_msg_id, assistant_created_at = cur.fetchone()
+        cur.execute(f"UPDATE {schema}.ai_chats SET updated_at = NOW() WHERE id = %s", (chat_id,))
+
+        cur.close(); conn.close()
+        return _ok({
+            'chatId': chat_id,
+            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'createdAt': user_created_at.isoformat()},
+            'assistantMessage': {
+                'id': assistant_msg_id, 'role': 'assistant', 'content': '', 'model': model,
+                'jobId': job_id, 'jobStatus': 'pending', 'createdAt': assistant_created_at.isoformat(),
+            },
+        })
+
+    if action == 'check_video_job':
+        message_id = qs.get('messageId') or body.get('messageId')
+        if not message_id:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"SELECT m.id, m.chat_id, m.job_id, m.job_status FROM {schema}.ai_messages m "
+            f"JOIN {schema}.ai_chats c ON c.id = m.chat_id WHERE m.id = %s AND c.user_id = %s",
+            (message_id, me['id'])
+        )
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        msg_id, chat_id, job_id, job_status = row
+        if job_status != 'pending' or not job_id:
+            cur.close(); conn.close()
+            return _ok({'jobStatus': job_status})
+
+        api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+        if not api_key:
+            cur.close(); conn.close()
+            return _bad('aitunnel_not_configured')
+
+        data, err = _aitunnel_get(f'/videos/{job_id}', api_key)
+        if err:
+            cur.close(); conn.close()
+            status, payload_err = err
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
+
+        status_val = data.get('status')
+        if status_val == 'completed':
+            video_req = urllib.request.Request(
+                f'{AITUNNEL_BASE}/videos/{job_id}/content?index=0', method='GET',
+                headers={'Authorization': f'Bearer {api_key}'},
+            )
+            try:
+                with urllib.request.urlopen(video_req, timeout=60) as resp:
+                    raw = resp.read()
+            except (urllib.error.HTTPError, urllib.error.URLError):
+                cur.close(); conn.close()
+                return _bad('aitunnel_unreachable', 502)
+            url = _upload_bytes(raw, 'mp4', 'video/mp4', 'videos')
+            attachment = {'id': uuid.uuid4().hex, 'name': 'video.mp4', 'url': url, 'size': len(raw), 'contentType': 'video/mp4'}
+            usage = data.get('usage') or {}
+            cost_rub = usage.get('cost_rub') or 0
+            cur.execute(
+                f"UPDATE {schema}.ai_messages SET job_status = 'done', attachments = %s, cost_rub = %s WHERE id = %s",
+                (json.dumps([attachment]), cost_rub, msg_id)
+            )
+            if cost_rub:
+                cur.execute(
+                    f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+                    (cost_rub, me['id'], _current_month())
+                )
+            cur.close(); conn.close()
+            return _ok({'jobStatus': 'done', 'attachments': [attachment], 'costRub': float(cost_rub)})
+        elif status_val == 'failed':
+            cur.execute(f"UPDATE {schema}.ai_messages SET job_status = 'failed' WHERE id = %s", (msg_id,))
+            cur.close(); conn.close()
+            return _ok({'jobStatus': 'failed'})
+        else:
+            cur.close(); conn.close()
+            return _ok({'jobStatus': 'pending'})
 
     cur.close(); conn.close()
     return _bad('unknown_action')

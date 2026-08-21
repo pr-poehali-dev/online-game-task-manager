@@ -55,6 +55,48 @@ function MessageContent({ content }: { content: string }) {
   );
 }
 
+function MessageAttachments({ message }: { message: AiMessage }) {
+  const atts = message.attachments || [];
+  if (atts.length === 0 && message.jobStatus === 'pending') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+        <Icon name="Loader2" size={14} className="animate-spin" />
+        Генерация видео… обычно занимает несколько минут
+      </div>
+    );
+  }
+  if (atts.length === 0 && message.jobStatus === 'failed') {
+    return (
+      <div className="flex items-center gap-2 text-xs text-destructive py-2">
+        <Icon name="AlertCircle" size={14} />
+        Генерация не удалась
+      </div>
+    );
+  }
+  if (atts.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mb-1.5">
+      {atts.map((a) => (
+        a.contentType.startsWith('image/') ? (
+          <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+            <img src={a.url} alt={a.name} className="max-w-[260px] max-h-[260px] rounded-lg border border-border object-cover" />
+          </a>
+        ) : a.contentType.startsWith('video/') ? (
+          <video key={a.id} src={a.url} controls className="max-w-[320px] rounded-lg border border-border" />
+        ) : (
+          <a
+            key={a.id} href={a.url} target="_blank" rel="noreferrer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-secondary/50 text-xs hover:bg-secondary transition-colors"
+          >
+            <Icon name="FileText" size={13} />
+            {a.name}
+          </a>
+        )
+      ))}
+    </div>
+  );
+}
+
 export default function AiMessageList({ messages, sending, error }: AiMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -85,10 +127,11 @@ export default function AiMessageList({ messages, sending, error }: AiMessageLis
                 : 'bg-card border border-border'
             }`}
           >
+            <MessageAttachments message={m} />
             {m.role === 'assistant' ? (
-              <MessageContent content={m.content} />
+              m.content && <MessageContent content={m.content} />
             ) : (
-              <div className="whitespace-pre-wrap break-words">{m.content}</div>
+              m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>
             )}
             {m.role === 'assistant' && m.model && (
               <div className="mt-1.5 pt-1.5 border-t border-border/50 text-[11px] text-muted-foreground flex items-center gap-2">
