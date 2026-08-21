@@ -4,13 +4,33 @@ import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Icon from '@/components/ui/icon';
-import type { AiMessage } from './AiTypes';
+import type { AiMessage, AiMode } from './AiTypes';
 
 interface AiMessageListProps {
   messages: AiMessage[];
   sending: boolean;
   error: string;
+  mode: AiMode;
 }
+
+const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
+  chat: {
+    icon: 'Sparkles',
+    text: 'Задайте вопрос любой модели — GPT, Claude, Gemini, DeepSeek и другим. Выберите модель сверху и начните диалог.',
+  },
+  code: {
+    icon: 'Code2',
+    text: 'Вставьте код или опишите задачу — ассистент поможет с код-ревью, рефакторингом и поиском багов.',
+  },
+  image: {
+    icon: 'Image',
+    text: 'Опишите изображение текстом внизу — модель сгенерирует его за несколько секунд.',
+  },
+  video: {
+    icon: 'Video',
+    text: 'Опишите видео текстом внизу — генерация обычно занимает несколько минут, деньги списываются сразу при запуске.',
+  },
+};
 
 function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
   const match = /language-(\w+)/.exec(className || '');
@@ -97,7 +117,7 @@ function MessageAttachments({ message }: { message: AiMessage }) {
   );
 }
 
-export default function AiMessageList({ messages, sending, error }: AiMessageListProps) {
+export default function AiMessageList({ messages, sending, error, mode }: AiMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -105,13 +125,17 @@ export default function AiMessageList({ messages, sending, error }: AiMessageLis
   }, [messages.length, sending]);
 
   if (messages.length === 0 && !sending) {
+    const empty = EMPTY_STATE[mode];
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6">
-        <Icon name="Sparkles" size={32} className="text-primary/50 mb-3" />
-        <div className="text-sm text-muted-foreground max-w-sm">
-          Задайте вопрос любой модели — GPT, Claude, Gemini, DeepSeek и другим. Выберите модель
-          сверху и начните диалог.
-        </div>
+        <Icon name={empty.icon} size={32} className="text-primary/50 mb-3" />
+        <div className="text-sm text-muted-foreground max-w-sm">{empty.text}</div>
+        {error && (
+          <div className="mt-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-3.5 py-2.5 text-sm flex items-center gap-2 max-w-sm">
+            <Icon name="AlertCircle" size={14} className="shrink-0" />
+            {error}
+          </div>
+        )}
       </div>
     );
   }

@@ -11,6 +11,10 @@ interface AiChatListProps {
   onRenameChat: (id: number, title: string) => void;
   onTogglePinned: (id: number, pinned: boolean) => void;
   onDeleteChat: (id: number) => void;
+  // bare — используется внутри мобильного Sheet (Ai.tsx): там уже задана своя ширина/фон
+  // контейнера, поэтому убираем фиксированную ширину и правую границу, чтобы список не выглядел
+  // "вложенной колонкой внутри колонки".
+  bare?: boolean;
 }
 
 export default function AiChatList({
@@ -22,9 +26,11 @@ export default function AiChatList({
   onRenameChat,
   onTogglePinned,
   onDeleteChat,
+  bare = false,
 }: AiChatListProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [search, setSearch] = useState('');
 
   function startEdit(chat: AiChatSummary) {
     setEditingId(chat.id);
@@ -38,9 +44,13 @@ export default function AiChatList({
     setEditingId(null);
   }
 
+  const filteredChats = search.trim()
+    ? chats.filter((c) => c.title.toLowerCase().includes(search.trim().toLowerCase()))
+    : chats;
+
   return (
-    <div className="w-64 shrink-0 border-r border-border flex flex-col h-full">
-      <div className="p-3 border-b border-border">
+    <div className={bare ? 'flex flex-col h-full' : 'w-64 shrink-0 border-r border-border flex flex-col h-full'}>
+      <div className="p-3 border-b border-border space-y-2">
         <button
           onClick={onNewChat}
           className="w-full h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
@@ -48,6 +58,17 @@ export default function AiChatList({
           <Icon name="Plus" size={15} />
           Новый чат
         </button>
+        {chats.length > 4 && (
+          <div className="relative">
+            <Icon name="Search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск по диалогам…"
+              className="w-full h-8 pl-8 pr-2 rounded-lg border border-border bg-secondary/40 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            />
+          </div>
+        )}
       </div>
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-0.5">
         {chatsLoading ? (
@@ -58,8 +79,12 @@ export default function AiChatList({
           <div className="text-xs text-muted-foreground text-center py-8 px-2">
             Пока нет ни одного диалога — начните новый чат
           </div>
+        ) : filteredChats.length === 0 ? (
+          <div className="text-xs text-muted-foreground text-center py-8 px-2">
+            Ничего не найдено по запросу «{search}»
+          </div>
         ) : (
-          chats.map((chat) => (
+          filteredChats.map((chat) => (
             <div
               key={chat.id}
               onClick={() => onSelectChat(chat.id)}
@@ -84,7 +109,10 @@ export default function AiChatList({
               ) : (
                 <span className="flex-1 min-w-0 truncate">{chat.title}</span>
               )}
-              <div className="hidden group-hover:flex items-center gap-0.5 shrink-0">
+              {/* На touch-устройствах (нет hover) кнопки видны всегда — иначе на телефоне их
+                  вообще нельзя нажать; на десктопе (lg+) появляются по наведению, чтобы не
+                  захламлять список. */}
+              <div className="flex lg:hidden lg:group-hover:flex items-center gap-0.5 shrink-0">
                 <button
                   title={chat.pinned ? 'Открепить' : 'Закрепить'}
                   onClick={(e) => { e.stopPropagation(); onTogglePinned(chat.id, !chat.pinned); }}

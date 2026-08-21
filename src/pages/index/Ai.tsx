@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Icon from '@/components/ui/icon';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { AI_URL, authHeaders } from './shared';
 import AiChatList from './AiChatList';
 import AiModelPicker from './AiModelPicker';
@@ -14,16 +15,32 @@ const VIDEO_POLL_INTERVAL = 6000;
 
 const ERROR_MESSAGES: Record<string, string> = {
   forbidden: 'Раздел «AI» вам не доступен — обратитесь к владельцу проекта',
+  unauthorized: 'Сессия истекла — обновите страницу и войдите заново',
   aitunnel_not_configured: 'Доступ к AI Tunnel не настроен — заполните ключ в разделе «Служебные ключи»',
-  aitunnel_unreachable: 'Не удалось связаться с AI Tunnel — попробуйте ещё раз',
+  aitunnel_unreachable: 'Не удалось связаться с AI Tunnel — проверьте соединение и попробуйте ещё раз',
   aitunnel_error: 'Модель вернула ошибку — попробуйте другую модель или переформулируйте запрос',
-  limit_exceeded: 'Месячный лимит на AI исчерпан',
+  limit_exceeded: 'Месячный лимит на AI исчерпан — обратитесь к администратору, чтобы увеличить лимит',
   file_too_large: 'Файл слишком большой (максимум 30 МБ)',
   no_data: 'Не удалось прочитать файл',
+  bad_request: 'Заполните запрос перед отправкой',
+  not_found: 'Диалог не найден — возможно, он был удалён',
 };
 
-function errorText(err: string, message?: string): string {
-  if (err === 'aitunnel_error' && message) return message;
+// Коды ошибок AI Tunnel совпадают с HTTP-статусами (см. docs/ai-tunnel-api-reference.md, раздел
+// "Ошибки") — по статусу можно дать более точную подсказку, чем универсальное "модель вернула
+// ошибку", не разбирая текст message на стороне фронта.
+const AITUNNEL_STATUS_MESSAGES: Record<number, string> = {
+  400: 'Модель не приняла запрос — попробуйте другую модель или измените промпт',
+  401: 'Ключ AI Tunnel недействителен — сообщите администратору, нужно обновить его в «Служебных ключах»',
+  402: 'На балансе AI Tunnel закончились деньги — сообщите администратору проекта',
+  429: 'Модель сейчас перегружена запросами — подождите немного и попробуйте снова',
+};
+
+function errorText(err: string, message?: string, status?: number): string {
+  if (err === 'aitunnel_error') {
+    if (status && AITUNNEL_STATUS_MESSAGES[status]) return AITUNNEL_STATUS_MESSAGES[status];
+    if (message) return message;
+  }
   return ERROR_MESSAGES[err] || 'Не удалось выполнить запрос — попробуйте ещё раз';
 }
 
@@ -61,6 +78,10 @@ export default function Ai() {
 
   const [pendingAttachments, setPendingAttachments] = useState<AiAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // Список чатов на мобильных экранах (< lg) скрыт за кнопкой-гамбургером и открывается поверх
+  // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
+  const [chatListOpen, setChatListOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -191,7 +212,7 @@ export default function Ai() {
       if (res.ok && data.attachment) {
         setPendingAttachments((prev) => [...prev, data.attachment]);
       } else {
-        setSendError(errorText(data.error));
+        setSendError(errorText(data.error, data.message, res.status));
       }
     } catch {
       setSendError('Не удалось загрузить файл — проверьте соединение');
@@ -224,7 +245,7 @@ export default function Ai() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSendError(errorText(data.error, data.message));
+        setSendError(errorText(data.error, data.message, res.status));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setInput(content);
         setPendingAttachments(attachmentsToSend);
@@ -274,7 +295,7 @@ export default function Ai() {
       const res = await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSendError(errorText(data.error, data.message));
+        setSendError(errorText(data.error, data.message, res.status));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         if (data.spentRub != null) setUsage({ spentRub: data.spentRub, limitRub: data.limitRub });
         return;
@@ -324,21 +345,51 @@ export default function Ai() {
   }
 
   const limitExceeded = !!usage && usage.spentRub >= usage.limitRub;
+  const activeChatTitle = chats.find((c) => c.id === activeChatId)?.title;
 
   return (
     <div className="flex rounded-xl border border-border overflow-hidden bg-card/20 h-[calc(100vh-8.5rem)]">
-      <AiChatList
-        chats={chats}
-        chatsLoading={chatsLoading}
-        activeChatId={activeChatId}
-        onSelectChat={setActiveChatId}
-        onNewChat={handleNewChat}
-        onRenameChat={handleRenameChat}
-        onTogglePinned={handleTogglePinned}
-        onDeleteChat={handleDeleteChat}
-      />
+      <div className="hidden lg:flex">
+        <AiChatList
+          chats={chats}
+          chatsLoading={chatsLoading}
+          activeChatId={activeChatId}
+          onSelectChat={setActiveChatId}
+          onNewChat={handleNewChat}
+          onRenameChat={handleRenameChat}
+          onTogglePinned={handleTogglePinned}
+          onDeleteChat={handleDeleteChat}
+        />
+      </div>
+
+      <Sheet open={chatListOpen} onOpenChange={setChatListOpen}>
+        <SheetContent side="left" className="p-0 w-72 flex flex-col">
+          <AiChatList
+            chats={chats}
+            chatsLoading={chatsLoading}
+            activeChatId={activeChatId}
+            onSelectChat={(id) => { setActiveChatId(id); setChatListOpen(false); }}
+            onNewChat={() => { handleNewChat(); setChatListOpen(false); }}
+            onRenameChat={handleRenameChat}
+            onTogglePinned={handleTogglePinned}
+            onDeleteChat={handleDeleteChat}
+            bare
+          />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex-1 min-w-0 flex flex-col">
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border flex-wrap">
+        <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-border flex-wrap">
+          <button
+            onClick={() => setChatListOpen(true)}
+            title="Список диалогов"
+            className="lg:hidden h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name="PanelLeft" size={16} />
+          </button>
+          {activeChatTitle && (
+            <span className="lg:hidden text-sm font-medium truncate max-w-[140px]">{activeChatTitle}</span>
+          )}
           <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg">
             {MODE_TABS.map((t) => (
               <button
@@ -362,7 +413,7 @@ export default function Ai() {
             <Icon name="Loader2" size={22} className="animate-spin text-primary" />
           </div>
         ) : (
-          <AiMessageList messages={messages} sending={sending} error={sendError} />
+          <AiMessageList messages={messages} sending={sending} error={sendError} mode={mode} />
         )}
         {mode === 'image' || mode === 'video' ? (
           <AiGenerateComposer
