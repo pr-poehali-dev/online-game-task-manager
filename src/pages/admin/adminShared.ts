@@ -133,6 +133,16 @@ export interface TeamUser {
   show_in_team: boolean;
   tg_notify_muted: boolean;
   show_tg_contact: boolean;
+  ai_limit_rub: number;
+}
+
+// Сводка трат сотрудника на раздел "AI" за текущий месяц (action=ai_usage_summary в
+// backend/admin/index.py) — см. AI_MANAGER_PLAN.md, Этап 5.
+export interface AiUsageSummaryItem {
+  userId: number;
+  name: string;
+  spentRub: number;
+  limitRub: number;
 }
 
 export interface SessionInfo {

@@ -34,6 +34,8 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
   const [inviting, setInviting] = useState(false);
   const [editSpecId, setEditSpecId] = useState<number | null>(null);
   const [editSpecValue, setEditSpecValue] = useState('');
+  const [editAiLimitId, setEditAiLimitId] = useState<number | null>(null);
+  const [editAiLimitValue, setEditAiLimitValue] = useState('');
   const [editNameId, setEditNameId] = useState<number | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
@@ -80,6 +82,15 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     await authFetch({ action: 'set_specialization', user_id: id, specialization: editSpecValue.trim() });
     setEditSpecId(null);
     setEditSpecValue('');
+    load();
+  }
+
+  async function saveAiLimit(id: number) {
+    const value = Number(editAiLimitValue.replace(',', '.'));
+    if (!Number.isFinite(value) || value < 0) { setEditAiLimitId(null); return; }
+    await authFetch({ action: 'set_ai_limit', user_id: id, limit_rub: value });
+    setEditAiLimitId(null);
+    setEditAiLimitValue('');
     load();
   }
 
@@ -178,6 +189,9 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     inviting,
     editSpecId, setEditSpecId,
     editSpecValue, setEditSpecValue,
+    editAiLimitId, setEditAiLimitId,
+    editAiLimitValue, setEditAiLimitValue,
+    saveAiLimit,
     editNameId, setEditNameId,
     editFirstName, setEditFirstName,
     editLastName, setEditLastName,

@@ -190,7 +190,7 @@ ADMIN_ONLY_ACTIONS = {'impersonate', 'set_permissions', 'set_role'}
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -231,13 +231,16 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
     if method == 'GET':
+        month = datetime.now(timezone.utc).date().replace(day=1)
         cur.execute(
             f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, "
             f"u.tg_username, u.is_active, u.created_at, u.specialization, u.permissions, "
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
-            f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact, u.nickname, u.avatar_url "
-            f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC"
+            f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact, u.nickname, u.avatar_url, "
+            f"(SELECT limit_rub FROM {schema}.ai_usage a WHERE a.user_id = u.id AND a.month = %s) AS ai_limit_rub "
+            f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC",
+            (month,)
         )
         rows = cur.fetchall()
         users = []
@@ -257,6 +260,7 @@ def handler(event: dict, context) -> dict:
                 'show_tg_contact': r[17] if r[17] is not None else True,
                 'nickname': nickname, 'avatar_url': avatar_url,
                 'tg_first_name': r[3], 'tg_last_name': r[4], 'tg_photo_url': r[5],
+                'ai_limit_rub': float(r[20]) if r[20] is not None else 300.0,
             })
         cur.close(); conn.close()
         # isOwner — единый источник истины для фронта (показывать ли UI редактирования владельческих
@@ -451,6 +455,24 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'closed': closed})}
 
+    if action == 'ai_usage_summary':
+        # Сводка трат команды на раздел "AI" за текущий календарный месяц — сколько потратил
+        # каждый сотрудник и какой у него лимит (см. AI_MANAGER_PLAN.md, Этап 5). Доступно только
+        # has_team_access (проверено общим guard выше, т.к. это НЕ исключение вроде is_self_stats).
+        month = datetime.now(timezone.utc).date().replace(day=1)
+        cur.execute(
+            f"SELECT u.id, u.first_name, u.last_name, COALESCE(a.spent_rub, 0), COALESCE(a.limit_rub, 300) "
+            f"FROM {schema}.users u LEFT JOIN {schema}.ai_usage a ON a.user_id = u.id AND a.month = %s "
+            f"WHERE u.is_hidden = false ORDER BY COALESCE(a.spent_rub, 0) DESC, u.first_name ASC",
+            (month,)
+        )
+        rows = [{
+            'userId': r[0], 'name': f"{r[1]}{(' ' + r[2]) if r[2] else ''}",
+            'spentRub': float(r[3]), 'limitRub': float(r[4]),
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'items': rows})}
+
     if action == 'stats':
         # Статистика по одному участнику за период: создано / закрыто / получено задач + время в
         # приложении. Доступна КАЖДОМУ пользователю за САМОГО СЕБЯ (см. is_self_stats выше — общий
@@ -615,6 +637,25 @@ def handler(event: dict, context) -> dict:
     elif action == 'set_specialization':
         specialization = (body.get('specialization') or '').strip() or None
         cur.execute(f"UPDATE {schema}.users SET specialization = %s, updated_at = NOW() WHERE id = %s", (specialization, user_id))
+    elif action == 'set_ai_limit':
+        # Месячный лимит трат сотрудника на раздел "AI" (см. AI_MANAGER_PLAN.md, Этап 5) — хранится
+        # в ai_usage помесячно (см. backend/ai/index.py _get_or_create_usage), поэтому лимит нужно
+        # проставить/обновить в СТРОКЕ ТЕКУЩЕГО месяца, а не в отдельной таблице настроек.
+        try:
+            limit_rub = float(body.get('limit_rub'))
+        except (TypeError, ValueError):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
+        if limit_rub < 0:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
+        month = datetime.now(timezone.utc).date().replace(day=1)
+        cur.execute(
+            f"INSERT INTO {schema}.ai_usage (user_id, month, limit_rub) VALUES (%s, %s, %s) "
+            f"ON CONFLICT (user_id, month) DO UPDATE SET limit_rub = EXCLUDED.limit_rub",
+            (user_id, month, limit_rub)
+        )
+        _log_activity(cur, schema, admin_id, 'user_set_ai_limit', 'user', user_id, _target_name, f'{limit_rub:.0f} ₽/мес')
     elif action == 'set_show_in_team':
         show_in_team = bool(body.get('show_in_team'))
         cur.execute(f"UPDATE {schema}.users SET show_in_team = %s, updated_at = NOW() WHERE id = %s", (show_in_team, user_id))

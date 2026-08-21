@@ -12,6 +12,11 @@ export default function UserList({
   editSpecValue,
   setEditSpecValue,
   saveSpec,
+  editAiLimitId,
+  setEditAiLimitId,
+  editAiLimitValue,
+  setEditAiLimitValue,
+  saveAiLimit,
   editNameId,
   setEditNameId,
   editFirstName,
@@ -53,6 +58,11 @@ export default function UserList({
   editSpecValue: string;
   setEditSpecValue: (v: string) => void;
   saveSpec: (id: number) => void;
+  editAiLimitId: number | null;
+  setEditAiLimitId: (id: number | null) => void;
+  editAiLimitValue: string;
+  setEditAiLimitValue: (v: string) => void;
+  saveAiLimit: (id: number) => void;
   editNameId: number | null;
   setEditNameId: (id: number | null) => void;
   editFirstName: string;
@@ -165,6 +175,33 @@ export default function UserList({
                 >
                   {u.specialization || <span className="italic opacity-60">задать список задач…</span>}
                 </button>
+              )}
+              {u.permissions.ai_access && (
+                editAiLimitId === u.id ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Icon name="Sparkles" size={11} className="text-muted-foreground shrink-0" />
+                    <input
+                      value={editAiLimitValue}
+                      onChange={(e) => setEditAiLimitValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveAiLimit(u.id); if (e.key === 'Escape') setEditAiLimitId(null); }}
+                      autoFocus
+                      inputMode="decimal"
+                      placeholder="300"
+                      className="w-16 rounded border border-border bg-secondary/60 px-2 py-0.5 text-xs focus:outline-none"
+                    />
+                    <span className="text-xs text-muted-foreground">₽/мес</span>
+                    <button onClick={() => saveAiLimit(u.id)} className="text-xs text-primary hover:underline">OK</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditAiLimitId(u.id); setEditAiLimitValue(String(u.ai_limit_rub)); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
+                    title="Изменить месячный лимит трат на AI"
+                  >
+                    <Icon name="Sparkles" size={11} />
+                    Лимит AI: {u.ai_limit_rub.toFixed(0)} ₽/мес
+                  </button>
+                )
               )}
               {(u.tg_username || u.username) && (
                 <a href={`https://t.me/${(u.tg_username || u.username || '').replace('@', '')}`} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">

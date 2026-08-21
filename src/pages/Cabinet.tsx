@@ -143,6 +143,11 @@ export default function Cabinet() {
                 editSpecValue={team.editSpecValue}
                 setEditSpecValue={team.setEditSpecValue}
                 saveSpec={team.saveSpec}
+                editAiLimitId={team.editAiLimitId}
+                setEditAiLimitId={team.setEditAiLimitId}
+                editAiLimitValue={team.editAiLimitValue}
+                setEditAiLimitValue={team.setEditAiLimitValue}
+                saveAiLimit={team.saveAiLimit}
                 editNameId={team.editNameId}
                 setEditNameId={team.setEditNameId}
                 editFirstName={team.editFirstName}

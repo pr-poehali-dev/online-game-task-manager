@@ -5,7 +5,8 @@ import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import type { AuthUser } from '@/lib/auth';
 import { authFetch, fmtDuration, fmtDay } from '../admin/adminShared';
-import type { TeamUser, UserStats } from '../admin/adminShared';
+import type { TeamUser, UserStats, AiUsageSummaryItem } from '../admin/adminShared';
+import { AI_URL, authHeaders } from '../index/shared';
 
 function defaultRange(): DateRange {
   const to = new Date();
@@ -81,6 +82,79 @@ function RangePicker({ range, setRange }: { range: DateRange | undefined; setRan
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+function AiUsageSection({ hasTeamAccess }: { hasTeamAccess: boolean }) {
+  const [items, setItems] = useState<AiUsageSummaryItem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [balance, setBalance] = useState<{ balance: number; budget: number | null } | null>(null);
+
+  useEffect(() => {
+    if (!hasTeamAccess) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const [summaryRes, balanceRes] = await Promise.all([
+        authFetch({ action: 'ai_usage_summary' }),
+        fetch(`${AI_URL}?action=balance`, { method: 'GET', headers: authHeaders() }),
+      ]);
+      if (cancelled) return;
+      if (summaryRes.ok) {
+        const data = await summaryRes.json();
+        setItems(data.items || []);
+      }
+      if (balanceRes.ok) {
+        const data = await balanceRes.json().catch(() => null);
+        if (data) setBalance({ balance: data.balance, budget: data.budget ?? null });
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [hasTeamAccess]);
+
+  if (!hasTeamAccess) return null;
+
+  return (
+    <div className="pt-6 border-t border-border">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-base font-semibold flex items-center gap-1.5">
+          <Icon name="Sparkles" size={15} className="text-primary" />
+          Траты на AI за этот месяц
+        </h2>
+        {balance && (
+          <span className="text-xs text-muted-foreground">
+            Баланс AI Tunnel: <span className="text-foreground font-medium">{balance.balance.toFixed(0)} ₽</span>
+          </span>
+        )}
+      </div>
+      <p className="text-sm text-muted-foreground mb-4">Расход каждого сотрудника на общение с ИИ-моделями.</p>
+      {loading ? (
+        <div className="flex justify-center py-8"><Icon name="Loader2" size={20} className="animate-spin text-primary" /></div>
+      ) : !items || items.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4">Пока никто не пользовался разделом «AI».</p>
+      ) : (
+        <div className="space-y-2">
+          {items.map((it) => {
+            const pct = it.limitRub > 0 ? Math.min(100, Math.round((it.spentRub / it.limitRub) * 100)) : 0;
+            const barColor = pct >= 100 ? 'bg-destructive' : pct >= 80 ? 'bg-amber-500' : 'bg-primary';
+            return (
+              <div key={it.userId} className="rounded-xl border border-border bg-secondary/20 p-3">
+                <div className="flex items-center justify-between text-sm mb-1.5">
+                  <span className="font-medium truncate">{it.name}</span>
+                  <span className="text-muted-foreground shrink-0">
+                    {it.spentRub.toFixed(2)} ₽ из {it.limitRub.toFixed(0)} ₽ · {pct}%
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
+                  <div className={`h-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -164,6 +238,8 @@ export default function CabinetStats({
           {teamUserId !== 'all' && <StatCards stats={teamStats} loading={teamLoading} />}
         </div>
       )}
+
+      <AiUsageSection hasTeamAccess={hasTeamAccess} />
     </div>
   );
 }
