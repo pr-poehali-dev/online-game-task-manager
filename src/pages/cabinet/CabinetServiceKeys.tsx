@@ -39,7 +39,14 @@ const LOGS_DB_FIELDS: { key: string; label: string; placeholder: string; secret:
   { key: 'LOGS_DB_URL', label: 'Подключение к базе логов', placeholder: 'postgresql://era_logs_user:пароль@host:5432/era_logs', secret: true },
 ];
 
-const ALL_FIELDS = [...FIELDS, ...LOGS_FIELDS, ...LOGS_DB_FIELDS];
+// Раздел "AI" — единый ключ AI Tunnel (aitunnel.ru) для общения сотрудников с ИИ-моделями (текст,
+// изображения, видео) через backend/ai/index.py. Один ключ на весь проект — лимиты по сотрудникам
+// ведутся отдельно, см. AI_MANAGER_PLAN.md.
+const AI_FIELDS: { key: string; label: string; placeholder: string; secret: boolean }[] = [
+  { key: 'AITUNNEL_API_KEY', label: 'API-ключ AI Tunnel', placeholder: 'sk-aitunnel-••••••••', secret: true },
+];
+
+const ALL_FIELDS = [...FIELDS, ...LOGS_FIELDS, ...LOGS_DB_FIELDS, ...AI_FIELDS];
 
 interface FieldValue {
   value: string;
@@ -199,6 +206,37 @@ export default function CabinetServiceKeys() {
           через SFTP как раньше.
         </p>
         {LOGS_DB_FIELDS.map((f) => (
+          <div key={f.key}>
+            <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
+            <input
+              type={f.secret ? 'password' : 'text'}
+              value={form[f.key] ?? ''}
+              onChange={(e) => setForm((p) => ({ ...p, [f.key]: e.target.value }))}
+              placeholder={f.secret && values[f.key]?.isSet ? values[f.key].value : f.placeholder}
+              className="w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary font-mono"
+            />
+            {f.secret && values[f.key]?.isSet && (
+              <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                <Icon name="CheckCircle2" size={11} className="text-primary" />
+                Текущее значение сохранено — оставьте поле пустым, чтобы не менять
+              </p>
+            )}
+          </div>
+        ))}
+
+      </div>
+
+      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Icon name="Sparkles" size={13} />
+          Доступ к AI Tunnel
+        </div>
+        <p className="text-xs text-muted-foreground -mt-2">
+          Один ключ открывает раздел «AI» для всей команды (чат с моделями, генерация картинок и
+          видео). Создать ключ и пополнить баланс — в личном кабинете{' '}
+          <a href="https://aitunnel.ru" target="_blank" rel="noreferrer" className="text-primary hover:underline">aitunnel.ru</a>.
+        </p>
+        {AI_FIELDS.map((f) => (
           <div key={f.key}>
             <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>
             <input
