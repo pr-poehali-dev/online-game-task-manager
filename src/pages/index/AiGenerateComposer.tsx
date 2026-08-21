@@ -130,7 +130,9 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
               <select
                 value={aspectRatio}
                 onChange={(e) => setAspectRatio(e.target.value)}
-                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                disabled={referenceImages.length > 0}
+                title={referenceImages.length > 0 ? 'При редактировании по референсу сохраняются пропорции исходного фото' : 'Соотношение сторон'}
+                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               >
                 {IMAGE_ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>

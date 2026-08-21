@@ -310,9 +310,13 @@ export default function Ai() {
 
     try {
       const body: Record<string, unknown> = {
-        action: 'generate_image', chatId: activeChatId, model, prompt: params.prompt,
-        aspectRatio: params.aspectRatio, n: params.n,
+        action: 'generate_image', chatId: activeChatId, model, prompt: params.prompt, n: params.n,
       };
+      // aspectRatio НЕ передаём при редактировании по референсу (inputReferences) — иначе модель
+      // насильно растягивает результат под выбранное в UI соотношение сторон вместо того, чтобы
+      // сохранить пропорции исходного фото (это и вызывало "плывущие" пропорции у отредактированных
+      // картинок — параметр отправлялся даже когда сотрудник просто просил поменять цвет волос).
+      if (!params.inputReferences.length) body.aspectRatio = params.aspectRatio;
       if (params.quality) body.quality = params.quality;
       if (params.outputFormat) body.outputFormat = params.outputFormat;
       if (params.transparentBackground) body.background = 'transparent';
