@@ -100,6 +100,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   mistral: 'Mistral AI',
   mistralai: 'Mistral AI',
   xai: 'xAI',
+  'x-ai': 'xAI',
   qwen: 'Qwen',
   alibaba: 'Qwen',
   moonshot: 'Moonshot AI',
@@ -110,10 +111,20 @@ export const PROVIDER_LABELS: Record<string, string> = {
   perplexity: 'Perplexity',
   xiaomi: 'Xiaomi',
   bytedance: 'ByteDance Seed',
+  'bytedance-seed': 'ByteDance Seed',
   aion: 'Aion Labs',
   'aion-labs': 'Aion Labs',
   sber: 'Sber',
   aitunnel: 'AI Tunnel',
+  // Провайдеры моделей изображений и видео — без этих подписей две трети каталога картинок
+  // группировались под техническими идентификаторами вида "black-forest-labs"/"sourceful", и
+  // выбор выглядел скудным, хотя моделей на самом деле 26.
+  'black-forest-labs': 'Black Forest Labs (FLUX)',
+  krea: 'Krea',
+  recraft: 'Recraft',
+  sourceful: 'Sourceful (Riverflow)',
+  runway: 'Runway',
+  kwaivgi: 'Kling (KwaiVGI)',
 };
 
 export function providerLabel(provider: string): string {
