@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import Icon from '@/components/ui/icon';
+import AiTemplatesPicker from './AiTemplatesPicker';
 import type { AiUsage, AiAttachment, AiMode } from './AiTypes';
 
 interface AiComposerProps {
@@ -93,6 +94,7 @@ export default function AiComposer({
         >
           {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
         </button>
+        <AiTemplatesPicker mode={mode} onSelect={onChange} hasDraft={!!value.trim()} />
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
