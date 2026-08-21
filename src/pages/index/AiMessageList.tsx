@@ -6,6 +6,7 @@ import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Icon from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { exportPinnedMessages } from './aiExportPinned';
+import AiImageLightbox from './AiImageLightbox';
 import type { AiMessage, AiMode } from './AiTypes';
 
 interface AiMessageListProps {
@@ -79,7 +80,7 @@ function MessageContent({ content }: { content: string }) {
   );
 }
 
-function MessageAttachments({ message }: { message: AiMessage }) {
+function MessageAttachments({ message, onOpenImage }: { message: AiMessage; onOpenImage: (url: string, name: string) => void }) {
   const atts = message.attachments || [];
   if (atts.length === 0 && message.jobStatus === 'pending') {
     return (
@@ -102,9 +103,17 @@ function MessageAttachments({ message }: { message: AiMessage }) {
     <div className="flex flex-wrap gap-2 mb-1.5">
       {atts.map((a) => (
         a.contentType.startsWith('image/') ? (
-          <a key={a.id} href={a.url} target="_blank" rel="noreferrer">
+          <button
+            key={a.id}
+            type="button"
+            onClick={() => onOpenImage(a.url, a.name)}
+            className="group relative"
+          >
             <img src={a.url} alt={a.name} className="max-w-[260px] max-h-[260px] rounded-lg border border-border object-cover" />
-          </a>
+            <span className="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+              <Icon name="Expand" size={18} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+            </span>
+          </button>
         ) : a.contentType.startsWith('video/') ? (
           <video key={a.id} src={a.url} controls className="max-w-[320px] rounded-lg border border-border" />
         ) : (
@@ -167,6 +176,7 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string } | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -225,7 +235,7 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
                   <Icon name="Pin" size={11} />
                 </button>
               )}
-              <MessageAttachments message={m} />
+              <MessageAttachments message={m} onOpenImage={(url, name) => setLightboxImage({ url, name })} />
               {m.role === 'assistant' ? (
                 m.content && <MessageContent content={m.content} />
               ) : (
@@ -258,6 +268,9 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
         )}
         <div ref={bottomRef} />
       </div>
+      {lightboxImage && (
+        <AiImageLightbox url={lightboxImage.url} name={lightboxImage.name} onClose={() => setLightboxImage(null)} />
+      )}
     </div>
   );
 }

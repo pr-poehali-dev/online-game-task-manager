@@ -7,6 +7,7 @@ import AiModelPicker from './AiModelPicker';
 import AiMessageList from './AiMessageList';
 import AiComposer from './AiComposer';
 import AiGenerateComposer from './AiGenerateComposer';
+import type { ImageGenerateParams, VideoGenerateParams } from './AiGenerateComposer';
 import AiModelFaqModal from './AiModelFaqModal';
 import AiTemplatesManager from './AiTemplatesManager';
 import { useAiPromptTemplates } from './useAiPromptTemplates';
@@ -275,17 +276,57 @@ export default function Ai() {
     }
   }
 
-  async function handleGenerate(params: { prompt: string; aspectRatio?: string; duration?: number }) {
+  async function handleGenerateImage(params: ImageGenerateParams) {
+    setSending(true);
+    setSendError('');
+    const tempId = -Date.now();
+    setMessages((prev) => [...prev, {
+      id: tempId, role: 'user', content: params.prompt,
+      attachments: params.inputReferences.length ? params.inputReferences : null,
+      model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false,
+    }]);
+
+    try {
+      const body: Record<string, unknown> = {
+        action: 'generate_image', chatId: activeChatId, model, prompt: params.prompt,
+        aspectRatio: params.aspectRatio, n: params.n,
+      };
+      if (params.quality) body.quality = params.quality;
+      if (params.outputFormat) body.outputFormat = params.outputFormat;
+      if (params.transparentBackground) body.background = 'transparent';
+      if (params.inputReferences.length) body.inputReferences = params.inputReferences;
+
+      const res = await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSendError(errorText(data.error, data.message, res.status));
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (data.spentRub != null) setUsage({ spentRub: data.spentRub, limitRub: data.limitRub });
+        return;
+      }
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== tempId),
+        { ...data.userMessage, attachments: data.userMessage.attachments || null, jobStatus: 'done', pinned: false },
+        { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: 'done', pinned: false },
+      ]);
+      if (data.usage) setUsage(data.usage);
+      if (!activeChatId) { setActiveChatId(data.chatId); loadChats(); }
+    } catch {
+      setSendError('Не удалось запустить генерацию — проверьте соединение');
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleGenerateVideo(params: VideoGenerateParams) {
     setSending(true);
     setSendError('');
     const tempId = -Date.now();
     setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
-      const action = mode === 'image' ? 'generate_image' : 'generate_video';
-      const body: Record<string, unknown> = { action, chatId: activeChatId, model, prompt: params.prompt };
-      if (mode === 'image') body.aspectRatio = params.aspectRatio;
-      if (mode === 'video') body.duration = params.duration;
+      const body: Record<string, unknown> = { action: 'generate_video', chatId: activeChatId, model, prompt: params.prompt, duration: params.duration };
 
       const res = await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
       const data = await res.json().catch(() => ({}));
@@ -434,7 +475,8 @@ export default function Ai() {
         {mode === 'image' || mode === 'video' ? (
           <AiGenerateComposer
             mode={mode}
-            onGenerate={handleGenerate}
+            onGenerateImage={handleGenerateImage}
+            onGenerateVideo={handleGenerateVideo}
             generating={sending}
             usage={usage}
             limitExceeded={limitExceeded}

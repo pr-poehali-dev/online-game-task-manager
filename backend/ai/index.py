@@ -381,7 +381,9 @@ def handler(event: dict, context) -> dict:
     не даёт проксировать Server-Sent Events через функцию дольше её таймаута, поэтому используется
     обычный request/response; для медленных моделей администратору может понадобиться поднять
     таймаут функции в Ядро → Функции), generate_image (POST /images/generations, синхронный —
-    декодирует b64_json из ответа и заливает в S3), generate_video (POST /videos, АСИНХРОННЫЙ —
+    принимает n/quality/outputFormat/background/inputReferences (последнее — referenced-изображения
+    для image-to-image редактирования, ссылки на уже загруженные вложения), декодирует b64_json
+    из ответа (может быть несколько при n>1) и заливает каждое в S3), generate_video (POST /videos, АСИНХРОННЫЙ —
     создаёт сообщение с job_status='pending' и возвращает jobId, деньги списываются у AI Tunnel
     сразу при старте независимо от результата), check_video_job (опрос статуса задачи видео по
     messageId — при completed скачивает MP4 и заливает в S3, фронт должен поллить этот action раз
@@ -852,6 +854,15 @@ def handler(event: dict, context) -> dict:
         chat_id = body.get('chatId')
         aspect_ratio = body.get('aspectRatio')
         resolution = body.get('resolution')
+        n = body.get('n')
+        quality = body.get('quality')
+        output_format = body.get('outputFormat')
+        background = body.get('background')
+        # input_references — референсные изображения для image-to-image редактирования (см.
+        # docs/ai-tunnel-api-reference.md, "Редактирование существующих изображений") — ожидаем
+        # массив уже загруженных вложений [{url, contentType, ...}] от upload_attachment/
+        # file_complete (та же кнопка-скрепка, что в обычном чате, см. AI_MANAGER_PLAN.md).
+        input_refs = body.get('inputReferences') or []
         if not model or not prompt:
             cur.close(); conn.close()
             return _bad('bad_request')
@@ -879,9 +890,15 @@ def handler(event: dict, context) -> dict:
             )
             chat_id = cur.fetchone()[0]
 
+        # Референсные изображения показываем сотруднику как вложения его же сообщения (видно, что
+        # именно редактировалось), а не только передаём в запрос модели.
+        user_attachments = [
+            {'id': uuid.uuid4().hex, 'name': r.get('name', 'reference.png'), 'url': r['url'], 'size': r.get('size', 0), 'contentType': r.get('contentType', 'image/png')}
+            for r in input_refs if isinstance(r, dict) and r.get('url')
+        ]
         cur.execute(
-            f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
-            (chat_id, prompt)
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments) VALUES (%s, 'user', %s, %s) RETURNING id, created_at",
+            (chat_id, prompt, json.dumps(user_attachments) if user_attachments else None)
         )
         user_msg_id, user_created_at = cur.fetchone()
 
@@ -890,6 +907,16 @@ def handler(event: dict, context) -> dict:
             payload['aspect_ratio'] = aspect_ratio
         if resolution:
             payload['resolution'] = resolution
+        if n:
+            payload['n'] = int(n)
+        if quality:
+            payload['quality'] = quality
+        if output_format:
+            payload['output_format'] = output_format
+        if background:
+            payload['background'] = background
+        if user_attachments:
+            payload['input_references'] = [{'type': 'image_url', 'image_url': {'url': a['url']}} for a in user_attachments]
         data, err = _aitunnel_request('/images/generations', api_key, payload, timeout=90)
         if err:
             cur.close(); conn.close()
@@ -929,7 +956,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return _ok({
             'chatId': chat_id,
-            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'createdAt': user_created_at.isoformat()},
+            'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'attachments': user_attachments or None, 'createdAt': user_created_at.isoformat()},
             'assistantMessage': {
                 'id': assistant_msg_id, 'role': 'assistant', 'content': '', 'attachments': attachments,
                 'model': used_model, 'costRub': float(cost_rub), 'createdAt': assistant_created_at.isoformat(),

@@ -175,3 +175,22 @@ export const MODE_TABS: { id: AiMode; label: string; icon: string; modelGroup: '
 
 export const IMAGE_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'];
 export const VIDEO_DURATIONS = [5, 10];
+
+// Параметры генерации изображений (POST /images/generations, см.
+// docs/ai-tunnel-api-reference.md) — универсальные для всех моделей: модель без поддержки
+// конкретного значения просто проигнорирует его, ошибки не будет (кроме background — см. ниже).
+export const IMAGE_QUALITY_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'Авто' },
+  { value: 'low', label: 'Низкое (дешевле)' },
+  { value: 'medium', label: 'Среднее' },
+  { value: 'high', label: 'Высокое (дороже)' },
+];
+
+export const IMAGE_OUTPUT_FORMATS: { value: string; label: string }[] = [
+  { value: '', label: 'Авто' },
+  { value: 'png', label: 'PNG' },
+  { value: 'jpeg', label: 'JPEG' },
+  { value: 'webp', label: 'WEBP' },
+];
+
+export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4];
