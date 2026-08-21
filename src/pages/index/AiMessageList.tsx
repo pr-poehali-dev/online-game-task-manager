@@ -5,6 +5,7 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Icon from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { exportPinnedMessages } from './aiExportPinned';
 import type { AiMessage, AiMode } from './AiTypes';
 
 interface AiMessageListProps {
@@ -12,6 +13,7 @@ interface AiMessageListProps {
   sending: boolean;
   error: string;
   mode: AiMode;
+  chatTitle: string;
   onTogglePinned: (messageId: number, pinned: boolean) => void;
 }
 
@@ -121,12 +123,13 @@ function MessageAttachments({ message }: { message: AiMessage }) {
 
 // PinnedPanel — компактная кнопка-счётчик над лентой сообщений, при клике показывает список
 // закреплённых ответов ассистента с переходом к нужному по клику (см. AI_MANAGER_PLAN.md:
-// закрепление полезных ответов для быстрого поиска в длинной переписке).
-function PinnedPanel({ pinnedMessages, onJump }: { pinnedMessages: AiMessage[]; onJump: (id: number) => void }) {
+// закрепление полезных ответов для быстрого поиска в длинной переписке) плюс кнопку экспорта всех
+// закреплённых ответов в текстовый файл для составления сводки.
+function PinnedPanel({ pinnedMessages, chatTitle, onJump }: { pinnedMessages: AiMessage[]; chatTitle: string; onJump: (id: number) => void }) {
   const [open, setOpen] = useState(false);
   if (pinnedMessages.length === 0) return null;
   return (
-    <div className="px-4 sm:px-6 pt-3">
+    <div className="px-4 sm:px-6 pt-3 flex items-center gap-2">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-xs font-medium hover:bg-amber-500/15 transition-colors">
@@ -148,11 +151,19 @@ function PinnedPanel({ pinnedMessages, onJump }: { pinnedMessages: AiMessage[]; 
           </div>
         </PopoverContent>
       </Popover>
+      <button
+        onClick={() => exportPinnedMessages(chatTitle, pinnedMessages)}
+        title="Скачать все закреплённые ответы в текстовый файл"
+        className="flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border text-muted-foreground text-xs font-medium hover:text-foreground hover:bg-secondary transition-colors"
+      >
+        <Icon name="Download" size={12} />
+        Экспорт
+      </button>
     </div>
   );
 }
 
-export default function AiMessageList({ messages, sending, error, mode, onTogglePinned }: AiMessageListProps) {
+export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned }: AiMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -189,7 +200,7 @@ export default function AiMessageList({ messages, sending, error, mode, onToggle
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <PinnedPanel pinnedMessages={pinnedMessages} onJump={jumpToMessage} />
+      <PinnedPanel pinnedMessages={pinnedMessages} chatTitle={chatTitle} onJump={jumpToMessage} />
       <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-6 py-4 space-y-4">
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>

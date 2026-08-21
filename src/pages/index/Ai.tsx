@@ -438,6 +438,7 @@ export default function Ai() {
             sending={sending}
             error={sendError}
             mode={mode}
+            chatTitle={activeChatTitle || 'Новый чат'}
             onTogglePinned={handleTogglePinnedMessage}
           />
         )}
