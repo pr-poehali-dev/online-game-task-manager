@@ -211,13 +211,19 @@ def _looks_like_text_attachment(name, content_type):
 def _extract_attachment_text(raw: bytes, name: str, content_type: str):
     '''Если вложение похоже на обычный текстовый файл — декодирует его как UTF-8 (с заменой
     "плохих" байтов, чтобы не падать на неожиданной кодировке) и возвращает готовый текст,
-    обрезанный до MAX_TEXT_ATTACHMENT_CHARS. Иначе — None (файл не текстовый, не трогаем).'''
+    обрезанный до MAX_TEXT_ATTACHMENT_CHARS. Иначе — None (файл не текстовый, не трогаем).
+    ВАЖНО: нулевой байт (\\x00) — валидный UTF-8, decode() его пропускает, но PostgreSQL не умеет
+    хранить \\u0000 ни в text, ни в jsonb (падает с "unsupported Unicode escape sequence",
+    SQLSTATE 22P05) — поэтому вырезаем его отдельно. Встречается в файлах, которые технически не
+    полностью текстовые (повреждённые/бинарные файлы с "текстовым" расширением, экзотические
+    кодировки) — без этой чистки INSERT сообщения падал и весь чат переставал отвечать.'''
     if not _looks_like_text_attachment(name, content_type):
         return None
     try:
         text = raw[:MAX_TEXT_ATTACHMENT_CHARS * 4].decode('utf-8', errors='replace')
     except Exception:
         return None
+    text = text.replace('\x00', '')
     if len(text) > MAX_TEXT_ATTACHMENT_CHARS:
         text = text[:MAX_TEXT_ATTACHMENT_CHARS] + '\n…(файл обрезан, слишком длинный)'
     return text
