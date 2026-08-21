@@ -7,6 +7,7 @@ import AiModelPicker from './AiModelPicker';
 import AiMessageList from './AiMessageList';
 import AiComposer from './AiComposer';
 import AiGenerateComposer from './AiGenerateComposer';
+import AiModelFaqModal from './AiModelFaqModal';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
 import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode } from './AiTypes';
 
@@ -82,6 +83,7 @@ export default function Ai() {
   // Список чатов на мобильных экранах (< lg) скрыт за кнопкой-гамбургером и открывается поверх
   // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
   const [chatListOpen, setChatListOpen] = useState(false);
+  const [modelFaqOpen, setModelFaqOpen] = useState(false);
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -404,7 +406,14 @@ export default function Ai() {
               </button>
             ))}
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <button
+              onClick={() => setModelFaqOpen(true)}
+              title="Как выбрать модель"
+              className="h-9 w-9 shrink-0 rounded-lg border border-border bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="HelpCircle" size={15} />
+            </button>
             <AiModelPicker models={models} modelsLoading={modelsLoading} value={model} onChange={setModel} />
           </div>
         </div>
@@ -439,6 +448,8 @@ export default function Ai() {
           />
         )}
       </div>
+
+      {modelFaqOpen && <AiModelFaqModal onClose={() => setModelFaqOpen(false)} />}
     </div>
   );
 }
