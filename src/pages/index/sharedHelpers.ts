@@ -10,6 +10,7 @@ export const NOTIFICATIONS_URL = (func2url as Record<string, string>).notificati
 export const PATCHNOTES_URL = (func2url as Record<string, string>).patchnotes;
 export const PATCHES_URL = (func2url as Record<string, string>).patches;
 export const LOGS_URL = (func2url as Record<string, string>).logs;
+export const AI_URL = (func2url as Record<string, string>).ai;
 export const TOKEN_KEY = 'era_auth_token';
 
 export function authHeaders(): Record<string, string> {

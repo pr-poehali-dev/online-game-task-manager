@@ -7,6 +7,7 @@ import Ideas from './Ideas';
 import Patchnotes from './Patchnotes';
 import Patches from './Patches';
 import Logs from './Logs';
+import Ai from './Ai';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
 import type { PermissionKey } from '@/lib/auth';
@@ -272,6 +273,11 @@ export default function IndexMain({
         {visited.has('logs') && (
           <div className={view === 'logs' ? '' : 'hidden'}>
             <Logs />
+          </div>
+        )}
+        {visited.has('ai') && (
+          <div className={view === 'ai' ? '' : 'hidden'}>
+            <Ai />
           </div>
         )}
       </div>
