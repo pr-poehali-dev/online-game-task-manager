@@ -241,6 +241,8 @@ def handler(event: dict, context) -> dict:
     OpenAI-совместимый API, оплата в рублях). Действия:
     list_models (каталог моделей AI Tunnel, публичный, кешируется, group=chat|images|videos),
     list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя),
+    list_templates/create_template/update_template/delete_template (CRUD индивидуальных шаблонов
+    промптов пользователя в ai_prompt_templates — полностью приватны, не общие для команды),
     upload_attachment (загрузка файла/картинки в S3 для последующей отправки в чат — base64 →
     CDN-URL, паттерн как в backend/knowledge/index.py), send_message (отправка текстового
     сообщения — принимает опционально attachments [{url,contentType,...}] от upload_attachment,
@@ -399,6 +401,81 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.ai_chats WHERE id = %s", (chat_id,))
         cur.close(); conn.close()
         return _ok({'ok': True})
+
+    if action == 'list_templates':
+        # Шаблоны промптов — ИНДИВИДУАЛЬНЫ для каждого пользователя (см. AI_MANAGER_PLAN.md):
+        # редактируются/добавляются/удаляются прямо из интерфейса, без изменения кода. При первом
+        # обращении у нового сотрудника с ai_access список пуст — это нормально, фронт покажет
+        # пустое состояние с предложением создать первый шаблон (шаблоны НЕ копируются
+        # автоматически от других пользователей — принципиально приватны).
+        cur.execute(
+            f"SELECT id, icon, category, title, description, prompt, recommended_mode, sort_order "
+            f"FROM {schema}.ai_prompt_templates WHERE user_id = %s ORDER BY sort_order ASC, id ASC",
+            (me['id'],)
+        )
+        templates = [{
+            'id': r[0], 'icon': r[1], 'category': r[2], 'title': r[3], 'description': r[4],
+            'prompt': r[5], 'recommendedMode': r[6],
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return _ok({'templates': templates})
+
+    if action == 'create_template':
+        title = (body.get('title') or '').strip()
+        prompt = (body.get('prompt') or '').strip()
+        if not title or not prompt:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        category = (body.get('category') or 'Мои шаблоны').strip()[:100] or 'Мои шаблоны'
+        description = (body.get('description') or '').strip()[:300]
+        icon = (body.get('icon') or 'FileText').strip()[:50] or 'FileText'
+        recommended_mode = body.get('recommendedMode') if body.get('recommendedMode') in ('chat', 'code') else None
+        cur.execute(
+            f"SELECT COALESCE(MAX(sort_order), -1) + 1 FROM {schema}.ai_prompt_templates WHERE user_id = %s",
+            (me['id'],)
+        )
+        next_order = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {schema}.ai_prompt_templates (user_id, icon, category, title, description, prompt, recommended_mode, sort_order) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (me['id'], icon, category, title[:200], description, prompt, recommended_mode, next_order)
+        )
+        new_id = cur.fetchone()[0]
+        cur.close(); conn.close()
+        return _ok({'id': new_id})
+
+    if action == 'update_template':
+        template_id = body.get('id')
+        title = (body.get('title') or '').strip()
+        prompt = (body.get('prompt') or '').strip()
+        if not template_id or not title or not prompt:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        category = (body.get('category') or 'Мои шаблоны').strip()[:100] or 'Мои шаблоны'
+        description = (body.get('description') or '').strip()[:300]
+        icon = (body.get('icon') or 'FileText').strip()[:50] or 'FileText'
+        recommended_mode = body.get('recommendedMode') if body.get('recommendedMode') in ('chat', 'code') else None
+        cur.execute(
+            f"UPDATE {schema}.ai_prompt_templates SET icon = %s, category = %s, title = %s, description = %s, "
+            f"prompt = %s, recommended_mode = %s, updated_at = NOW() WHERE id = %s AND user_id = %s",
+            (icon, category, title[:200], description, prompt, recommended_mode, template_id, me['id'])
+        )
+        found = cur.rowcount > 0
+        cur.close(); conn.close()
+        return _ok({'ok': True}) if found else _bad('not_found', 404)
+
+    if action == 'delete_template':
+        template_id = body.get('id')
+        if not template_id:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"DELETE FROM {schema}.ai_prompt_templates WHERE id = %s AND user_id = %s",
+            (template_id, me['id'])
+        )
+        found = cur.rowcount > 0
+        cur.close(); conn.close()
+        return _ok({'ok': True}) if found else _bad('not_found', 404)
 
     if action == 'upload_attachment':
         data_b64 = body.get('data')

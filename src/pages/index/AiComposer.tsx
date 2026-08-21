@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import AiTemplatesPicker from './AiTemplatesPicker';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
+import type { AiPromptTemplate } from './AiPromptTemplates';
 import type { AiUsage, AiAttachment, AiMode } from './AiTypes';
 
 const COMPACT_MAX_HEIGHT = 160; // прежнее поведение (max-h-40)
@@ -19,11 +20,15 @@ interface AiComposerProps {
   onAddFile: (file: File) => void;
   onRemoveAttachment: (id: string) => void;
   uploading: boolean;
+  templates: AiPromptTemplate[];
+  templatesLoading: boolean;
+  onManageTemplates: () => void;
 }
 
 export default function AiComposer({
   mode, value, onChange, onSend, sending, usage, limitExceeded,
   attachments, onAddFile, onRemoveAttachment, uploading,
+  templates, templatesLoading, onManageTemplates,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -106,7 +111,14 @@ export default function AiComposer({
         >
           {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
         </button>
-        <AiTemplatesPicker mode={mode} onSelect={onChange} hasDraft={!!value.trim()} />
+        <AiTemplatesPicker
+          mode={mode}
+          templates={templates}
+          loading={templatesLoading}
+          onSelect={onChange}
+          onManage={onManageTemplates}
+          hasDraft={!!value.trim()}
+        />
         <div className="relative flex-1">
           <textarea
             ref={textareaRef}

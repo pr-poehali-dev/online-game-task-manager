@@ -8,6 +8,8 @@ import AiMessageList from './AiMessageList';
 import AiComposer from './AiComposer';
 import AiGenerateComposer from './AiGenerateComposer';
 import AiModelFaqModal from './AiModelFaqModal';
+import AiTemplatesManager from './AiTemplatesManager';
+import { useAiPromptTemplates } from './useAiPromptTemplates';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
 import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode } from './AiTypes';
 
@@ -84,6 +86,8 @@ export default function Ai() {
   // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
   const [chatListOpen, setChatListOpen] = useState(false);
   const [modelFaqOpen, setModelFaqOpen] = useState(false);
+  const [templatesManagerOpen, setTemplatesManagerOpen] = useState(false);
+  const promptTemplates = useAiPromptTemplates();
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -445,11 +449,24 @@ export default function Ai() {
             onAddFile={handleAddFile}
             onRemoveAttachment={handleRemoveAttachment}
             uploading={uploading}
+            templates={promptTemplates.templates}
+            templatesLoading={promptTemplates.loading}
+            onManageTemplates={() => setTemplatesManagerOpen(true)}
           />
         )}
       </div>
 
       {modelFaqOpen && <AiModelFaqModal onClose={() => setModelFaqOpen(false)} />}
+      {templatesManagerOpen && (
+        <AiTemplatesManager
+          templates={promptTemplates.templates}
+          loading={promptTemplates.loading}
+          onCreate={promptTemplates.createTemplate}
+          onUpdate={promptTemplates.updateTemplate}
+          onDelete={promptTemplates.deleteTemplate}
+          onClose={() => setTemplatesManagerOpen(false)}
+        />
+      )}
     </div>
   );
 }

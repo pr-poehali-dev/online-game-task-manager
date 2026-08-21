@@ -1,14 +1,16 @@
-// Готовые шаблоны промптов для типовых задач сотрудников — вставляются одним кликом в
-// AiComposer.tsx (раздел "AI"). Актуально только для текстовых режимов чата ('chat'/'code') —
-// генерация изображений/видео использует свой отдельный композер (AiGenerateComposer.tsx) с
-// произвольным промптом, шаблоны туда не подключены.
+// Шаблоны промптов для типовых задач сотрудников — вставляются одним кликом в AiComposer.tsx
+// (раздел "AI"). Каждый сотрудник хранит СВОЙ ИНДИВИДУАЛЬНЫЙ набор шаблонов в таблице
+// ai_prompt_templates (см. backend/ai/index.py, action=list_templates/create_template/
+// update_template/delete_template) — редактируются прямо в интерфейсе (AiTemplatesManager.tsx),
+// без изменения кода. Актуально только для текстовых режимов чата ('chat'/'code') — генерация
+// изображений/видео использует свой отдельный композер (AiGenerateComposer.tsx).
 //
 // prompt — финальный текст, который подставляется в поле ввода целиком (заменяет текущий
 // черновик). Фрагменты в квадратных скобках — место, которое сотрудник должен заполнить/заменить
 // перед отправкой (общепринятый паттерн для шаблонов промптов).
 
 export interface AiPromptTemplate {
-  id: string;
+  id: number;
   icon: string;
   category: string;
   title: string;
@@ -17,20 +19,19 @@ export interface AiPromptTemplate {
   // recommendedMode — в каком режиме композера этот шаблон предлагается первым (см.
   // AiTemplatesPicker.tsx — группа текущего режима поднимается наверх списка). Шаблон всё равно
   // доступен и в другом режиме, это только про порядок сортировки, не про ограничение доступа.
-  recommendedMode?: 'chat' | 'code';
+  recommendedMode?: 'chat' | 'code' | null;
 }
 
-export const PROMPT_TEMPLATE_CATEGORIES = [
-  'Тексты и соцсети',
-  'Код',
-  'Логи и данные',
-  'Патчи и релизы',
-  'Поддержка игроков',
+export const PROMPT_TEMPLATE_ICONS = [
+  'FileText', 'Megaphone', 'PartyPopper', 'LineChart', 'Code2', 'Wand2', 'Bug', 'FileSearch',
+  'ScrollText', 'Rocket', 'MessagesSquare', 'Languages', 'Sparkles', 'Star', 'Zap', 'Info',
 ];
 
-export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
+// Набор "стандартных" шаблонов — используется ТОЛЬКО как заготовки для кнопки "Добавить стандартный
+// набор" в пустом состоянии AiTemplatesManager.tsx (например, если сотрудник случайно удалил все
+// свои шаблоны). Ничего не подставляется автоматически на бэкенде — источник истины всегда БД.
+export const DEFAULT_TEMPLATE_DRAFTS: Omit<AiPromptTemplate, 'id'>[] = [
   {
-    id: 'social-post',
     icon: 'Megaphone',
     category: 'Тексты и соцсети',
     title: 'Пост в соцсети',
@@ -43,7 +44,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'участвовать).',
   },
   {
-    id: 'event-announce',
     icon: 'PartyPopper',
     category: 'Тексты и соцсети',
     title: 'Анонс ивента',
@@ -55,7 +55,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'игрокам захотелось поучаствовать.',
   },
   {
-    id: 'weekly-recap',
     icon: 'LineChart',
     category: 'Тексты и соцсети',
     title: 'Итоги недели',
@@ -67,7 +66,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       '6 пунктов.',
   },
   {
-    id: 'code-review',
     icon: 'Code2',
     category: 'Код',
     title: 'Код-ревью',
@@ -79,7 +77,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'исправления приводи в блоках кода с коротким пояснением.\n\n```\n[вставьте код]\n```',
   },
   {
-    id: 'refactor',
     icon: 'Wand2',
     category: 'Код',
     title: 'Рефакторинг',
@@ -90,7 +87,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'После кода кратко объясни, что и почему изменил.\n\n```\n[вставьте код]\n```',
   },
   {
-    id: 'bug-hunt',
     icon: 'Bug',
     category: 'Код',
     title: 'Поиск бага',
@@ -102,7 +98,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'предложи конкретное исправление.',
   },
   {
-    id: 'log-analysis',
     icon: 'FileSearch',
     category: 'Логи и данные',
     title: 'Анализ логов сервера',
@@ -114,7 +109,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'критично, что стоит проверить вручную.\n\n[вставьте фрагмент лога]',
   },
   {
-    id: 'summarize',
     icon: 'ScrollText',
     category: 'Логи и данные',
     title: 'Краткая выжимка текста',
@@ -125,7 +119,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       '[вставьте текст]',
   },
   {
-    id: 'patchnote',
     icon: 'Rocket',
     category: 'Патчи и релизы',
     title: 'Патчноут для игроков',
@@ -137,7 +130,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'Список изменений:\n[вставьте список правок]',
   },
   {
-    id: 'support-reply',
     icon: 'MessagesSquare',
     category: 'Поддержка игроков',
     title: 'Ответ игроку в поддержку',
@@ -149,7 +141,6 @@ export const PROMPT_TEMPLATES: AiPromptTemplate[] = [
       'канцелярита.',
   },
   {
-    id: 'translate',
     icon: 'Languages',
     category: 'Тексты и соцсети',
     title: 'Перевод текста',
