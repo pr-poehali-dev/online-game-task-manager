@@ -49,6 +49,24 @@ function errorText(err: string, message?: string, status?: number): string {
   return ERROR_MESSAGES[err] || 'Не удалось выполнить запрос — попробуйте ещё раз';
 }
 
+// Ждём ответ модели дольше, чем текстовый чат: сообщения с вложенными картинками/PDF и генерация
+// изображений/видео объективно занимают больше времени (см. AI_MANAGER_PLAN.md — известное
+// платформенное ограничение). Без явного таймаута соединение иногда обрывается стороной сети
+// раньше, чем backend успевает ответить (видно в логах как "Request cancelled"/"Failed to
+// fetch") — сообщение при этом просто "зависает" без объяснения, что случилось. Явный
+// AbortController даёт вместо этого понятную ошибку и гарантированно разблокирует композер.
+const SEND_TIMEOUT_MS = 120000;
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default function Ai() {
   const [mode, setMode] = useState<AiMode>('chat');
   const [chats, setChats] = useState<AiChatSummary[]>([]);
@@ -234,11 +252,11 @@ export default function Ai() {
     setMessages((prev) => [...prev, { id: tempId, role: 'user', content, attachments: attachmentsToSend.length ? attachmentsToSend : null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
-      const res = await fetch(AI_URL, {
+      const res = await fetchWithTimeout(AI_URL, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ action: 'send_message', chatId: activeChatId, model, content, mode, attachments: attachmentsToSend }),
-      });
+      }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
@@ -266,8 +284,12 @@ export default function Ai() {
           return [{ ...chat, updatedAt: new Date().toISOString() }, ...updated];
         });
       }
-    } catch {
-      setSendError('Не удалось отправить сообщение — проверьте соединение');
+    } catch (err) {
+      setSendError(
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Модель слишком долго не отвечает — попробуйте другую модель или повторите запрос'
+          : 'Не удалось отправить сообщение — проверьте соединение'
+      );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setInput(content);
       setPendingAttachments(attachmentsToSend);
@@ -296,7 +318,7 @@ export default function Ai() {
       if (params.transparentBackground) body.background = 'transparent';
       if (params.inputReferences.length) body.inputReferences = params.inputReferences;
 
-      const res = await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      const res = await fetchWithTimeout(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
@@ -311,8 +333,12 @@ export default function Ai() {
       ]);
       if (data.usage) setUsage(data.usage);
       if (!activeChatId) { setActiveChatId(data.chatId); loadChats(); }
-    } catch {
-      setSendError('Не удалось запустить генерацию — проверьте соединение');
+    } catch (err) {
+      setSendError(
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Модель слишком долго не отвечает — попробуйте другую модель или повторите запрос'
+          : 'Не удалось запустить генерацию — проверьте соединение'
+      );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
@@ -328,7 +354,7 @@ export default function Ai() {
     try {
       const body: Record<string, unknown> = { action: 'generate_video', chatId: activeChatId, model, prompt: params.prompt, duration: params.duration };
 
-      const res = await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+      const res = await fetchWithTimeout(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
@@ -343,8 +369,12 @@ export default function Ai() {
       ]);
       if (data.usage) setUsage(data.usage);
       if (!activeChatId) { setActiveChatId(data.chatId); loadChats(); }
-    } catch {
-      setSendError('Не удалось запустить генерацию — проверьте соединение');
+    } catch (err) {
+      setSendError(
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Модель слишком долго не отвечает — попробуйте другую модель или повторите запрос'
+          : 'Не удалось запустить генерацию — проверьте соединение'
+      );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
