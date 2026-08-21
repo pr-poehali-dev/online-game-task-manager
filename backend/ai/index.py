@@ -99,6 +99,43 @@ def _public_url(key: str) -> str:
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+def _extract_key(url):
+    '''Восстанавливает ключ файла в S3 из его публичной CDN-ссылки — обратная операция к
+    _public_url, нужна при удалении диалога, чтобы почистить реально загруженные файлы вложений
+    (картинки/PDF/видео/документы, сгенерированные изображения и видео), а не только запись в БД
+    (тот же паттерн, что _extract_key в backend/admin/index.py).'''
+    if not url:
+        return None
+    public_url = os.environ.get('S3_PUBLIC_URL', '').rstrip('/')
+    if public_url and url.startswith(public_url + '/'):
+        return url[len(public_url) + 1:]
+    marker = '/bucket/'
+    if marker in url:
+        return url.split(marker, 1)[1]
+    return None
+
+
+def _delete_chat_attachments(cur, schema, chat_id):
+    '''Удаляет из S3 все файлы, прикреплённые к сообщениям диалога (загруженные пользователем
+    вложения и сгенерированные ассистентом изображения/видео), перед удалением самих сообщений из
+    БД. Ошибки удаления отдельных файлов не прерывают процесс — лучше оставить "осиротевший" файл
+    в хранилище, чем не дать пользователю удалить диалог.'''
+    cur.execute(f"SELECT attachments FROM {schema}.ai_messages WHERE chat_id = %s AND attachments IS NOT NULL", (chat_id,))
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    s3 = None
+    for (attachments,) in cur.fetchall():
+        for a in (attachments or []):
+            key = _extract_key(a.get('url')) if isinstance(a, dict) else None
+            if not key:
+                continue
+            if s3 is None:
+                s3 = _s3_client()
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
+
+
 def _decode_data(data_b64):
     if ',' in data_b64 and data_b64.strip().startswith('data:'):
         data_b64 = data_b64.split(',', 1)[1]
@@ -308,7 +345,9 @@ def handler(event: dict, context) -> dict:
     '''Раздел "AI" — чат сотрудников с ИИ-моделями через единый ключ AI Tunnel (aitunnel.ru,
     OpenAI-совместимый API, оплата в рублях). Действия:
     list_models (каталог моделей AI Tunnel, публичный, кешируется, group=chat|images|videos),
-    list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя),
+    list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя —
+    delete_chat дополнительно удаляет из S3 все файлы вложений сообщений диалога, см.
+    _delete_chat_attachments, чтобы в хранилище не копился мусор после удаления чата),
     list_templates/create_template/update_template/delete_template (CRUD индивидуальных шаблонов
     промптов пользователя в ai_prompt_templates — полностью приватны, не общие для команды),
     upload_attachment (загрузка МАЛЕНЬКОГО файла/картинки в S3 одним запросом — base64 → CDN-URL,
@@ -490,6 +529,9 @@ def handler(event: dict, context) -> dict:
         if not cur.fetchone():
             cur.close(); conn.close()
             return _bad('not_found', 404)
+        # Файлы вложений удаляются из S3 ДО удаления сообщений из БД (см. AI_MANAGER_PLAN.md) —
+        # иначе после DELETE ai_messages ссылки на них уже нигде не найти.
+        _delete_chat_attachments(cur, schema, chat_id)
         cur.execute(f"DELETE FROM {schema}.ai_messages WHERE chat_id = %s", (chat_id,))
         cur.execute(f"DELETE FROM {schema}.ai_chats WHERE id = %s", (chat_id,))
         cur.close(); conn.close()
