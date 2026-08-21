@@ -228,11 +228,12 @@ def _chat_to_dict(row):
 
 
 def _message_to_dict(row):
-    mid, role, content, attachments, model, cost_rub, job_id, job_status, created_at = row
+    mid, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned = row
     return {
         'id': mid, 'role': role, 'content': content, 'attachments': attachments,
         'model': model, 'costRub': float(cost_rub) if cost_rub is not None else None,
         'jobId': job_id, 'jobStatus': job_status, 'createdAt': created_at.isoformat() if created_at else None,
+        'pinned': bool(pinned),
     }
 
 
@@ -256,10 +257,12 @@ def handler(event: dict, context) -> dict:
     создаёт сообщение с job_status='pending' и возвращает jobId, деньги списываются у AI Tunnel
     сразу при старте независимо от результата), check_video_job (опрос статуса задачи видео по
     messageId — при completed скачивает MP4 и заливает в S3, фронт должен поллить этот action раз
-    в несколько секунд, пока jobStatus='pending'), usage (остаток месячного лимита текущего
-    пользователя), balance (общий остаток аккаунта AI Tunnel — только для team_manage/admin).
-    Доступ ко всем действиям — только с правом ai_access (отдельное привилегированное право, см.
-    db_migrations V0076).'''
+    в несколько секунд, пока jobStatus='pending'), set_message_pinned (закрепление/открепление
+    ОДНОГО сообщения ассистента внутри диалога — для быстрого поиска полезного ответа в длинной
+    переписке, отдельно от ai_chats.pinned, которое закрепляет весь чат в списке слева), usage
+    (остаток месячного лимита текущего пользователя), balance (общий остаток аккаунта AI Tunnel —
+    только для team_manage/admin). Доступ ко всем действиям — только с правом ai_access (отдельное
+    привилегированное право, см. db_migrations V0076).'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -352,13 +355,31 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _bad('not_found', 404)
         cur.execute(
-            f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at "
+            f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned "
             f"FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id ASC",
             (chat_id,)
         )
         messages = [_message_to_dict(r) for r in cur.fetchall()]
         cur.close(); conn.close()
         return _ok({'chat': _chat_to_dict(row), 'messages': messages})
+
+    if action == 'set_message_pinned':
+        # Закрепление ОТВЕТА АССИСТЕНТА внутри диалога — быстрый способ найти полезный ответ в
+        # длинной переписке (см. AI_MANAGER_PLAN.md). В отличие от ai_chats.pinned (закрепление
+        # целого диалога в списке слева), это закрепление ОДНОГО СООБЩЕНИЯ внутри чата.
+        message_id = body.get('messageId')
+        pinned = bool(body.get('pinned'))
+        if not message_id:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(
+            f"UPDATE {schema}.ai_messages m SET pinned = %s "
+            f"FROM {schema}.ai_chats c WHERE m.chat_id = c.id AND m.id = %s AND c.user_id = %s",
+            (pinned, message_id, me['id'])
+        )
+        found = cur.rowcount > 0
+        cur.close(); conn.close()
+        return _ok({'ok': True}) if found else _bad('not_found', 404)
 
     if action == 'rename_chat':
         chat_id = body.get('chatId')

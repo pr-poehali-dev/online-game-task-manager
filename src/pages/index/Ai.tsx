@@ -241,7 +241,7 @@ export default function Ai() {
     setPendingAttachments([]);
 
     const tempId = -Date.now();
-    setMessages((prev) => [...prev, { id: tempId, role: 'user', content, attachments: attachmentsToSend.length ? attachmentsToSend : null, model: null, costRub: null, jobStatus: 'done', createdAt: null }]);
+    setMessages((prev) => [...prev, { id: tempId, role: 'user', content, attachments: attachmentsToSend.length ? attachmentsToSend : null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
       const res = await fetch(AI_URL, {
@@ -260,8 +260,8 @@ export default function Ai() {
       }
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== tempId),
-        { ...data.userMessage, jobStatus: 'done' },
-        { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: 'done' },
+        { ...data.userMessage, jobStatus: 'done', pinned: false },
+        { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: 'done', pinned: false },
       ]);
       if (data.usage) setUsage(data.usage);
       if (!activeChatId) {
@@ -290,7 +290,7 @@ export default function Ai() {
     setSending(true);
     setSendError('');
     const tempId = -Date.now();
-    setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: null, model: null, costRub: null, jobStatus: 'done', createdAt: null }]);
+    setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
       const action = mode === 'image' ? 'generate_image' : 'generate_video';
@@ -308,8 +308,8 @@ export default function Ai() {
       }
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== tempId),
-        { ...data.userMessage, jobStatus: 'done' },
-        { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: data.assistantMessage.jobStatus || 'done' },
+        { ...data.userMessage, jobStatus: 'done', pinned: false },
+        { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: data.assistantMessage.jobStatus || 'done', pinned: false },
       ]);
       if (data.usage) setUsage(data.usage);
       if (!activeChatId) { setActiveChatId(data.chatId); loadChats(); }
@@ -336,6 +336,13 @@ export default function Ai() {
     setChats((prev) => prev.filter((c) => c.id !== chatId));
     if (activeChatId === chatId) { setActiveChatId(null); setMessages([]); }
     await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'delete_chat', chatId }) });
+  }
+
+  // Закрепление ОДНОГО сообщения ассистента внутри текущего диалога — для быстрого поиска
+  // полезного ответа в длинной переписке (см. backend/ai/index.py, action=set_message_pinned).
+  async function handleTogglePinnedMessage(messageId: number, pinned: boolean) {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, pinned } : m)));
+    await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'set_message_pinned', messageId, pinned }) });
   }
 
   if (forbidden) {
@@ -426,7 +433,13 @@ export default function Ai() {
             <Icon name="Loader2" size={22} className="animate-spin text-primary" />
           </div>
         ) : (
-          <AiMessageList messages={messages} sending={sending} error={sendError} mode={mode} />
+          <AiMessageList
+            messages={messages}
+            sending={sending}
+            error={sendError}
+            mode={mode}
+            onTogglePinned={handleTogglePinnedMessage}
+          />
         )}
         {mode === 'image' || mode === 'video' ? (
           <AiGenerateComposer

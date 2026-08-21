@@ -28,6 +28,10 @@ export interface AiMessage {
   costRub: number | null;
   jobStatus: 'pending' | 'done' | 'failed';
   createdAt: string | null;
+  // pinned — закрепление ОДНОГО сообщения (только ответов ассистента) внутри диалога, отдельно от
+  // AiChatSummary.pinned (закрепляет весь чат в списке слева) — для быстрого поиска полезного
+  // ответа в длинной переписке (см. backend/ai/index.py, action=set_message_pinned).
+  pinned: boolean;
 }
 
 // Одна модель из публичного каталога AI Tunnel (GET /public/aitunnel/models/{chat,images,videos})
