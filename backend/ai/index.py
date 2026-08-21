@@ -178,28 +178,47 @@ def _fetch_models(group):
     return data
 
 
+# Сколько раз повторяем запрос к AI Tunnel при ошибке 429 (rate limit — модель перегружена
+# чужими запросами) и сколько ждём между попытками. Это самая частая САМОУСТРАНЯЮЩАЯСЯ ошибка:
+# через секунду-другую тот же самый запрос обычно проходит, а сотрудник иначе видит ошибку и
+# отправляет всё заново вручную. Пауза намеренно короткая — суммарно не больше ~3 секунд сверху,
+# чтобы не упереться в таймаут самой функции (см. docs/ai-section-overview.md, "Таймаут функции").
+RATE_LIMIT_RETRIES = 2
+RATE_LIMIT_PAUSE_SEC = 1.5
+
+
 def _aitunnel_request(path, api_key, payload, timeout=45):
     '''POST-запрос к AI Tunnel (chat/completions и т.д.) с ключом проекта. Возвращает (data, None)
     при успехе либо (None, (statusCode, error_payload)) при ошибке — единый формат для отдачи
-    клиенту без изменений (AI Tunnel уже отдаёт понятный {"error": {"code","message"}}).'''
+    клиенту без изменений (AI Tunnel уже отдаёт понятный {"error": {"code","message"}}).
+    При 429 (модель перегружена) запрос автоматически повторяется до RATE_LIMIT_RETRIES раз с
+    паузой RATE_LIMIT_PAUSE_SEC — деньги за отклонённый по rate limit запрос не списываются, так
+    что повтор безопасен и не приводит к двойной оплате.'''
     body = json.dumps(payload).encode('utf-8')
-    req = urllib.request.Request(
-        f'{AITUNNEL_BASE}{path}', data=body, method='POST',
-        headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode('utf-8')), None
-    except urllib.error.HTTPError as e:
-        raw = e.read().decode('utf-8', 'ignore')
+    last_err = None
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        req = urllib.request.Request(
+            f'{AITUNNEL_BASE}{path}', data=body, method='POST',
+            headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {api_key}'},
+        )
         try:
-            parsed = json.loads(raw)
-            message = (parsed.get('error') or {}).get('message') or raw
-        except Exception:
-            message = raw or str(e)
-        return None, (e.code if 400 <= e.code < 600 else 502, {'error': 'aitunnel_error', 'message': message})
-    except urllib.error.URLError as e:
-        return None, (502, {'error': 'aitunnel_unreachable', 'message': str(e.reason)})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode('utf-8')), None
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode('utf-8', 'ignore')
+            try:
+                parsed = json.loads(raw)
+                message = (parsed.get('error') or {}).get('message') or raw
+            except Exception:
+                message = raw or str(e)
+            last_err = (e.code if 400 <= e.code < 600 else 502, {'error': 'aitunnel_error', 'message': message})
+            if e.code == 429 and attempt < RATE_LIMIT_RETRIES:
+                time.sleep(RATE_LIMIT_PAUSE_SEC)
+                continue
+            return None, last_err
+        except urllib.error.URLError as e:
+            return None, (502, {'error': 'aitunnel_unreachable', 'message': str(e.reason)})
+    return None, last_err
 
 
 def _aitunnel_get(path, api_key, timeout=15):
@@ -1096,9 +1115,25 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return _ok({'jobStatus': 'done', 'attachments': [attachment], 'costRub': float(cost_rub)})
         elif status_val == 'failed':
-            cur.execute(f"UPDATE {schema}.ai_messages SET job_status = 'failed' WHERE id = %s", (msg_id,))
+            # Провайдер списывает деньги за видео СРАЗУ при старте задачи и не возвращает их,
+            # если генерация провалилась (см. docs/ai-tunnel-api-reference.md, "Отмены задач
+            # нет"). Раньше мы записывали расход только при успехе — деньги у AI Tunnel уже
+            # списаны, а в нашей статистике трат их нет, и месячные лимиты сотрудников
+            # занижались. Теперь досписываем стоимость и по провалившимся задачам, если AI
+            # Tunnel вернул её в usage.
+            usage = data.get('usage') or {}
+            cost_rub = usage.get('cost_rub') or 0
+            cur.execute(
+                f"UPDATE {schema}.ai_messages SET job_status = 'failed', cost_rub = %s WHERE id = %s",
+                (cost_rub, msg_id)
+            )
+            if cost_rub:
+                cur.execute(
+                    f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+                    (cost_rub, me['id'], _current_month())
+                )
             cur.close(); conn.close()
-            return _ok({'jobStatus': 'failed'})
+            return _ok({'jobStatus': 'failed', 'costRub': float(cost_rub)})
         else:
             cur.close(); conn.close()
             return _ok({'jobStatus': 'pending'})

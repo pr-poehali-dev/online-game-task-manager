@@ -45,6 +45,10 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   const [transparentBackground, setTransparentBackground] = useState(false);
   const [referenceImages, setReferenceImages] = useState<AiAttachment[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
+  // refError — ошибка загрузки референсного фото. Раньше молча игнорировалась (пустой catch), и
+  // сотрудник просто не понимал, почему превью не появилось — теперь текст ошибки виден прямо
+  // над панелью параметров (см. docs/ai-section-overview.md, план доработок п. 1.3).
+  const [refError, setRefError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -56,11 +60,17 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
 
   async function handleAddReference(file: File) {
     setUploadingRef(true);
+    setRefError('');
     try {
       const attachment = await uploadAiAttachment(file);
       setReferenceImages((prev) => [...prev, attachment]);
-    } catch {
-      /* молча игнорируем — сотрудник увидит, что превью не появилось, и попробует другой файл */
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      setRefError(
+        code === 'file_too_large'
+          ? 'Фото слишком большое — максимум 200 МБ'
+          : 'Не удалось загрузить фото — проверьте соединение и попробуйте ещё раз'
+      );
     } finally {
       setUploadingRef(false);
     }
@@ -103,6 +113,19 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
         <div className="mb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
           <Icon name="Info" size={12} className="shrink-0" />
           Генерация видео платная сразу при запуске — отменить или вернуть деньги за уже начатую генерацию нельзя
+        </div>
+      )}
+
+      {mode === 'image' && n > 1 && (
+        <div className="mb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <Icon name="Info" size={12} className="shrink-0" />
+          Не все модели умеют делать несколько вариантов за раз — некоторые вернут одно изображение, даже если запрошено больше
+        </div>
+      )}
+      {refError && (
+        <div className="mb-2 text-xs text-destructive flex items-center gap-1.5">
+          <Icon name="AlertCircle" size={13} className="shrink-0" />
+          {refError}
         </div>
       )}
 
