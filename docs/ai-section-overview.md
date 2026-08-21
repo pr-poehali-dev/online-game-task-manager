@@ -65,11 +65,21 @@ Backend   backend/ai/index.py      (Python 3.11, один handler, ~1100 стр�
 Подключение раздела: `ViewId = 'ai'` в `sharedTypes.ts`, пункт меню в `IndexTopbar.tsx` (виден
 при `can('ai_access')`). `AI_URL` и `authHeaders()` — из `src/pages/index/shared.tsx`.
 
-### Backend
+### Backend (`backend/ai/`)
 
-- `backend/ai/index.py` — единственный файл, один `handler()`, роутинг по `action`.
-- `backend/ai/requirements.txt` — `psycopg2-binary`, `boto3` (к AI Tunnel ходим через `urllib`).
-- `backend/ai/tests.json` — 3 базовых теста (OPTIONS + два 401 без токена).
+| Файл | Строк | Назначение |
+|---|---|---|
+| `index.py` | 113 | Только маршрутизатор: CORS, авторизация, право `ai_access`, разбор тела → карта `ACTIONS` |
+| `common.py` | 391 | Инфраструктура: ответы/CORS, БД, права, S3, клиент AI Tunnel, разбор вложений, лимиты |
+| `chats.py` | 272 | Каталог моделей, лимиты и баланс, CRUD диалогов, поиск по переписке, шаблоны промптов |
+| `files.py` | 146 | Загрузка вложений в S3: одним запросом и кусочками |
+| `generate.py` | 533 | Обращения к моделям: чат, картинки, видео, опрос видео, автоназвание, перегенерация |
+
+Все обработчики имеют единую сигнатуру `(cur, conn, schema, me, body, qs)` и сами закрывают
+курсор/соединение — так было и в исходном едином файле.
+
+- `requirements.txt` — `psycopg2-binary`, `boto3` (к AI Tunnel ходим через `urllib`).
+- `tests.json` — 3 базовых теста (OPTIONS + два 401 без токена).
 
 ### Миграции
 
@@ -284,8 +294,9 @@ pendingAttachments → AiComposer (превью, удаление до отпр�
 
 ## 9. Слабые места кода (кандидаты на рефакторинг)
 
-- `backend/ai/index.py` — **1106 строк** в одном файле, роутинг цепочкой `if action == ...`.
-  Просится разбиение на модули: `chats.py`, `files.py`, `generate.py`, `templates.py`.
+- ~~`backend/ai/index.py` — 1344 строки в одном файле~~ ✅ Разбит на `index.py` (маршрутизатор),
+  `common.py`, `chats.py`, `files.py`, `generate.py`. Роутинг — через карту `ACTIONS` вместо
+  цепочки `if action == ...`.
 - `useAiSection.ts` — три почти одинаковых обработчика (`sendMessage`, `handleGenerateImage`,
   `handleGenerateVideo`) с дублирующимся try/catch, оптимистичным рендером и разбором ошибок.
   Просится общий внутренний помощник. (Сам `Ai.tsx` уже разбит: 551 → 91 строка.)
@@ -342,7 +353,7 @@ pendingAttachments → AiComposer (превью, удаление до отпр�
 
 | # | Задача |
 |---|---|
-| 4.1 | Разбить `backend/ai/index.py` на модули по доменам |
+| ~~4.1~~ | ✅ Выполнено: `backend/ai/index.py` разбит на модули по доменам |
 | 4.2 | Вынести общую логику запроса из `Ai.tsx` в хук `useAiRequest` |
 | 4.3 | Расширить `tests.json` до реальных сценариев с тестовым токеном |
 | 4.4 | Фоновая чистка «осиротевших» файлов в `ai/_chunks/` после прерванных загрузок |
