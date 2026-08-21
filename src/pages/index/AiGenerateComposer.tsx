@@ -22,7 +22,7 @@ export default function AiGenerateComposer({ mode, onGenerate, generating, usage
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState(false);
   const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
-  useAutosizeTextarea(textareaRef, prompt, maxHeight);
+  useAutosizeTextarea(textareaRef, prompt, maxHeight, expanded);
 
   const usagePercent = usage && usage.limitRub > 0 ? Math.min(100, (usage.spentRub / usage.limitRub) * 100) : 0;
 

@@ -33,7 +33,7 @@ export default function AiComposer({
   // лишь поднимает потолок, до которого можно вырасти.
   const [expanded, setExpanded] = useState(false);
   const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
-  useAutosizeTextarea(textareaRef, value, maxHeight);
+  useAutosizeTextarea(textareaRef, value, maxHeight, expanded);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
