@@ -112,15 +112,17 @@ Frontend никогда не обращается к AI Tunnel напрямую 
 - [ ] Ключ добавляется в раздел "Служебные ключи" (Кабинет → Управление проектом → Служебные
       ключи) — новое поле `AITUNNEL_API_KEY` (секретное).
 
-### Этап 1 — Права доступа и БД
+### Этап 1 — Права доступа и БД ✅ Выполнено
 
-- [ ] Миграция `V0076__ai_section.sql`:
-  - Добавить `ai_access` в `ALL_PERMISSIONS` (`backend/admin/index.py`) и `PermissionKey`
-    (`src/lib/auth.tsx`), по аналогии с `logs_view` — попадает в `PRIVILEGED_PERMISSIONS`
-    (выдаёт только владелец проекта, т.к. открывает доступ к платному внешнему сервису).
-  - Выдать `ai_access: true` владельцу проекта (`WHERE id = 1`), как это сделано для `logs_view`
-    в `V0075`.
-  - Таблицы:
+- [x] Миграции `V0076__ai_section_permission_and_tables.sql` +
+      `V0077__ai_tables_switch_to_rub_currency.sql`:
+  - Добавлено `ai_access` в `ALL_PERMISSIONS`/`PRIVILEGED_PERMISSIONS` (`backend/admin/index.py`)
+    и `PermissionKey` (`src/lib/auth.tsx`), по аналогии с `logs_view` — выдаёт (в UI Кабинет →
+    Команда) только владелец проекта, т.к. право открывает доступ к платному внешнему сервису.
+    Добавлена группа "AI" в `OWNER_ONLY_PERMISSION_GROUPS` (`src/pages/admin/adminShared.ts`).
+  - Выдано `ai_access: true` владельцу проекта (`id = 1`), как это сделано для `logs_view` в
+    `V0075`.
+  - Созданы таблицы (актуальная структура в БД):
     ```sql
     CREATE TABLE ai_chats (
         id SERIAL PRIMARY KEY,
@@ -135,14 +137,14 @@ Frontend никогда не обращается к AI Tunnel напрямую 
 
     CREATE TABLE ai_messages (
         id SERIAL PRIMARY KEY,
-        chat_id INTEGER NOT NULL REFERENCES ai_chats(id) ON DELETE CASCADE,
+        chat_id INTEGER NOT NULL REFERENCES ai_chats(id),
         role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
         content TEXT NOT NULL,
         attachments JSONB,        -- [{name,url,contentType,size}] — файлы/картинки/видео
         model TEXT,               -- модель, которой сгенерирован ответ (для assistant)
-        cost_rub NUMERIC(10,4),   -- из usage.cost_rub ответа AI Tunnel
+        cost_rub NUMERIC(10,5),   -- из usage.cost_rub ответа AI Tunnel
         job_id TEXT,              -- id асинхронной задачи видео (POST /v1/videos), пока не done
-        job_status TEXT,          -- pending | completed | failed — только для видео
+        job_status TEXT NOT NULL DEFAULT 'done' CHECK (job_status IN ('pending','done','failed')),
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -156,7 +158,11 @@ Frontend никогда не обращается к AI Tunnel напрямую 
     );
     ```
   - `ai_usage.limit_rub` редактируется админом за сотрудника (аналог `specialization` в
-    `UserList.tsx`) — конкретный интерфейс см. Этап 5.
+    `UserList.tsx`) — конкретный интерфейс см. Этап 5 (пока не реализован).
+  - Примечание: FK-колонки без `ON DELETE CASCADE` (ограничение инструмента миграций в этом
+    окружении не даёт использовать `DELETE`-семантику) — при удалении пользователя/чата чистить
+    зависимые записи нужно будет вручную в коде backend или отдельной миграцией позже.
+- [x] `sync_backend` — функция `admin` задеплоена, тесты пройдены (4/4).
 
 ### Этап 2 — Backend: базовый чат (текст)
 

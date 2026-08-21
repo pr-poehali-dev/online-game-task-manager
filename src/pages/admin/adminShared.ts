@@ -91,6 +91,13 @@ export const OWNER_ONLY_PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'logs_view', label: 'Доступ к разделу «Логи» (ники, торговля и другие игровые действия всех игроков сервера) — отдельное право, не связано с доступом к «Патчам»' },
     ],
   },
+  {
+    title: 'AI',
+    icon: 'Sparkles',
+    items: [
+      { key: 'ai_access', label: 'Доступ к разделу «AI» (чат с ИИ-моделями, генерация изображений и видео через платный внешний сервис) — расходы списываются с общего баланса проекта' },
+    ],
+  },
 ];
 
 // Точечная донастройка ПОВЕРХ patch_edit (см. PRIVILEGED_PERMISSIONS в backend/admin/index.py —

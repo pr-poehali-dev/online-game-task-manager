@@ -67,6 +67,7 @@ ALL_PERMISSIONS = [
     'private_notes_view_others',
     'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
     'logs_view',
+    'ai_access',
     'team_manage',
 ]
 
@@ -84,28 +85,32 @@ ALL_PERMISSIONS = [
 # logs_view (доступ к разделу "Логи": ники, торговля и другие игровые действия ВСЕХ игроков)
 # добавлен по той же причине, что patch_edit — чувствительные данные, выдавать должен только
 # владелец проекта, а не любой администратор с доступом к "Команде".
+# ai_access (доступ к разделу "AI" — общение с моделями через платный AI Tunnel API, см.
+# backend/ai/index.py) добавлен по той же причине: открывает доступ к внешнему платному сервису,
+# должен выдаваться точечно владельцем, а не автоматически всем администраторам.
 OWNER_USER_ID = 1
-PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit', 'logs_view'}
+PRIVILEGED_PERMISSIONS = {'private_notes_view_others', 'patch_edit', 'logs_view', 'ai_access'}
 
 
 def _effective_perms(role, raw):
     '''Индивидуальные права (если заданы явно) имеют приоритет выше роли. Если право не задано —
-    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit, logs_view и
-    team_manage — по требованию пользователя эти права по умолчанию не должны доставаться всем
+    берётся значение по умолчанию для роли (role == 'admin'), КРОМЕ patch_edit, logs_view, ai_access
+    и team_manage — по требованию пользователя эти права по умолчанию не должны доставаться всем
     администраторам автоматически (в отличие от остальных привилегий): patch_edit изначально есть
     только у владельца проекта (OWNER_USER_ID, ему выдано явно через миграцию db_migrations),
     logs_view — доступ к разделу "Логи" (персональные данные игроков — ники, торговля, действия),
-    выдаётся владельцу той же миграцией и дальше делегируется точечно, team_manage — делегируется
-    точечно каждому конкретному участнику. patch_launcher_upload/patch_delete_files дополнительно
-    требуют patch_edit=true как предусловие (см. ниже) — без него всегда False, даже если
-    сохранённое значение в БД было true (например patch_edit отозвали позже).'''
+    ai_access — доступ к разделу "AI" (платный внешний сервис), выдаются владельцу той же
+    миграцией и дальше делегируются точечно, team_manage — делегируется точечно каждому
+    конкретному участнику. patch_launcher_upload/patch_delete_files дополнительно требуют
+    patch_edit=true как предусловие (см. ниже) — без него всегда False, даже если сохранённое
+    значение в БД было true (например patch_edit отозвали позже).'''
     result = {}
     for key in ALL_PERMISSIONS:
         if key in ('patch_launcher_upload', 'patch_delete_files'):
             continue
         if isinstance(raw, dict) and key in raw and raw[key] is not None:
             result[key] = bool(raw[key])
-        elif key in ('patch_edit', 'logs_view', 'team_manage'):
+        elif key in ('patch_edit', 'logs_view', 'ai_access', 'team_manage'):
             result[key] = False
         else:
             result[key] = (role == 'admin')
