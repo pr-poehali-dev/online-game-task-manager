@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { IMAGE_ASPECT_RATIOS, VIDEO_DURATIONS, IMAGE_QUALITY_OPTIONS, IMAGE_OUTPUT_FORMATS, IMAGE_COUNT_OPTIONS } from './AiTypes';
+import { VIDEO_DURATIONS, IMAGE_COUNT_OPTIONS, imageModelCapabilities } from './AiTypes';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
 import { uploadAiAttachment } from './aiUploadApi';
-import type { AiUsage, AiAttachment } from './AiTypes';
+import type { AiUsage, AiAttachment, AiModelInfo } from './AiTypes';
 
 const COMPACT_MAX_HEIGHT = 160;
 const EXPANDED_MAX_HEIGHT = 480;
@@ -30,6 +30,10 @@ interface AiGenerateComposerProps {
   generating: boolean;
   usage: AiUsage | null;
   limitExceeded: boolean;
+  // modelInfo — описание ВЫБРАННОЙ модели из каталога AI Tunnel. По нему скрываем параметры,
+  // которых у модели нет, чтобы не отправлять заведомо невалидный запрос (см.
+  // imageModelCapabilities в AiTypes.ts).
+  modelInfo?: AiModelInfo;
 }
 
 // Параметры генерации запоминаются между запусками и перезагрузками страницы: сотрудник обычно
@@ -46,7 +50,7 @@ function savedNumber(key: string, fallback: number): number {
   return Number(localStorage.getItem(PARAM_KEY + key)) || fallback;
 }
 
-export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVideo, generating, usage, limitExceeded }: AiGenerateComposerProps) {
+export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVideo, generating, usage, limitExceeded, modelInfo }: AiGenerateComposerProps) {
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState(() => savedText('aspectRatio', '16:9'));
   const [duration, setDuration] = useState(() => savedNumber('duration', 5));
@@ -69,6 +73,22 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   const [expanded, setExpanded] = useState(false);
   const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
   useAutosizeTextarea(textareaRef, prompt, maxHeight, expanded);
+
+  const caps = imageModelCapabilities(modelInfo);
+  const countOptions = IMAGE_COUNT_OPTIONS.filter((c) => c <= caps.maxCount);
+
+  // При смене модели ранее выбранное значение может оказаться недопустимым (например, было 16:9,
+  // а новая модель поддерживает только 1:1) — молча приводим к первому доступному, иначе запрос
+  // ушёл бы с невалидным параметром и упал с 400.
+  useEffect(() => {
+    if (caps.aspectRatios.length > 0 && !caps.aspectRatios.includes(aspectRatio)) {
+      setAspectRatio(caps.aspectRatios[0]);
+    }
+    if (quality && !caps.qualities.some((q) => q.value === quality)) setQuality('');
+    if (outputFormat && !caps.outputFormats.some((f) => f.value === outputFormat)) setOutputFormat('');
+    if (transparentBackground && !caps.supportsTransparent) setTransparentBackground(false);
+    if (n > caps.maxCount) setN(1);
+  }, [modelInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'aspectRatio', aspectRatio); }, [aspectRatio]);
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'duration', String(duration)); }, [duration]);
@@ -101,7 +121,11 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
     if (!prompt.trim() || generating || limitExceeded) return;
     if (mode === 'image') {
       onGenerateImage({
-        prompt: prompt.trim(), aspectRatio, n, quality, outputFormat,
+        // Параметры, которых у модели нет, отправляем пустыми — backend их просто не положит в
+        // запрос к AI Tunnel (см. handle_generate_image: `if aspect_ratio:` и т.д.).
+        prompt: prompt.trim(),
+        aspectRatio: caps.aspectRatios.length > 0 ? aspectRatio : '',
+        n, quality, outputFormat,
         transparentBackground, inputReferences: referenceImages,
       });
       setReferenceImages([]);
@@ -137,7 +161,7 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
         </div>
       )}
 
-      {mode === 'image' && n > 1 && (
+      {mode === 'image' && n > 1 && countOptions.length > 1 && (
         <div className="mb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
           <Icon name="Info" size={12} className="shrink-0" />
           Не все модели умеют делать несколько вариантов за раз — некоторые вернут одно изображение, даже если запрошено больше
@@ -169,49 +193,61 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         {mode === 'image' ? (
           <>
-            <div className="flex items-center gap-1.5">
-              <Icon name="RectangleHorizontal" size={13} className="text-muted-foreground" />
+            {/* Каждый параметр показывается, только если ВЫБРАННАЯ модель его поддерживает
+                (данные из каталога AI Tunnel, см. imageModelCapabilities). Иначе запрос уходил бы
+                с параметром, который модель не принимает, и падал с 400. */}
+            {caps.aspectRatios.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Icon name="RectangleHorizontal" size={13} className="text-muted-foreground" />
+                <select
+                  value={aspectRatio}
+                  onChange={(e) => setAspectRatio(e.target.value)}
+                  disabled={referenceImages.length > 0}
+                  title={referenceImages.length > 0 ? 'При редактировании по референсу сохраняются пропорции исходного фото' : 'Соотношение сторон'}
+                  className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                >
+                  {caps.aspectRatios.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            )}
+            {countOptions.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <Icon name="Copy" size={13} className="text-muted-foreground" />
+                <select
+                  value={n}
+                  onChange={(e) => setN(Number(e.target.value))}
+                  title="Количество изображений"
+                  className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {countOptions.map((c) => <option key={c} value={c}>{c} шт.</option>)}
+                </select>
+              </div>
+            )}
+            {caps.qualities.length > 0 && (
               <select
-                value={aspectRatio}
-                onChange={(e) => setAspectRatio(e.target.value)}
-                disabled={referenceImages.length > 0}
-                title={referenceImages.length > 0 ? 'При редактировании по референсу сохраняются пропорции исходного фото' : 'Соотношение сторон'}
-                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-              >
-                {IMAGE_ASPECT_RATIOS.map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Icon name="Copy" size={13} className="text-muted-foreground" />
-              <select
-                value={n}
-                onChange={(e) => setN(Number(e.target.value))}
-                title="Количество изображений"
+                value={quality}
+                onChange={(e) => setQuality(e.target.value)}
+                title="Качество"
                 className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                {IMAGE_COUNT_OPTIONS.map((c) => <option key={c} value={c}>{c} шт.</option>)}
+                {caps.qualities.map((q) => <option key={q.value} value={q.value}>{q.label}</option>)}
               </select>
-            </div>
-            <select
-              value={quality}
-              onChange={(e) => setQuality(e.target.value)}
-              title="Качество"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {IMAGE_QUALITY_OPTIONS.map((q) => <option key={q.value} value={q.value}>{q.label}</option>)}
-            </select>
-            <select
-              value={outputFormat}
-              onChange={(e) => setOutputFormat(e.target.value)}
-              title="Формат файла"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {IMAGE_OUTPUT_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
-            </select>
+            )}
+            {caps.outputFormats.length > 0 && (
+              <select
+                value={outputFormat}
+                onChange={(e) => setOutputFormat(e.target.value)}
+                title="Формат файла"
+                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {caps.outputFormats.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            )}
+            {caps.supportsTransparent && (
             <button
               type="button"
               onClick={() => setTransparentBackground((v) => !v)}
-              title="Прозрачный фон (поддерживают не все модели)"
+              title="Прозрачный фон"
               className={`h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
                 transparentBackground ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
               }`}
@@ -219,6 +255,7 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
               <Icon name="Grid2x2" size={12} />
               Прозрачный фон
             </button>
+            )}
             <input
               ref={fileInputRef}
               type="file"

@@ -140,6 +140,7 @@ export default function AiChatPane({
           generating={sending}
           usage={usage}
           limitExceeded={limitExceeded}
+          modelInfo={models[model]}
         />
       ) : (
         <AiComposer

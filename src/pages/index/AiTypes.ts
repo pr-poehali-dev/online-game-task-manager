@@ -57,6 +57,16 @@ export interface AiModelInfo {
   max_price_per_image?: number;
   min_price_per_second?: number;
   max_price_per_second?: number;
+  // Возможности моделей ИЗОБРАЖЕНИЙ — каталог AI Tunnel честно сообщает, что именно поддерживает
+  // конкретная модель. Раньше композер показывал все параметры всегда, и запрос падал с 400
+  // ("не поддерживается соотношение сторон 16:9. Доступные: —"), потому что, например,
+  // gpt-image-1-mini вообще не принимает aspect_ratio. Пустой массив = параметр не поддерживается,
+  // поле ОТСУТСТВУЕТ = ограничений нет (показываем весь набор).
+  supported_aspect_ratios?: string[];
+  supported_quality?: string[];
+  supported_output_formats?: string[];
+  supported_background?: string[];
+  max_n?: number;
 }
 
 export type AiModelsMap = Record<string, AiModelInfo>;
@@ -205,3 +215,40 @@ export const IMAGE_OUTPUT_FORMATS: { value: string; label: string }[] = [
 ];
 
 export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4];
+
+// Какие параметры генерации реально доступны у ВЫБРАННОЙ модели изображений. Источник истины —
+// живой каталог AI Tunnel (см. AiModelInfo), ничего не хардкодим по именам моделей.
+// Правило чтения каталога:
+//   - поля НЕТ (модель ещё не описана в каталоге / выбрано "auto") → ограничений не знаем,
+//     показываем весь набор как раньше;
+//   - поле есть и ПУСТОЕ → параметр моделью не поддерживается, скрываем его из UI;
+//   - поле есть и заполнено → показываем ровно те значения, что перечислены.
+// Без этого композер отправлял, например, aspect_ratio модели gpt-image-1-mini, которая его не
+// принимает, и запрос падал с 400 "не поддерживается соотношение сторон".
+export interface ImageModelCapabilities {
+  aspectRatios: string[];
+  qualities: { value: string; label: string }[];
+  outputFormats: { value: string; label: string }[];
+  supportsTransparent: boolean;
+  maxCount: number;
+}
+
+export function imageModelCapabilities(info: AiModelInfo | undefined): ImageModelCapabilities {
+  const listOrAll = <T>(supported: string[] | undefined, all: T[], match: (item: T) => string): T[] => {
+    if (supported === undefined) return all;
+    if (supported.length === 0) return [];
+    return all.filter((item) => supported.includes(match(item)));
+  };
+
+  return {
+    // 'auto' из каталога в выпадающем списке не показываем — это и есть поведение "не передавать
+    // параметр", которое у нас выражено отсутствием выбора.
+    aspectRatios: info?.supported_aspect_ratios === undefined
+      ? IMAGE_ASPECT_RATIOS
+      : info.supported_aspect_ratios.filter((r) => r !== 'auto'),
+    qualities: listOrAll(info?.supported_quality, IMAGE_QUALITY_OPTIONS, (q) => q.value || 'auto'),
+    outputFormats: listOrAll(info?.supported_output_formats, IMAGE_OUTPUT_FORMATS, (f) => f.value || 'auto'),
+    supportsTransparent: info?.supported_background === undefined || info.supported_background.includes('transparent'),
+    maxCount: info?.max_n ?? Math.max(...IMAGE_COUNT_OPTIONS),
+  };
+}
