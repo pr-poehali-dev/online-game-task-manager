@@ -61,6 +61,17 @@ export interface AiModelInfo {
 
 export type AiModelsMap = Record<string, AiModelInfo>;
 
+// Результат поиска по содержимому переписки (backend action=search_messages) — снипет вокруг
+// найденного слова плюс ссылка на диалог/сообщение, чтобы открыть и подсветить его.
+export interface AiMessageSearchResult {
+  messageId: number;
+  chatId: number;
+  chatTitle: string;
+  role: 'user' | 'assistant' | 'system';
+  snippet: string;
+  createdAt: string | null;
+}
+
 export interface AiUsage {
   spentRub: number;
   limitRub: number;

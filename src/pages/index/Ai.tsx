@@ -13,7 +13,7 @@ import AiTemplatesManager from './AiTemplatesManager';
 import { useAiPromptTemplates } from './useAiPromptTemplates';
 import { uploadAiAttachment } from './aiUploadApi';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
-import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode } from './AiTypes';
+import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode, AiMessageSearchResult } from './AiTypes';
 
 const AI_MODEL_KEY_PREFIX = 'ai_last_model_';
 const VIDEO_POLL_INTERVAL = 6000;
@@ -29,6 +29,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_data: 'Не удалось прочитать файл',
   bad_request: 'Заполните запрос перед отправкой',
   not_found: 'Диалог не найден — возможно, он был удалён',
+  nothing_to_regenerate: 'Нечего перегенерировать — в диалоге пока нет ответа модели',
 };
 
 // Коды ошибок AI Tunnel совпадают с HTTP-статусами (см. docs/ai-tunnel-api-reference.md, раздел
@@ -87,6 +88,11 @@ export default function Ai() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
+  // retryAction — что именно повторить по кнопке "Повторить" рядом с текстом ошибки. Храним
+  // готовое замыкание с параметрами упавшего запроса (текст+вложения для чата, полный набор
+  // настроек для генерации), чтобы сотруднику не приходилось заново набирать промпт и
+  // перевыбирать файлы после сетевого сбоя или таймаута модели.
+  const [retryAction, setRetryAction] = useState<(() => void) | null>(null);
   const [usage, setUsage] = useState<AiUsage | null>(null);
   const [forbidden, setForbidden] = useState(false);
 
@@ -239,14 +245,41 @@ export default function Ai() {
     setPendingAttachments((prev) => prev.filter((a) => a.id !== id));
   }
 
-  async function handleSend() {
+  // Осмысленное название нового диалога вместо обрезанного первого сообщения. Запускается ФОНОМ
+  // после того, как ответ уже показан сотруднику — намеренно не ждём его и молча игнорируем
+  // ошибку: название это косметика, из-за неё не должно ломаться ничего в основном сценарии.
+  async function generateTitle(chatId: number) {
+    try {
+      const res = await fetch(AI_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'generate_title', chatId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.title) {
+        setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title: data.title } : c)));
+      }
+    } catch {
+      /* ignore — останется название по первому сообщению */
+    }
+  }
+
+  function handleSend() {
     const content = input.trim();
     if (!content || sending) return;
+    setInput('');
+    setPendingAttachments([]);
+    sendMessage(content, pendingAttachments);
+  }
+
+  // sendMessage вынесен отдельно от handleSend, чтобы тот же самый запрос (с теми же вложениями)
+  // можно было переотправить по кнопке "Повторить", не полагаясь на текущее содержимое композера
+  // — сотрудник мог уже начать печатать следующий вопрос.
+  async function sendMessage(content: string, attachmentsToSend: AiAttachment[]) {
+    if (sending) return;
     setSending(true);
     setSendError('');
-    setInput('');
-    const attachmentsToSend = pendingAttachments;
-    setPendingAttachments([]);
+    setRetryAction(null);
 
     const tempId = -Date.now();
     setMessages((prev) => [...prev, { id: tempId, role: 'user', content, attachments: attachmentsToSend.length ? attachmentsToSend : null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
@@ -261,8 +294,8 @@ export default function Ai() {
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setInput(content);
-        setPendingAttachments(attachmentsToSend);
+        // Лимит исчерпан — повторять бессмысленно, пока администратор не поднимет лимит.
+        if (data.error !== 'limit_exceeded') setRetryAction(() => () => sendMessage(content, attachmentsToSend));
         if (data.spentRub != null) setUsage({ spentRub: data.spentRub, limitRub: data.limitRub });
         return;
       }
@@ -275,6 +308,7 @@ export default function Ai() {
       if (!activeChatId) {
         setActiveChatId(data.chatId);
         loadChats();
+        generateTitle(data.chatId);
       } else {
         setChats((prev) => {
           const idx = prev.findIndex((c) => c.id === activeChatId);
@@ -291,8 +325,7 @@ export default function Ai() {
           : 'Не удалось отправить сообщение — проверьте соединение'
       );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setInput(content);
-      setPendingAttachments(attachmentsToSend);
+      setRetryAction(() => () => sendMessage(content, attachmentsToSend));
     } finally {
       setSending(false);
     }
@@ -301,6 +334,7 @@ export default function Ai() {
   async function handleGenerateImage(params: ImageGenerateParams) {
     setSending(true);
     setSendError('');
+    setRetryAction(null);
     const tempId = -Date.now();
     setMessages((prev) => [...prev, {
       id: tempId, role: 'user', content: params.prompt,
@@ -327,6 +361,7 @@ export default function Ai() {
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        if (data.error !== 'limit_exceeded') setRetryAction(() => () => handleGenerateImage(params));
         if (data.spentRub != null) setUsage({ spentRub: data.spentRub, limitRub: data.limitRub });
         return;
       }
@@ -344,6 +379,7 @@ export default function Ai() {
           : 'Не удалось запустить генерацию — проверьте соединение'
       );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setRetryAction(() => () => handleGenerateImage(params));
     } finally {
       setSending(false);
     }
@@ -352,6 +388,7 @@ export default function Ai() {
   async function handleGenerateVideo(params: VideoGenerateParams) {
     setSending(true);
     setSendError('');
+    setRetryAction(null);
     const tempId = -Date.now();
     setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
@@ -363,6 +400,10 @@ export default function Ai() {
       if (!res.ok) {
         setSendError(errorText(data.error, data.message, res.status));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        // Повтор предлагаем только если задача ТОЧНО не стартовала (ошибка пришла от нашего
+        // backend или AI Tunnel отклонил запрос) — за уже запущенную генерацию видео провайдер
+        // списывает деньги сразу и не возвращает их, повторный запуск был бы двойной оплатой.
+        if (data.error !== 'limit_exceeded') setRetryAction(() => () => handleGenerateVideo(params));
         if (data.spentRub != null) setUsage({ spentRub: data.spentRub, limitRub: data.limitRub });
         return;
       }
@@ -374,16 +415,65 @@ export default function Ai() {
       if (data.usage) setUsage(data.usage);
       if (!activeChatId) { setActiveChatId(data.chatId); loadChats(); }
     } catch (err) {
+      // Сетевой обрыв/таймаут при запуске видео — повтор НЕ предлагаем: задача могла успешно
+      // стартовать на стороне AI Tunnel, просто ответ до нас не дошёл, и повторный запуск
+      // означал бы вторую оплату той же генерации.
       setSendError(
         err instanceof Error && err.name === 'AbortError'
-          ? 'Модель слишком долго не отвечает — попробуйте другую модель или повторите запрос'
-          : 'Не удалось запустить генерацию — проверьте соединение'
+          ? 'Генерация могла запуститься — обновите страницу и проверьте диалог, прежде чем запускать заново'
+          : 'Не удалось запустить генерацию — проверьте соединение и обновите страницу перед повтором'
       );
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setSending(false);
     }
   }
+
+  // Перегенерация последнего ответа ассистента — старый ответ заменяется новым по той же
+  // истории. Модель берётся ТЕКУЩАЯ из шапки, поэтому переключив её перед нажатием, можно
+  // сравнить, как на тот же вопрос ответит другая модель (см. backend action=regenerate).
+  async function handleRegenerate() {
+    if (!activeChatId || sending) return;
+    setSending(true);
+    setSendError('');
+    setRetryAction(null);
+    try {
+      const res = await fetchWithTimeout(AI_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'regenerate', chatId: activeChatId, model }),
+      }, SEND_TIMEOUT_MS);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSendError(errorText(data.error, data.message, res.status));
+        if (data.error !== 'limit_exceeded') setRetryAction(() => handleRegenerate);
+        return;
+      }
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== data.replacedMessageId),
+        { ...data.assistantMessage, attachments: null, jobStatus: 'done', pinned: false },
+      ]);
+      if (data.usage) setUsage(data.usage);
+    } catch (err) {
+      setSendError(
+        err instanceof Error && err.name === 'AbortError'
+          ? 'Модель слишком долго не отвечает — попробуйте другую модель или повторите запрос'
+          : 'Не удалось перегенерировать ответ — проверьте соединение'
+      );
+      setRetryAction(() => handleRegenerate);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // Поиск по содержимому всех диалогов (backend action=search_messages). useCallback обязателен:
+  // AiChatList запускает поиск в useEffect по изменению этой функции — без мемоизации он бы
+  // перезапускался на каждый рендер.
+  const handleSearchMessages = useCallback(async (query: string): Promise<AiMessageSearchResult[]> => {
+    const res = await fetch(`${AI_URL}?action=search_messages&query=${encodeURIComponent(query)}`, { method: 'GET', headers: authHeaders() });
+    const data = await res.json().catch(() => ({}));
+    return res.ok ? (data.results || []) : [];
+  }, []);
 
   async function handleRenameChat(chatId: number, title: string) {
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)));
@@ -436,6 +526,7 @@ export default function Ai() {
           onRenameChat={handleRenameChat}
           onTogglePinned={handleTogglePinned}
           onDeleteChat={handleDeleteChat}
+          onSearchMessages={handleSearchMessages}
         />
       </div>
 
@@ -450,6 +541,7 @@ export default function Ai() {
             onRenameChat={handleRenameChat}
             onTogglePinned={handleTogglePinned}
             onDeleteChat={handleDeleteChat}
+            onSearchMessages={handleSearchMessages}
             bare
           />
         </SheetContent>
@@ -504,6 +596,8 @@ export default function Ai() {
             mode={mode}
             chatTitle={activeChatTitle || 'Новый чат'}
             onTogglePinned={handleTogglePinnedMessage}
+            onRetry={retryAction ?? undefined}
+            onRegenerate={mode === 'chat' || mode === 'code' ? handleRegenerate : undefined}
           />
         )}
         {mode === 'image' || mode === 'video' ? (

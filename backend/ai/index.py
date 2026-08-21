@@ -332,6 +332,15 @@ def _history_row_to_message(role, text, attachments):
     return {'role': role, 'content': parts}
 
 
+# Модель для автоназвания диалогов (action=generate_title) — намеренно самая дешёвая и быстрая:
+# задача примитивная, качество топовой модели тут не нужно, а платить за каждый новый чат по
+# полной цене незачем. 'auto' не подходит — AI Tunnel может подобрать дорогую модель.
+TITLE_MODEL = 'gpt-5-nano'
+TITLE_SYSTEM_PROMPT = (
+    'Придумай короткое название для диалога по его началу: 2-5 слов, на русском языке, без '
+    'кавычек, без точки в конце, по сути вопроса. Ответь ТОЛЬКО названием, без пояснений.'
+)
+
 CODE_SYSTEM_PROMPT = (
     'Ты — опытный senior-разработчик, помогаешь команде с код-ревью, рефакторингом и поиском '
     'багов. Отвечай по существу, приводи исправленный код в блоках ```язык, кратко объясняй '
@@ -409,7 +418,13 @@ def handler(event: dict, context) -> dict:
     в несколько секунд, пока jobStatus='pending'), set_message_pinned (закрепление/открепление
     ОДНОГО сообщения ассистента внутри диалога — для быстрого поиска полезного ответа в длинной
     переписке, отдельно от ai_chats.pinned, которое закрепляет весь чат в списке слева), usage
-    (остаток месячного лимита текущего пользователя), balance (общий остаток аккаунта AI Tunnel —
+    (остаток месячного лимита текущего пользователя), generate_title (осмысленное название
+    диалога дешёвой моделью по первому обмену — фоновый запрос фронта, не блокирует ответ),
+    search_messages (поиск по содержимому
+    сообщений во ВСЕХ диалогах пользователя — возвращает фрагмент текста вокруг совпадения),
+    regenerate (перегенерация последнего ответа
+    ассистента в текстовом диалоге — удаляет старый ответ и заново спрашивает модель по той же
+    истории, можно указать ДРУГУЮ модель, чтобы сравнить ответы), balance (общий остаток аккаунта AI Tunnel —
     только для team_manage/admin). Доступ ко всем действиям — только с правом ai_access (отдельное
     привилегированное право, см. db_migrations V0076).'''
     method = event.get('httpMethod', 'GET')
@@ -511,6 +526,194 @@ def handler(event: dict, context) -> dict:
         messages = [_message_to_dict(r) for r in cur.fetchall()]
         cur.close(); conn.close()
         return _ok({'chat': _chat_to_dict(row), 'messages': messages})
+
+    if action == 'generate_title':
+        '''Осмысленное название диалога силами дешёвой модели вместо обрезанных 60 символов
+        первого сообщения. Вызывается фронтом ОТДЕЛЬНЫМ фоновым запросом после первого обмена, а
+        не внутри send_message — иначе лишний поход к модели добавился бы ко времени основного
+        ответа, который и так упирается в таймаут функции (см. docs/ai-section-overview.md).
+        Стоимость мизерная (несколько десятков токенов на самой дешёвой модели), но всё равно
+        честно списывается в ai_usage.'''
+        chat_id = body.get('chatId')
+        if not chat_id:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        cur.execute(f"SELECT id FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
+        if not cur.fetchone():
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+
+        api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+        if not api_key:
+            cur.close(); conn.close()
+            return _bad('aitunnel_not_configured')
+
+        # Берём только первый вопрос и первый ответ — этого достаточно, чтобы понять тему, и не
+        # раздувает стоимость на длинных диалогах.
+        cur.execute(
+            f"SELECT role, content FROM {schema}.ai_messages WHERE chat_id = %s AND content <> '' ORDER BY id ASC LIMIT 2",
+            (chat_id,)
+        )
+        rows = cur.fetchall()
+        if not rows:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        excerpt = '\n\n'.join(f"{r[0]}: {(r[1] or '')[:600]}" for r in rows)
+
+        data, err = _aitunnel_request('/chat/completions', api_key, {
+            'model': TITLE_MODEL,
+            'messages': [
+                {'role': 'system', 'content': TITLE_SYSTEM_PROMPT},
+                {'role': 'user', 'content': excerpt},
+            ],
+            'max_tokens': 30,
+        }, timeout=20)
+        if err:
+            # Название — необязательная косметика: если модель не ответила, молча оставляем
+            # старый заголовок, не показывая сотруднику ошибку на ровном месте.
+            cur.close(); conn.close()
+            return _ok({'title': None})
+
+        choice = (data.get('choices') or [{}])[0]
+        title = ((choice.get('message') or {}).get('content') or '').strip().strip('"«»').replace('\n', ' ')
+        if not title:
+            cur.close(); conn.close()
+            return _ok({'title': None})
+        title = title[:80]
+        cost_rub = (data.get('usage') or {}).get('cost_rub') or 0
+        cur.execute(f"UPDATE {schema}.ai_chats SET title = %s WHERE id = %s", (title, chat_id))
+        if cost_rub:
+            cur.execute(
+                f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+                (cost_rub, me['id'], _current_month())
+            )
+        cur.close(); conn.close()
+        return _ok({'title': title})
+
+    if action == 'search_messages':
+        '''Поиск по СОДЕРЖИМОМУ сообщений во всех диалогах пользователя. Раньше искать можно было
+        только по названиям чатов (фильтр в AiChatList.tsx) — в длинной переписке найти нужный
+        ответ было практически невозможно. Возвращает совпадения с названием диалога и коротким
+        фрагментом текста, чтобы фронт мог сразу открыть нужный чат и подсветить сообщение.'''
+        query = (qs.get('query') or body.get('query') or '').strip()
+        if len(query) < 2:
+            cur.close(); conn.close()
+            return _ok({'results': []})
+        # ILIKE с экранированием спецсимволов LIKE — полнотекстовый индекс здесь избыточен:
+        # объём переписки одного сотрудника невелик, а ts_query плохо работает с фрагментами слов.
+        pattern = '%' + query.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
+        cur.execute(
+            f"SELECT m.id, m.chat_id, m.role, m.content, m.created_at, c.title "
+            f"FROM {schema}.ai_messages m JOIN {schema}.ai_chats c ON c.id = m.chat_id "
+            f"WHERE c.user_id = %s AND m.content ILIKE %s ORDER BY m.id DESC LIMIT 50",
+            (me['id'], pattern)
+        )
+        results = []
+        for mid, cid, role, content, created_at, title in cur.fetchall():
+            # Фрагмент вокруг первого совпадения — так в списке результатов сразу видно контекст,
+            # а не первые 120 символов сообщения, которые могут не содержать искомого слова.
+            pos = (content or '').lower().find(query.lower())
+            start = max(0, pos - 60)
+            snippet = (content or '')[start:start + 160]
+            if start > 0:
+                snippet = '…' + snippet
+            if start + 160 < len(content or ''):
+                snippet += '…'
+            results.append({
+                'messageId': mid, 'chatId': cid, 'chatTitle': title, 'role': role,
+                'snippet': snippet, 'createdAt': created_at.isoformat() if created_at else None,
+            })
+        cur.close(); conn.close()
+        return _ok({'results': results})
+
+    if action == 'regenerate':
+        '''Перегенерация ПОСЛЕДНЕГО ответа ассистента в диалоге: удаляет его и заново спрашивает
+        модель по той же истории. Полезно, когда ответ не понравился или нужно сравнить с другой
+        моделью — модель можно передать другую (параметр model), не меняя сам вопрос. Работает
+        только для текстовых режимов (chat/code): у картинок и видео "перегенерация" — это просто
+        новый платный запуск через generate_image/generate_video, отдельное действие не нужно.'''
+        chat_id = body.get('chatId')
+        model = (body.get('model') or '').strip()
+        if not chat_id or not model:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+
+        cur.execute(f"SELECT id, mode FROM {schema}.ai_chats WHERE id = %s AND user_id = %s", (chat_id, me['id']))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+        mode = row[1] or 'chat'
+
+        spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
+        if spent >= limit_:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+        api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+        if not api_key:
+            cur.close(); conn.close()
+            return _bad('aitunnel_not_configured')
+
+        # Удаляем именно ПОСЛЕДНЕЕ сообщение, и только если оно от ассистента — иначе сотрудник
+        # мог бы случайно снести свой же вопрос (например, при двойном клике на кнопку).
+        cur.execute(
+            f"SELECT id, role FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id DESC LIMIT 1",
+            (chat_id,)
+        )
+        last = cur.fetchone()
+        if not last or last[1] != 'assistant':
+            cur.close(); conn.close()
+            return _bad('nothing_to_regenerate')
+        old_msg_id = last[0]
+        cur.execute(f"DELETE FROM {schema}.ai_messages WHERE id = %s", (old_msg_id,))
+
+        cur.execute(
+            f"SELECT role, content, attachments FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id DESC LIMIT %s",
+            (chat_id, MAX_HISTORY_MESSAGES)
+        )
+        history = list(reversed(cur.fetchall()))
+        if not history:
+            cur.close(); conn.close()
+            return _bad('nothing_to_regenerate')
+        messages = [_history_row_to_message(role, text, atts) for role, text, atts in history]
+        if mode == 'code':
+            messages = [{'role': 'system', 'content': CODE_SYSTEM_PROMPT}] + messages
+
+        data, err = _aitunnel_request('/chat/completions', api_key, {
+            'model': model, 'messages': messages, 'max_tokens': 4000,
+        })
+        if err:
+            cur.close(); conn.close()
+            status, payload_err = err
+            return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
+
+        choice = (data.get('choices') or [{}])[0]
+        answer = ((choice.get('message') or {}).get('content') or '').strip()
+        used_model = data.get('model') or model
+        usage = data.get('usage') or {}
+        cost_rub = usage.get('cost_rub') or 0
+
+        cur.execute(
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub) "
+            f"VALUES (%s, 'assistant', %s, %s, %s) RETURNING id, created_at",
+            (chat_id, answer, used_model, cost_rub)
+        )
+        new_msg_id, new_created_at = cur.fetchone()
+        cur.execute(
+            f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+            (cost_rub, me['id'], _current_month())
+        )
+        cur.execute(f"UPDATE {schema}.ai_chats SET updated_at = NOW() WHERE id = %s", (chat_id,))
+        cur.close(); conn.close()
+        return _ok({
+            'replacedMessageId': old_msg_id,
+            'assistantMessage': {
+                'id': new_msg_id, 'role': 'assistant', 'content': answer, 'model': used_model,
+                'costRub': float(cost_rub), 'createdAt': new_created_at.isoformat(),
+            },
+            'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
+        })
 
     if action == 'set_message_pinned':
         # Закрепление ОТВЕТА АССИСТЕНТА внутри диалога — быстрый способ найти полезный ответ в

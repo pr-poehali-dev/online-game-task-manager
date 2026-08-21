@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { IMAGE_ASPECT_RATIOS, VIDEO_DURATIONS, IMAGE_QUALITY_OPTIONS, IMAGE_OUTPUT_FORMATS, IMAGE_COUNT_OPTIONS } from './AiTypes';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
@@ -32,17 +32,31 @@ interface AiGenerateComposerProps {
   limitExceeded: boolean;
 }
 
+// Параметры генерации запоминаются между запусками и перезагрузками страницы: сотрудник обычно
+// работает сериями однотипных картинок (одно соотношение сторон, один формат), и выставлять всё
+// заново на каждый запрос — лишняя рутина. Ключи с префиксом, чтобы не пересекаться с другими
+// настройками раздела (ai_last_model_*, ai_active_chat_id).
+const PARAM_KEY = 'ai_gen_params_';
+
+function savedText(key: string, fallback: string): string {
+  return localStorage.getItem(PARAM_KEY + key) ?? fallback;
+}
+
+function savedNumber(key: string, fallback: number): number {
+  return Number(localStorage.getItem(PARAM_KEY + key)) || fallback;
+}
+
 export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVideo, generating, usage, limitExceeded }: AiGenerateComposerProps) {
   const [prompt, setPrompt] = useState('');
-  const [aspectRatio, setAspectRatio] = useState('16:9');
-  const [duration, setDuration] = useState(5);
-  const [n, setN] = useState(1);
-  const [quality, setQuality] = useState('');
-  const [outputFormat, setOutputFormat] = useState('');
+  const [aspectRatio, setAspectRatio] = useState(() => savedText('aspectRatio', '16:9'));
+  const [duration, setDuration] = useState(() => savedNumber('duration', 5));
+  const [n, setN] = useState(() => savedNumber('n', 1));
+  const [quality, setQuality] = useState(() => savedText('quality', ''));
+  const [outputFormat, setOutputFormat] = useState(() => savedText('outputFormat', ''));
   // transparentBackground — доступно не у всех моделей изображений (см. supported_background в
   // каталоге), но т.к. параметр универсальный и модели без поддержки его просто игнорируют (см.
   // docs/ai-tunnel-api-reference.md), не проверяем конкретную модель — либо сработает, либо нет.
-  const [transparentBackground, setTransparentBackground] = useState(false);
+  const [transparentBackground, setTransparentBackground] = useState(() => savedText('background', '') === 'transparent');
   const [referenceImages, setReferenceImages] = useState<AiAttachment[]>([]);
   const [uploadingRef, setUploadingRef] = useState(false);
   // refError — ошибка загрузки референсного фото. Раньше молча игнорировалась (пустой catch), и
@@ -55,6 +69,13 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   const [expanded, setExpanded] = useState(false);
   const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
   useAutosizeTextarea(textareaRef, prompt, maxHeight, expanded);
+
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'aspectRatio', aspectRatio); }, [aspectRatio]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'duration', String(duration)); }, [duration]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'n', String(n)); }, [n]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'quality', quality); }, [quality]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'outputFormat', outputFormat); }, [outputFormat]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'background', transparentBackground ? 'transparent' : ''); }, [transparentBackground]);
 
   const usagePercent = usage && usage.limitRub > 0 ? Math.min(100, (usage.spentRub / usage.limitRub) * 100) : 0;
 

@@ -16,6 +16,12 @@ interface AiMessageListProps {
   mode: AiMode;
   chatTitle: string;
   onTogglePinned: (messageId: number, pinned: boolean) => void;
+  // onRetry — переотправка последнего упавшего запроса (см. retryAction в Ai.tsx). Не передаётся,
+  // когда повтор невозможен или бессмыслен (исчерпан лимит, уже запущенная генерация видео).
+  onRetry?: () => void;
+  // onRegenerate — перегенерация последнего ответа ассистента. Передаётся только в текстовых
+  // режимах (chat/code): для картинок и видео "перегенерация" — это обычный новый платный запуск.
+  onRegenerate?: () => void;
 }
 
 const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
@@ -77,6 +83,44 @@ function MessageContent({ content }: { content: string }) {
         {content}
       </ReactMarkdown>
     </div>
+  );
+}
+
+// RetryButton — переотправка упавшего запроса без ручного перенабора промпта и перевыбора
+// вложений. Показывается прямо под текстом ошибки (см. retryAction в Ai.tsx).
+function RetryButton({ onRetry }: { onRetry: () => void }) {
+  return (
+    <button
+      onClick={onRetry}
+      className="mt-2 flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-destructive/40 text-destructive text-xs font-medium hover:bg-destructive/10 transition-colors"
+    >
+      <Icon name="RotateCw" size={12} />
+      Повторить
+    </button>
+  );
+}
+
+// CopyAnswerButton — копирование ВСЕГО ответа ассистента одной кнопкой. Отдельно от кнопки
+// "Копировать" внутри блоков кода (CodeBlock): та копирует только сам сниппет, а сотруднику часто
+// нужен ответ целиком — вставить в задачу, письмо или документ.
+function CopyAnswerButton({ content }: { content: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(content);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      title={copied ? 'Скопировано' : 'Копировать ответ целиком'}
+      className={`absolute -top-2 right-5 h-6 w-6 rounded-full flex items-center justify-center border transition-opacity ${
+        copied
+          ? 'opacity-100 bg-emerald-500 border-emerald-500 text-white'
+          : 'opacity-0 group-hover/msg:opacity-100 bg-card border-border text-muted-foreground hover:text-foreground'
+      }`}
+    >
+      <Icon name={copied ? 'Check' : 'Copy'} size={11} />
+    </button>
   );
 }
 
@@ -172,7 +216,7 @@ function PinnedPanel({ pinnedMessages, chatTitle, onJump }: { pinnedMessages: Ai
   );
 }
 
-export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned }: AiMessageListProps) {
+export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate }: AiMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -183,6 +227,12 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   }, [messages.length, sending]);
 
   const pinnedMessages = useMemo(() => messages.filter((m) => m.pinned), [messages]);
+
+  // Перегенерировать можно только САМЫЙ последний ответ ассистента — переписывать середину
+  // диалога нельзя, иначе последующие сообщения потеряют смысл (backend тоже удаляет строго
+  // последнее сообщение, см. action=regenerate).
+  const lastMessage = messages[messages.length - 1];
+  const regenerableId = lastMessage?.role === 'assistant' && lastMessage.content && lastMessage.id > 0 ? lastMessage.id : null;
 
   function jumpToMessage(id: number) {
     const el = messageRefs.current.get(id);
@@ -199,9 +249,12 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
         <Icon name={empty.icon} size={32} className="text-primary/50 mb-3" />
         <div className="text-sm text-muted-foreground max-w-sm">{empty.text}</div>
         {error && (
-          <div className="mt-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-3.5 py-2.5 text-sm flex items-center gap-2 max-w-sm">
-            <Icon name="AlertCircle" size={14} className="shrink-0" />
-            {error}
+          <div className="mt-4 bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-3.5 py-2.5 text-sm max-w-sm">
+            <div className="flex items-center gap-2">
+              <Icon name="AlertCircle" size={14} className="shrink-0" />
+              {error}
+            </div>
+            {onRetry && <RetryButton onRetry={onRetry} />}
           </div>
         )}
       </div>
@@ -235,6 +288,7 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
                   <Icon name="Pin" size={11} />
                 </button>
               )}
+              {m.role === 'assistant' && m.content && <CopyAnswerButton content={m.content} />}
               <MessageAttachments message={m} onOpenImage={(url, name) => setLightboxImage({ url, name })} />
               {m.role === 'assistant' ? (
                 m.content && <MessageContent content={m.content} />
@@ -242,9 +296,19 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
                 m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>
               )}
               {m.role === 'assistant' && m.model && (
-                <div className="mt-1.5 pt-1.5 border-t border-border/50 text-[11px] text-muted-foreground flex items-center gap-2">
+                <div className="mt-1.5 pt-1.5 border-t border-border/50 text-[11px] text-muted-foreground flex items-center gap-2 flex-wrap">
                   <span className="font-mono">{m.model}</span>
                   {m.costRub != null && m.costRub > 0 && <span>· {m.costRub.toFixed(2)} ₽</span>}
+                  {onRegenerate && regenerableId === m.id && !sending && (
+                    <button
+                      onClick={onRegenerate}
+                      title="Ответить заново. Выберите другую модель в шапке, чтобы сравнить ответы"
+                      className="ml-auto flex items-center gap-1 hover:text-foreground transition-colors"
+                    >
+                      <Icon name="RefreshCw" size={11} />
+                      Ответить заново
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -260,9 +324,12 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
         )}
         {error && (
           <div className="flex justify-start">
-            <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-3.5 py-2.5 text-sm flex items-center gap-2">
-              <Icon name="AlertCircle" size={14} className="shrink-0" />
-              {error}
+            <div className="bg-destructive/10 border border-destructive/30 text-destructive rounded-xl px-3.5 py-2.5 text-sm max-w-[85%] sm:max-w-[75%]">
+              <div className="flex items-center gap-2">
+                <Icon name="AlertCircle" size={14} className="shrink-0" />
+                {error}
+              </div>
+              {onRetry && <RetryButton onRetry={onRetry} />}
             </div>
           </div>
         )}
