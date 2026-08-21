@@ -10,6 +10,7 @@ import AiGenerateComposer from './AiGenerateComposer';
 import AiModelFaqModal from './AiModelFaqModal';
 import AiTemplatesManager from './AiTemplatesManager';
 import { useAiPromptTemplates } from './useAiPromptTemplates';
+import { uploadAiAttachment } from './aiUploadApi';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
 import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode } from './AiTypes';
 
@@ -23,7 +24,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   aitunnel_unreachable: 'Не удалось связаться с AI Tunnel — проверьте соединение и попробуйте ещё раз',
   aitunnel_error: 'Модель вернула ошибку — попробуйте другую модель или переформулируйте запрос',
   limit_exceeded: 'Месячный лимит на AI исчерпан — обратитесь к администратору, чтобы увеличить лимит',
-  file_too_large: 'Файл слишком большой (максимум 30 МБ)',
+  file_too_large: 'Файл слишком большой (максимум 200 МБ)',
   no_data: 'Не удалось прочитать файл',
   bad_request: 'Заполните запрос перед отправкой',
   not_found: 'Диалог не найден — возможно, он был удалён',
@@ -45,15 +46,6 @@ function errorText(err: string, message?: string, status?: number): string {
     if (message) return message;
   }
   return ERROR_MESSAGES[err] || 'Не удалось выполнить запрос — попробуйте ещё раз';
-}
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
 }
 
 export default function Ai() {
@@ -81,6 +73,9 @@ export default function Ai() {
 
   const [pendingAttachments, setPendingAttachments] = useState<AiAttachment[]>([]);
   const [uploading, setUploading] = useState(false);
+  // uploadProgress — доля загруженного файла (0..1), обновляется только при кусочной загрузке
+  // больших файлов (см. aiUploadApi.ts); для маленьких файлов остаётся null — грузятся мгновенно.
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   // Список чатов на мобильных экранах (< lg) скрыт за кнопкой-гамбургером и открывается поверх
   // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
@@ -207,23 +202,17 @@ export default function Ai() {
 
   async function handleAddFile(file: File) {
     setUploading(true);
+    setUploadProgress(null);
     try {
-      const dataUrl = await fileToBase64(file);
-      const res = await fetch(AI_URL, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.attachment) {
-        setPendingAttachments((prev) => [...prev, data.attachment]);
-      } else {
-        setSendError(errorText(data.error, data.message, res.status));
-      }
-    } catch {
-      setSendError('Не удалось загрузить файл — проверьте соединение');
+      const attachment = await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction));
+      setPendingAttachments((prev) => [...prev, attachment]);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      const message = (err as { message?: string })?.message;
+      setSendError(code ? errorText(code, message) : 'Не удалось загрузить файл — проверьте соединение');
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   }
 
@@ -463,6 +452,7 @@ export default function Ai() {
             onAddFile={handleAddFile}
             onRemoveAttachment={handleRemoveAttachment}
             uploading={uploading}
+            uploadProgress={uploadProgress}
             templates={promptTemplates.templates}
             templatesLoading={promptTemplates.loading}
             onManageTemplates={() => setTemplatesManagerOpen(true)}

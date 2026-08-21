@@ -8,6 +8,19 @@ import type { AiUsage, AiAttachment, AiMode } from './AiTypes';
 const COMPACT_MAX_HEIGHT = 160; // прежнее поведение (max-h-40)
 const EXPANDED_MAX_HEIGHT = 480; // ~ половина экрана ноутбука — достаточно для длинного промпта
 
+// Популярные форматы, принимаемые в чат (до 200 МБ, см. aiUploadApi.ts/backend/ai/index.py
+// MAX_UPLOAD_SIZE): изображения и PDF модель реально "понимает" (vision/native file-parsing —
+// см. _history_row_to_message в backend/ai/index.py), видео — только модели с video во входе,
+// остальное (документы Office, архивы, аудио) прикрепляется к сообщению и доступно по ссылке в
+// интерфейсе, но не читается моделью напрямую — это ограничение самого AI Tunnel API, не наше.
+const ACCEPT_FILES = [
+  'image/*', '.pdf',
+  'video/mp4', 'video/webm', 'video/quicktime',
+  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.rtf',
+  '.zip', '.rar', '.7z',
+  'audio/*',
+].join(',');
+
 interface AiComposerProps {
   mode: AiMode;
   value: string;
@@ -20,6 +33,7 @@ interface AiComposerProps {
   onAddFile: (file: File) => void;
   onRemoveAttachment: (id: string) => void;
   uploading: boolean;
+  uploadProgress: number | null;
   templates: AiPromptTemplate[];
   templatesLoading: boolean;
   onManageTemplates: () => void;
@@ -27,7 +41,7 @@ interface AiComposerProps {
 
 export default function AiComposer({
   mode, value, onChange, onSend, sending, usage, limitExceeded,
-  attachments, onAddFile, onRemoveAttachment, uploading,
+  attachments, onAddFile, onRemoveAttachment, uploading, uploadProgress,
   templates, templatesLoading, onManageTemplates,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -73,6 +87,14 @@ export default function AiComposer({
           Месячный лимит на AI исчерпан — обратитесь к администратору для увеличения лимита
         </div>
       )}
+      {uploading && uploadProgress != null && (
+        <div className="flex items-center gap-2 mb-2 text-[11px] text-muted-foreground">
+          <div className="flex-1 h-1 rounded-full bg-secondary overflow-hidden max-w-[200px]">
+            <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
+          </div>
+          <span>Загрузка файла… {Math.round(uploadProgress * 100)}%</span>
+        </div>
+      )}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-2">
           {attachments.map((a) => (
@@ -81,7 +103,11 @@ export default function AiComposer({
                 <img src={a.url} alt={a.name} className="h-14 w-14 rounded-lg object-cover border border-border" />
               ) : (
                 <div className="h-14 w-14 rounded-lg border border-border flex flex-col items-center justify-center gap-0.5 bg-secondary/50 px-1">
-                  <Icon name="FileText" size={16} className="text-muted-foreground" />
+                  <Icon
+                    name={a.contentType.startsWith('video/') ? 'Video' : a.contentType.startsWith('audio/') ? 'Music' : a.contentType === 'application/pdf' ? 'FileText' : 'File'}
+                    size={16}
+                    className="text-muted-foreground"
+                  />
                   <span className="text-[9px] text-muted-foreground truncate max-w-full">{a.name}</span>
                 </div>
               )}
@@ -99,7 +125,7 @@ export default function AiComposer({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,.pdf"
+          accept={ACCEPT_FILES}
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onAddFile(f); e.target.value = ''; }}
         />

@@ -1,6 +1,8 @@
 import base64
+import io
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -72,7 +74,12 @@ def _service_key(cur, schema, key):
 
 # --- S3 (вложения в чат, сгенерированные картинки/видео) — тот же паттерн, что _upload_image в
 # backend/knowledge/index.py, но со своим префиксом ключа ai/... -------------------------------
-MAX_UPLOAD_SIZE = 30 * 1024 * 1024  # 30 МБ на файл, загружаемый пользователем в чат
+# Одиночный HTTP-запрос к облачной функции физически ограничен ~3.5 МБ на уровне прокси платформы
+# (проверено практически — тело запроса больше этого лимита отклоняется с 413 ДО того, как код
+# функции вообще начинает выполняться, это нельзя изменить настройками). Поэтому файлы вплоть до
+# MAX_UPLOAD_SIZE грузятся кусочками — тот же паттерн file_init/file_chunk/file_complete/file_abort,
+# что уже используется в backend/patches/index.py для загрузки файлов дерева патча.
+MAX_UPLOAD_SIZE = 200 * 1024 * 1024  # 200 МБ на файл, загружаемый пользователем в чат
 
 
 def _s3_client():
@@ -178,17 +185,28 @@ def _aitunnel_get(path, api_key, timeout=15):
 
 
 def _history_row_to_message(role, text, attachments):
-    '''Преобразует строку истории ai_messages в формат сообщения для AI Tunnel. Если у сообщения
-    есть картинки-вложения — отдаём multi-part content (text + image_url), как того требует
-    vision-формат (см. docs/ai-tunnel-api-reference.md, раздел "Картинки": сначала текст, потом
-    изображения). Не-картиночные вложения (например PDF) пока не прикладываются как file — это
-    отдельная доработка, не критичная для базового Этапа 4.'''
-    images = [a for a in (attachments or []) if isinstance(a, dict) and str(a.get('contentType', '')).startswith('image/')]
-    if not images:
+    '''Преобразует строку истории ai_messages в формат сообщения для AI Tunnel — multi-part
+    content по типу вложения (см. docs/ai-tunnel-api-reference.md): image/* → image_url,
+    application/pdf → file (AI Tunnel сам разбирает PDF через mistral-ocr/native, если модель не
+    умеет файлы нативно — см. раздел "PDF"), video/* → video_url (только модели с "video" в
+    modalities.input реально понимают контент, для остальных AI Tunnel вернёт понятную ошибку).
+    Аудио НЕ поддерживается здесь: AI Tunnel требует для аудио сырой base64 в поле data (не
+    публичный URL), а вложения уже загружены в S3 как файлы — это отдельная доработка. Текст
+    ставится первым элементом, затем вложения — так рекомендует документация AI Tunnel.'''
+    atts = [a for a in (attachments or []) if isinstance(a, dict)]
+    if not atts:
         return {'role': role, 'content': text}
     parts = [{'type': 'text', 'text': text}] if text else []
-    for img in images:
-        parts.append({'type': 'image_url', 'image_url': {'url': img['url']}})
+    for a in atts:
+        content_type = str(a.get('contentType', ''))
+        if content_type.startswith('image/'):
+            parts.append({'type': 'image_url', 'image_url': {'url': a['url']}})
+        elif content_type == 'application/pdf':
+            parts.append({'type': 'file', 'file': {'filename': a.get('name', 'document.pdf'), 'file_data': a['url']}})
+        elif content_type.startswith('video/'):
+            parts.append({'type': 'video_url', 'video_url': {'url': a['url']}})
+        # Остальные типы (архивы, аудио и т.п.) прикреплены к сообщению и видны сотруднику по
+        # ссылке в интерфейсе, но не прикладываются в запрос к модели — она не умеет их читать.
     return {'role': role, 'content': parts}
 
 
@@ -244,10 +262,13 @@ def handler(event: dict, context) -> dict:
     list_chats/get_chat/rename_chat/set_pinned/delete_chat (CRUD диалогов пользователя),
     list_templates/create_template/update_template/delete_template (CRUD индивидуальных шаблонов
     промптов пользователя в ai_prompt_templates — полностью приватны, не общие для команды),
-    upload_attachment (загрузка файла/картинки в S3 для последующей отправки в чат — base64 →
-    CDN-URL, паттерн как в backend/knowledge/index.py), send_message (отправка текстового
-    сообщения — принимает опционально attachments [{url,contentType,...}] от upload_attachment,
-    картинки автоматически прикладываются в vision-формате; mode='code' у чата подставляет
+    upload_attachment (загрузка МАЛЕНЬКОГО файла/картинки в S3 одним запросом — base64 → CDN-URL),
+    file_init/file_chunk/file_complete/file_abort (загрузка БОЛЬШОГО файла кусочками — до
+    MAX_UPLOAD_SIZE=200 МБ; одиночный запрос к функции ограничен ~3.5 МБ на уровне платформы,
+    поэтому крупные файлы режутся на части на фронте — паттерн 1:1 с backend/patches/index.py),
+    send_message (отправка текстового сообщения — принимает опционально attachments
+    [{url,contentType,...}] от upload_attachment/file_complete, картинки/PDF/видео автоматически
+    прикладываются в формате, который понимает модель (см. _history_row_to_message); mode='code' у чата подставляет
     системный промпт для код-ревью; создаёт чат при отсутствии chat_id, проверяет месячный лимит
     сотрудника в ai_usage, шлёт запрос в AI Tunnel НЕ в потоковом режиме — эта облачная платформа
     не даёт проксировать Server-Sent Events через функцию дольше её таймаута, поэтому используется
@@ -519,6 +540,107 @@ def handler(event: dict, context) -> dict:
         return _ok({'attachment': {
             'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type,
         }})
+
+    # --- Загрузка больших файлов по частям (до MAX_UPLOAD_SIZE = 200 МБ) — тот же паттерн, что
+    # file_init/file_chunk/file_complete/file_abort в backend/patches/index.py. upload_attachment
+    # выше остаётся для маленьких файлов (картинки/короткие документы) одним запросом — фронт сам
+    # выбирает путь по размеру файла (см. src/pages/index/aiUploadApi.ts).
+    if action == 'file_init':
+        name = (body.get('name') or 'file').strip() or 'file'
+        content_type = body.get('contentType') or 'application/octet-stream'
+        file_id = uuid.uuid4().hex
+        meta = {'name': name, 'contentType': content_type}
+        _s3_client().put_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=f"ai/_chunks/{file_id}/meta.json", Body=json.dumps(meta).encode())
+        cur.close(); conn.close()
+        return _ok({'fileId': file_id})
+
+    if action == 'file_chunk':
+        file_id = body.get('fileId')
+        part_number = body.get('partNumber')
+        data_b64 = body.get('data')
+        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or part_number is None or data_b64 is None:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        try:
+            raw = _decode_data(data_b64)
+        except Exception:
+            cur.close(); conn.close()
+            return _bad('bad_data')
+        chunk_key = f"ai/_chunks/{file_id}/{int(part_number):06d}"
+        _s3_client().put_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=chunk_key, Body=raw)
+        cur.close(); conn.close()
+        return _ok({'ok': True})
+
+    if action == 'file_complete':
+        file_id = body.get('fileId')
+        total_parts = body.get('totalParts')
+        if not file_id or not re.match(r'^[a-f0-9]{32}$', file_id) or not total_parts:
+            cur.close(); conn.close()
+            return _bad('bad_request')
+        s3 = _s3_client()
+        bucket = os.environ.get('S3_BUCKET', 'files')
+        prefix = f"ai/_chunks/{file_id}/"
+        try:
+            meta_obj = s3.get_object(Bucket=bucket, Key=f"{prefix}meta.json")
+            meta = json.loads(meta_obj['Body'].read())
+        except Exception:
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+
+        buf = io.BytesIO()
+        chunk_keys = []
+        for i in range(int(total_parts)):
+            chunk_key = f"{prefix}{i:06d}"
+            try:
+                obj = s3.get_object(Bucket=bucket, Key=chunk_key)
+            except Exception:
+                cur.close(); conn.close()
+                return _bad('missing_chunk')
+            buf.write(obj['Body'].read())
+            chunk_keys.append(chunk_key)
+            if buf.tell() > MAX_UPLOAD_SIZE:
+                cur.close(); conn.close()
+                return _bad('file_too_large', 413)
+        raw = buf.getvalue()
+
+        name = meta['name']
+        content_type = meta['contentType']
+        ext = (name.rsplit('.', 1)[-1] if '.' in name else '').lower() or 'bin'
+        url = _upload_bytes(raw, ext, content_type, 'uploads')
+
+        for key in chunk_keys:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
+        try:
+            s3.delete_object(Bucket=bucket, Key=f"{prefix}meta.json")
+        except Exception:
+            pass
+
+        cur.close(); conn.close()
+        return _ok({'attachment': {
+            'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type,
+        }})
+
+    if action == 'file_abort':
+        file_id = body.get('fileId')
+        total_parts = body.get('totalParts') or 0
+        if file_id and re.match(r'^[a-f0-9]{32}$', file_id):
+            s3 = _s3_client()
+            bucket = os.environ.get('S3_BUCKET', 'files')
+            prefix = f"ai/_chunks/{file_id}/"
+            for i in range(int(total_parts) + 1):
+                try:
+                    s3.delete_object(Bucket=bucket, Key=f"{prefix}{i:06d}")
+                except Exception:
+                    pass
+            try:
+                s3.delete_object(Bucket=bucket, Key=f"{prefix}meta.json")
+            except Exception:
+                pass
+        cur.close(); conn.close()
+        return _ok({'ok': True})
 
     if action == 'send_message':
         model = (body.get('model') or '').strip()
