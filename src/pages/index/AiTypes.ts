@@ -67,6 +67,16 @@ export interface AiModelInfo {
   supported_output_formats?: string[];
   supported_background?: string[];
   max_n?: number;
+  // Возможности моделей ВИДЕО (см. docs/ai-tunnel-api-reference.md, раздел про /v1/videos).
+  // supported_durations у каждой модели свои: veo-3.1 принимает только 4/6/8 секунд, hailuo-2.3 —
+  // 6/10, поэтому жёсткий список [5, 10] в UI давал невалидные запросы.
+  supported_durations?: number[];
+  supported_resolutions?: string[];
+  supported_frame_images?: string[];
+  supports_input_references?: boolean;
+  // generate_audio: true — звук можно переключать, false — модель никогда не делает звук
+  // (передача параметра = ошибка 400), null/нет поля — переключатель не документирован.
+  generate_audio?: boolean | null;
 }
 
 export type AiModelsMap = Record<string, AiModelInfo>;
@@ -242,6 +252,34 @@ export interface ImageModelCapabilities {
   outputFormats: { value: string; label: string }[];
   supportsTransparent: boolean;
   maxCount: number;
+}
+
+// Возможности ВЫБРАННОЙ модели видео — читаются из того же живого каталога AI Tunnel.
+// Особенно важны длительности: они у моделей разные (veo-3.1 — только 4/6/8 секунд, hailuo-2.3 —
+// 6/10), и жёсткий список в UI приводил к невалидным запросам.
+export interface VideoModelCapabilities {
+  durations: number[];
+  aspectRatios: string[];
+  resolutions: string[];
+  /** Какие опорные кадры принимает модель: 'first_frame' и/или 'last_frame'. */
+  frameTypes: string[];
+  supportsReferences: boolean;
+  /** true — звук можно выключать; false/undefined — переключатель не показываем. */
+  canToggleAudio: boolean;
+  /** Умеет ли модель править ИСХОДНОЕ ВИДЕО (video-to-video) — есть 'video' во входных модальностях. */
+  supportsVideoInput: boolean;
+}
+
+export function videoModelCapabilities(info: AiModelInfo | undefined): VideoModelCapabilities {
+  return {
+    durations: info?.supported_durations?.length ? [...info.supported_durations].sort((a, b) => a - b) : VIDEO_DURATIONS,
+    aspectRatios: info?.supported_aspect_ratios ?? [],
+    resolutions: info?.supported_resolutions ?? [],
+    frameTypes: info?.supported_frame_images ?? [],
+    supportsReferences: !!info?.supports_input_references,
+    canToggleAudio: info?.generate_audio === true,
+    supportsVideoInput: !!info?.modalities?.input?.includes('video'),
+  };
 }
 
 export function imageModelCapabilities(info: AiModelInfo | undefined): ImageModelCapabilities {

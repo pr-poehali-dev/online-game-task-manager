@@ -184,7 +184,12 @@ Backend   backend/ai/index.py      (Python 3.11, один handler, ~1100 стр�
 - **`generate_image`** — синхронный POST `/images/generations` (timeout 90 с). Декодирует
   `data[].b64_json` (может быть несколько при `n>1`), заливает в S3 `ai/images/{uuid}.{ext}`.
 - **`generate_video`** — асинхронный POST `/videos`, сохраняет `job_id` + `job_status='pending'`,
-  отвечает мгновенно.
+  отвечает мгновенно. Принимает `duration`, `aspectRatio`, `resolution`, `generateAudio`,
+  `frameImages` (опорные кадры image-to-video: `[{url, frameType: 'first_frame'|'last_frame'}]`)
+  и `inputReferences` (референс стиля, а для моделей с `video` во входе — исходный ролик для
+  video-to-video; тип определяется по `contentType` вложения). Если заданы оба поля,
+  `frame_images` имеет приоритет. `generate_audio` уходит в запрос **только когда звук явно
+  выключен** — у моделей с `generate_audio: false` само наличие параметра даёт 400.
 - **`check_video_job`** (`messageId`) — GET `/videos/{id}`; при `completed` скачивает MP4
   (`/content?index=0`), заливает в S3 `ai/videos/{uuid}.mp4`, списывает стоимость.
 
@@ -284,6 +289,15 @@ pendingAttachments → AiComposer (превью, удаление до отпр�
    `quality`, ни `output_format`, зато поддерживает 17 соотношений. Композер обязан скрывать
    неподдерживаемые параметры — см. `imageModelCapabilities` в `AiTypes.ts`. Ничего не
    хардкодить по именам моделей: каталог живой, набор моделей меняется.
+
+2b. **У моделей ВИДЕО наборы параметров тоже разные.** Длительности жёстко валидируются
+   провайдером: `veo-3.1` принимает только 4/6/8 секунд, `hailuo-2.3` — 6/10, `sora-2-pro` —
+   4/8/12/16/20. Раньше в UI был захардкожен список `[5, 10]`, то есть для многих моделей
+   отправлялось заведомо недопустимое значение. Опорные кадры (`supported_frame_images`),
+   референсы (`supports_input_references`) и переключатель звука (`generate_audio: true`)
+   поддерживает лишь часть моделей — см. `videoModelCapabilities` в `AiTypes.ts`. Правка
+   исходного видео (video-to-video) доступна только моделям с `video` в `modalities.input`
+   (`aleph-2`, `hailuo-3`).
 
 3. **Соотношение сторон при редактировании по референсу.** Если передать `aspect_ratio` вместе с
    `input_references`, модель насильно растянет результат под указанный формат вместо сохранения

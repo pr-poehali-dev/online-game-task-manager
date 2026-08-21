@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { VIDEO_DURATIONS, IMAGE_COUNT_OPTIONS, imageModelCapabilities } from './AiTypes';
+import { IMAGE_COUNT_OPTIONS, imageModelCapabilities, videoModelCapabilities } from './AiTypes';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
 import { uploadAiAttachment } from './aiUploadApi';
 import type { AiUsage, AiAttachment, AiModelInfo } from './AiTypes';
@@ -21,6 +21,14 @@ export interface ImageGenerateParams {
 export interface VideoGenerateParams {
   prompt: string;
   duration: number;
+  aspectRatio: string;
+  resolution: string;
+  /** false — явно выключить звук у модели, которая это умеет. */
+  generateAudio: boolean;
+  /** Опорные кадры image-to-video: с какого начать и каким закончить. */
+  frameImages: (AiAttachment & { frameType: string })[];
+  /** Референсы стиля/содержания, а для video-to-video моделей — исходный ролик. */
+  inputReferences: AiAttachment[];
 }
 
 interface AiGenerateComposerProps {
@@ -62,6 +70,14 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   // docs/ai-tunnel-api-reference.md), не проверяем конкретную модель — либо сработает, либо нет.
   const [transparentBackground, setTransparentBackground] = useState(() => savedText('background', '') === 'transparent');
   const [referenceImages, setReferenceImages] = useState<AiAttachment[]>([]);
+  // Параметры видео. frameImages — опорные кадры (первый/последний), referenceImages переиспользуем
+  // как референсы стиля и как исходный ролик для video-to-video (тип определяется по contentType).
+  const [videoAspect, setVideoAspect] = useState(() => savedText('videoAspect', ''));
+  const [videoResolution, setVideoResolution] = useState(() => savedText('videoResolution', ''));
+  const [videoAudio, setVideoAudio] = useState(() => savedText('videoAudio', 'on') === 'on');
+  const [frameImages, setFrameImages] = useState<(AiAttachment & { frameType: string })[]>([]);
+  const frameInputRef = useRef<HTMLInputElement>(null);
+  const pendingFrameType = useRef<string>('first_frame');
   const [uploadingRef, setUploadingRef] = useState(false);
   // refError — ошибка загрузки референсного фото. Раньше молча игнорировалась (пустой catch), и
   // сотрудник просто не понимал, почему превью не появилось — теперь текст ошибки виден прямо
@@ -76,6 +92,7 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
 
   const caps = imageModelCapabilities(modelInfo);
   const countOptions = IMAGE_COUNT_OPTIONS.filter((c) => c <= caps.maxCount);
+  const vcaps = videoModelCapabilities(modelInfo);
 
   // При смене модели ранее выбранное значение может оказаться недопустимым (например, было 16:9,
   // а новая модель поддерживает только 1:1) — молча приводим к первому доступному, иначе запрос
@@ -88,6 +105,11 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
     if (outputFormat && !caps.outputFormats.some((f) => f.value === outputFormat)) setOutputFormat('');
     if (transparentBackground && !caps.supportsTransparent) setTransparentBackground(false);
     if (n > caps.maxCount) setN(1);
+    // Видео: длительность/соотношение/разрешение у моделей разные — приводим к допустимым.
+    if (!vcaps.durations.includes(duration)) setDuration(vcaps.durations[0]);
+    if (videoAspect && !vcaps.aspectRatios.includes(videoAspect)) setVideoAspect('');
+    if (videoResolution && !vcaps.resolutions.includes(videoResolution)) setVideoResolution('');
+    if (frameImages.length && vcaps.frameTypes.length === 0) setFrameImages([]);
   }, [modelInfo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'aspectRatio', aspectRatio); }, [aspectRatio]);
@@ -96,6 +118,9 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'quality', quality); }, [quality]);
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'outputFormat', outputFormat); }, [outputFormat]);
   useEffect(() => { localStorage.setItem(PARAM_KEY + 'background', transparentBackground ? 'transparent' : ''); }, [transparentBackground]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'videoAspect', videoAspect); }, [videoAspect]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'videoResolution', videoResolution); }, [videoResolution]);
+  useEffect(() => { localStorage.setItem(PARAM_KEY + 'videoAudio', videoAudio ? 'on' : 'off'); }, [videoAudio]);
 
   const usagePercent = usage && usage.limitRub > 0 ? Math.min(100, (usage.spentRub / usage.limitRub) * 100) : 0;
 
@@ -117,6 +142,28 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
     }
   }
 
+  // Загрузка опорного кадра для видео (первый или последний). Тип кадра запоминается в
+  // pendingFrameType до открытия файлового диалога — иначе после выбора файла уже не понять,
+  // какую именно кнопку нажимали.
+  async function handleAddFrame(file: File) {
+    setUploadingRef(true);
+    setRefError('');
+    try {
+      const attachment = await uploadAiAttachment(file);
+      const frameType = pendingFrameType.current;
+      setFrameImages((prev) => [...prev.filter((f) => f.frameType !== frameType), { ...attachment, frameType }]);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      setRefError(
+        code === 'file_too_large'
+          ? 'Файл слишком большой — максимум 200 МБ'
+          : 'Не удалось загрузить кадр — проверьте соединение и попробуйте ещё раз'
+      );
+    } finally {
+      setUploadingRef(false);
+    }
+  }
+
   function handleSubmit() {
     if (!prompt.trim() || generating || limitExceeded) return;
     if (mode === 'image') {
@@ -130,7 +177,15 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
       });
       setReferenceImages([]);
     } else {
-      onGenerateVideo({ prompt: prompt.trim(), duration });
+      onGenerateVideo({
+        prompt: prompt.trim(), duration,
+        aspectRatio: videoAspect, resolution: videoResolution,
+        // Звук передаём как false только у моделей, где переключатель реально есть.
+        generateAudio: vcaps.canToggleAudio ? videoAudio : true,
+        frameImages, inputReferences: vcaps.supportsReferences ? referenceImages : [],
+      });
+      setFrameImages([]);
+      setReferenceImages([]);
     }
     setPrompt('');
   }
@@ -174,11 +229,32 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
         </div>
       )}
 
-      {mode === 'image' && referenceImages.length > 0 && (
+      {(referenceImages.length > 0 || frameImages.length > 0) && (
         <div className="flex flex-wrap gap-2 mb-2">
+          {/* Опорные кадры подписаны, чтобы было видно, какой из них первый, а какой последний. */}
+          {frameImages.map((a) => (
+            <div key={a.id} className="relative group">
+              <img src={a.url} alt={a.name} className="h-14 w-14 rounded-lg object-cover border border-primary/50" />
+              <span className="absolute bottom-0 inset-x-0 bg-black/70 text-white text-[9px] text-center rounded-b-lg py-0.5">
+                {a.frameType === 'last_frame' ? 'финал' : 'старт'}
+              </span>
+              <button
+                onClick={() => setFrameImages((prev) => prev.filter((r) => r.id !== a.id))}
+                className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+              >
+                <Icon name="X" size={10} />
+              </button>
+            </div>
+          ))}
           {referenceImages.map((a) => (
             <div key={a.id} className="relative group">
-              <img src={a.url} alt={a.name} className="h-14 w-14 rounded-lg object-cover border border-border" />
+              {a.contentType.startsWith('video/') ? (
+                <div className="h-14 w-14 rounded-lg border border-border bg-secondary flex items-center justify-center">
+                  <Icon name="Clapperboard" size={18} className="text-muted-foreground" />
+                </div>
+              ) : (
+                <img src={a.url} alt={a.name} className="h-14 w-14 rounded-lg object-cover border border-border" />
+              )}
               <button
                 onClick={() => setReferenceImages((prev) => prev.filter((r) => r.id !== a.id))}
                 className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
@@ -189,6 +265,16 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
           ))}
         </div>
       )}
+
+      {/* Один скрытый файловый ввод на оба режима: в картинках это референс для правки, в видео —
+          референс стиля или исходный ролик. Для видео с video-to-video разрешаем и видеофайлы. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={mode === 'video' && vcaps.supportsVideoInput ? 'image/*,video/*' : 'image/*'}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddReference(f); e.target.value = ''; }}
+      />
 
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         {mode === 'image' ? (
@@ -256,13 +342,6 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
               Прозрачный фон
             </button>
             )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddReference(f); e.target.value = ''; }}
-            />
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -275,16 +354,105 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
             </button>
           </>
         ) : (
-          <div className="flex items-center gap-1.5">
-            <Icon name="Timer" size={13} className="text-muted-foreground" />
-            <select
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
-            >
-              {VIDEO_DURATIONS.map((d) => <option key={d} value={d}>{d} сек</option>)}
-            </select>
-          </div>
+          <>
+            {/* Набор параметров видео тоже зависит от выбранной модели: длительности, соотношения
+                сторон и разрешения у всех разные (veo-3.1 — только 4/6/8 сек), опорные кадры и
+                референсы поддерживает лишь часть моделей. См. videoModelCapabilities. */}
+            <div className="flex items-center gap-1.5">
+              <Icon name="Timer" size={13} className="text-muted-foreground" />
+              <select
+                value={duration}
+                onChange={(e) => setDuration(Number(e.target.value))}
+                title="Длительность"
+                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {vcaps.durations.map((d) => <option key={d} value={d}>{d} сек</option>)}
+              </select>
+            </div>
+            {vcaps.aspectRatios.length > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Icon name="RectangleHorizontal" size={13} className="text-muted-foreground" />
+                <select
+                  value={videoAspect}
+                  onChange={(e) => setVideoAspect(e.target.value)}
+                  title="Соотношение сторон"
+                  className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="">Авто</option>
+                  {vcaps.aspectRatios.map((r) => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            )}
+            {vcaps.resolutions.length > 0 && (
+              <select
+                value={videoResolution}
+                onChange={(e) => setVideoResolution(e.target.value)}
+                title="Качество видео"
+                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">Авто</option>
+                {vcaps.resolutions.map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>
+            )}
+            {vcaps.canToggleAudio && (
+              <button
+                type="button"
+                onClick={() => setVideoAudio((v) => !v)}
+                title={videoAudio ? 'Видео будет со звуком' : 'Видео будет без звука'}
+                className={`h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                  videoAudio ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon name={videoAudio ? 'Volume2' : 'VolumeX'} size={12} />
+                {videoAudio ? 'Со звуком' : 'Без звука'}
+              </button>
+            )}
+            <input
+              ref={frameInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleAddFrame(f); e.target.value = ''; }}
+            />
+            {vcaps.frameTypes.includes('first_frame') && (
+              <button
+                type="button"
+                onClick={() => { pendingFrameType.current = 'first_frame'; frameInputRef.current?.click(); }}
+                disabled={uploadingRef}
+                title="Картинка, с которой начнётся видео (оживить фото)"
+                className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Icon name="ImagePlus" size={12} />
+                Первый кадр
+              </button>
+            )}
+            {vcaps.frameTypes.includes('last_frame') && (
+              <button
+                type="button"
+                onClick={() => { pendingFrameType.current = 'last_frame'; frameInputRef.current?.click(); }}
+                disabled={uploadingRef}
+                title="Картинка, которой видео закончится — модель сделает переход"
+                className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Icon name="ImageDown" size={12} />
+                Последний кадр
+              </button>
+            )}
+            {vcaps.supportsReferences && (
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingRef}
+                title={vcaps.supportsVideoInput
+                  ? 'Референс стиля или исходное видео для правки'
+                  : 'Картинка-референс стиля и содержания'}
+                className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {uploadingRef ? <Icon name="Loader2" size={12} className="animate-spin" /> : <Icon name="Paperclip" size={12} />}
+                Референс
+              </button>
+            )}
+          </>
         )}
       </div>
 
@@ -301,7 +469,11 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
                 ? referenceImages.length > 0
                   ? 'Опишите, что изменить в прикреплённом фото…'
                   : 'Опишите изображение, которое нужно сгенерировать…'
-                : 'Опишите видео, которое нужно сгенерировать…'
+                : frameImages.length > 0
+                  ? 'Опишите, что должно происходить в кадре…'
+                  : referenceImages.some((r) => r.contentType.startsWith('video/'))
+                    ? 'Опишите, что изменить в исходном видео…'
+                    : 'Опишите видео, которое нужно сгенерировать…'
             }
             rows={1}
             className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"

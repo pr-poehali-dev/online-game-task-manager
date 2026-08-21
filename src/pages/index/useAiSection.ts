@@ -332,10 +332,18 @@ export function useAiSection() {
     setSendError('');
     setRetryAction(null);
     const tempId = -Date.now();
-    setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
+    const videoAttachments = [...params.frameImages, ...params.inputReferences];
+    setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: videoAttachments.length ? videoAttachments : null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
       const body: Record<string, unknown> = { action: 'generate_video', chatId: activeChatId, model, prompt: params.prompt, duration: params.duration };
+      if (params.aspectRatio) body.aspectRatio = params.aspectRatio;
+      if (params.resolution) body.resolution = params.resolution;
+      // Звук отправляем только когда его явно выключили: у моделей без поддержки переключателя
+      // любое присутствие параметра приводит к ошибке 400.
+      if (!params.generateAudio) body.generateAudio = false;
+      if (params.frameImages.length) body.frameImages = params.frameImages;
+      if (params.inputReferences.length) body.inputReferences = params.inputReferences;
 
       const res = await fetchWithTimeout(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
@@ -351,7 +359,7 @@ export function useAiSection() {
       }
       setMessages((prev) => [
         ...prev.filter((m) => m.id !== tempId),
-        { ...data.userMessage, jobStatus: 'done', pinned: false },
+        { ...data.userMessage, attachments: data.userMessage.attachments || null, jobStatus: 'done', pinned: false },
         { ...data.assistantMessage, attachments: data.assistantMessage.attachments || null, jobStatus: data.assistantMessage.jobStatus || 'done', pinned: false },
       ]);
       if (data.usage) setUsage(data.usage);

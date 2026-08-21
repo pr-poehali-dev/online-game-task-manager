@@ -228,6 +228,17 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
     chat_id = body.get('chatId')
     duration = body.get('duration')
     size = body.get('size')
+    resolution = body.get('resolution')
+    aspect_ratio = body.get('aspectRatio')
+    generate_audio = body.get('generateAudio')
+    # frameImages — опорные кадры для image-to-video: с какого кадра начать и (если модель умеет)
+    # каким закончить, модель генерирует переход между ними. Ожидаем [{url, frameType}], где
+    # frameType = 'first_frame' | 'last_frame' (см. docs/ai-tunnel-api-reference.md, "Image-to-Video").
+    frame_images = body.get('frameImages') or []
+    # inputReferences — референсы СТИЛЯ/содержания (не покадровая основа), а для моделей с 'video'
+    # во входных модальностях — ещё и исходное видео для правки (video-to-video). Если заданы оба
+    # поля, frame_images имеет приоритет и запрос обрабатывается как image-to-video.
+    input_refs = body.get('inputReferences') or []
     if not model or not prompt:
         cur.close(); conn.close()
         return _bad('bad_request')
@@ -255,9 +266,25 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
         )
         chat_id = cur.fetchone()[0]
 
+    # Опорные кадры и референсы показываем сотруднику как вложения его же сообщения — видно, из
+    # чего собиралось видео (тот же приём, что в handle_generate_image).
+    user_attachments = []
+    for r in frame_images:
+        if isinstance(r, dict) and r.get('url'):
+            user_attachments.append({
+                'id': uuid.uuid4().hex, 'name': r.get('name', 'frame.png'), 'url': r['url'],
+                'size': r.get('size', 0), 'contentType': r.get('contentType', 'image/png'),
+            })
+    for r in input_refs:
+        if isinstance(r, dict) and r.get('url'):
+            user_attachments.append({
+                'id': uuid.uuid4().hex, 'name': r.get('name', 'reference.png'), 'url': r['url'],
+                'size': r.get('size', 0), 'contentType': r.get('contentType', 'image/png'),
+            })
+
     cur.execute(
-        f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
-        (chat_id, prompt)
+        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments) VALUES (%s, 'user', %s, %s) RETURNING id, created_at",
+        (chat_id, prompt, json.dumps(user_attachments) if user_attachments else None)
     )
     user_msg_id, user_created_at = cur.fetchone()
 
@@ -266,6 +293,32 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
         payload['duration'] = duration
     if size:
         payload['size'] = size
+    if resolution:
+        payload['resolution'] = resolution
+    if aspect_ratio:
+        payload['aspect_ratio'] = aspect_ratio
+    # generate_audio передаём ТОЛЬКО когда явно выключают звук: у моделей с generate_audio=false
+    # любое присутствие параметра — ошибка 400, а по умолчанию модели со звуком его и так делают.
+    if generate_audio is False:
+        payload['generate_audio'] = False
+    if frame_images:
+        payload['frame_images'] = [
+            {'type': 'image_url', 'image_url': {'url': r['url']}, 'frame_type': r.get('frameType', 'first_frame')}
+            for r in frame_images if isinstance(r, dict) and r.get('url')
+        ]
+    if input_refs:
+        # Видео-референс (правка исходного ролика) и картинка-референс стиля передаются одним
+        # массивом, но разными типами — тип выбираем по contentType вложения.
+        refs = []
+        for r in input_refs:
+            if not isinstance(r, dict) or not r.get('url'):
+                continue
+            if str(r.get('contentType', '')).startswith('video/'):
+                refs.append({'type': 'video_url', 'video_url': {'url': r['url']}})
+            else:
+                refs.append({'type': 'image_url', 'image_url': {'url': r['url']}})
+        if refs:
+            payload['input_references'] = refs
     # Задача отправляется через _aitunnel_request (POST), но это НЕ chat/completions — путь
     # передаётся явно. AI Tunnel сразу начисляет резерв стоимости при старте (см.
     # docs/ai-tunnel-api-reference.md, "Отмены задач нет") — job_status='pending' до готовности.
@@ -289,7 +342,10 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
     cur.close(); conn.close()
     return _ok({
         'chatId': chat_id,
-        'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'createdAt': user_created_at.isoformat()},
+        'userMessage': {
+            'id': user_msg_id, 'role': 'user', 'content': prompt,
+            'attachments': user_attachments or None, 'createdAt': user_created_at.isoformat(),
+        },
         'assistantMessage': {
             'id': assistant_msg_id, 'role': 'assistant', 'content': '', 'model': model,
             'jobId': job_id, 'jobStatus': 'pending', 'createdAt': assistant_created_at.isoformat(),
