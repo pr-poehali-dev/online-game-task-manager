@@ -9,16 +9,23 @@ const COMPACT_MAX_HEIGHT = 160; // прежнее поведение (max-h-40)
 const EXPANDED_MAX_HEIGHT = 480; // ~ половина экрана ноутбука — достаточно для длинного промпта
 
 // Популярные форматы, принимаемые в чат (до 200 МБ, см. aiUploadApi.ts/backend/ai/index.py
-// MAX_UPLOAD_SIZE): изображения и PDF модель реально "понимает" (vision/native file-parsing —
-// см. _history_row_to_message в backend/ai/index.py), видео — только модели с video во входе,
-// остальное (документы Office, архивы, аудио) прикрепляется к сообщению и доступно по ссылке в
-// интерфейсе, но не читается моделью напрямую — это ограничение самого AI Tunnel API, не наше.
+// MAX_UPLOAD_SIZE): изображения и PDF модель реально "понимает" (vision/native file-parsing),
+// видео — только модели с video во входе, обычные текстовые/кодовые файлы (см.
+// TEXT_FILE_EXTENSIONS в backend/ai/index.py — .txt/.csv/.php/.py/.log и десятки других) читаются
+// как текст и вставляются прямо в запрос. Документы Office/архивы/аудио прикрепляются к
+// сообщению и доступны по ссылке в интерфейсе, но не читаются моделью напрямую — это ограничение
+// самого AI Tunnel API, не наше. accept — лишь подсказка диалогу выбора файла в браузере, не
+// строгий фильтр: пользователь всегда может выбрать "Все файлы".
 const ACCEPT_FILES = [
   'image/*', '.pdf',
   'video/mp4', 'video/webm', 'video/quicktime',
-  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.rtf',
+  '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.rtf',
   '.zip', '.rar', '.7z',
   'audio/*',
+  '.txt', '.md', '.csv', '.tsv', '.json', '.xml', '.yaml', '.yml', '.log', '.sql',
+  '.html', '.htm', '.css', '.scss',
+  '.py', '.js', '.jsx', '.ts', '.tsx', '.php', '.java', '.c', '.cpp', '.h', '.cs', '.go', '.rs',
+  '.rb', '.swift', '.sh', '.pl', '.lua', '.vue',
 ].join(',');
 
 interface AiComposerProps {

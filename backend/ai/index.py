@@ -227,9 +227,23 @@ def _aitunnel_get(path, api_key, timeout=15):
 # его содержимое и сохраняем прямо в JSON вложения (поле 'text') — дальше _history_row_to_message
 # просто вставляет этот текст в сообщение, без повторного похода в S3 при каждой отправке.
 TEXT_FILE_EXTENSIONS = {
-    'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'xml', 'yaml', 'yml',
-    'log', 'ini', 'conf', 'cfg', 'sql', 'srt', 'vtt', 'html', 'htm', 'py', 'js', 'ts',
+    # Простой текст и разметка
+    'txt', 'md', 'markdown', 'rst', 'adoc', 'tex',
+    # Данные/конфиги
+    'csv', 'tsv', 'json', 'jsonc', 'xml', 'yaml', 'yml', 'toml', 'ini', 'conf', 'cfg', 'env',
+    'properties', 'log', 'sql',
+    # Веб
+    'html', 'htm', 'css', 'scss', 'sass', 'less', 'svg',
+    # Языки программирования и скрипты
+    'py', 'js', 'jsx', 'ts', 'tsx', 'mjs', 'cjs', 'php', 'phtml', 'java', 'kt', 'kts', 'c', 'h',
+    'cpp', 'cc', 'hpp', 'cs', 'go', 'rs', 'rb', 'swift', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd',
+    'pl', 'lua', 'r', 'dart', 'scala', 'groovy', 'vue', 'svelte',
+    # Разное текстовое
+    'srt', 'vtt', 'diff', 'patch', 'gitignore',
 }
+# Файлы без расширения, где "расширением" по сути является само имя (Dockerfile, Makefile) —
+# проверяются отдельно по полному имени в нижнем регистре (см. _looks_like_text_attachment).
+TEXT_FILENAMES_WITHOUT_EXT = {'dockerfile', 'makefile', 'jenkinsfile', 'procfile'}
 # ~60 000 символов (примерно 15-20 тыс. токенов с запасом) — чтобы один вложенный файл не съедал
 # весь контекст диалога и не раздувал стоимость запроса; при превышении текст обрезается с пометкой.
 MAX_TEXT_ATTACHMENT_CHARS = 60000
@@ -241,7 +255,10 @@ def _looks_like_text_attachment(name, content_type):
         return True
     if content_type in ('application/json', 'application/xml', 'application/x-yaml', 'application/sql'):
         return True
-    ext = (name or '').rsplit('.', 1)[-1].lower() if '.' in (name or '') else ''
+    base_name = (name or '').lower()
+    if base_name in TEXT_FILENAMES_WITHOUT_EXT:
+        return True
+    ext = base_name.rsplit('.', 1)[-1] if '.' in base_name else ''
     return ext in TEXT_FILE_EXTENSIONS
 
 
