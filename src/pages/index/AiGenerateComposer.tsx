@@ -1,7 +1,11 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { IMAGE_ASPECT_RATIOS, VIDEO_DURATIONS } from './AiTypes';
+import { useAutosizeTextarea } from './useAutosizeTextarea';
 import type { AiUsage } from './AiTypes';
+
+const COMPACT_MAX_HEIGHT = 160;
+const EXPANDED_MAX_HEIGHT = 480;
 
 interface AiGenerateComposerProps {
   mode: 'image' | 'video';
@@ -15,6 +19,10 @@ export default function AiGenerateComposer({ mode, onGenerate, generating, usage
   const [prompt, setPrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('16:9');
   const [duration, setDuration] = useState(5);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
+  useAutosizeTextarea(textareaRef, prompt, maxHeight);
 
   const usagePercent = usage && usage.limitRub > 0 ? Math.min(100, (usage.spentRub / usage.limitRub) * 100) : 0;
 
@@ -75,16 +83,27 @@ export default function AiGenerateComposer({ mode, onGenerate, generating, usage
         )}
       </div>
       <div className="flex items-end gap-2">
-        <textarea
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
-          disabled={generating || limitExceeded}
-          placeholder={mode === 'image' ? 'Опишите изображение, которое нужно сгенерировать…' : 'Опишите видео, которое нужно сгенерировать…'}
-          rows={1}
-          className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 max-h-40 overflow-y-auto scrollbar-thin"
-          style={{ minHeight: '42px' }}
-        />
+        <div className="relative flex-1">
+          <textarea
+            ref={textareaRef}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); } }}
+            disabled={generating || limitExceeded}
+            placeholder={mode === 'image' ? 'Опишите изображение, которое нужно сгенерировать…' : 'Опишите видео, которое нужно сгенерировать…'}
+            rows={1}
+            className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
+            style={{ minHeight: '42px', maxHeight }}
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
+            className="absolute right-1.5 bottom-1.5 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={13} />
+          </button>
+        </div>
         <button
           onClick={handleSubmit}
           disabled={generating || limitExceeded || !prompt.trim()}

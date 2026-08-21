@@ -1,7 +1,11 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import AiTemplatesPicker from './AiTemplatesPicker';
+import { useAutosizeTextarea } from './useAutosizeTextarea';
 import type { AiUsage, AiAttachment, AiMode } from './AiTypes';
+
+const COMPACT_MAX_HEIGHT = 160; // прежнее поведение (max-h-40)
+const EXPANDED_MAX_HEIGHT = 480; // ~ половина экрана ноутбука — достаточно для длинного промпта
 
 interface AiComposerProps {
   mode: AiMode;
@@ -22,6 +26,14 @@ export default function AiComposer({
   attachments, onAddFile, onRemoveAttachment, uploading,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // expanded — ручное увеличение поля кнопкой (см. скриншот пользователя: маленькое поле ввода
+  // неудобно для длинных промптов/кода) — растягивает максимум почти на всю высоту чата.
+  // Автоувеличение по мере набора текста работает независимо (useAutosizeTextarea) — expanded
+  // лишь поднимает потолок, до которого можно вырасти.
+  const [expanded, setExpanded] = useState(false);
+  const maxHeight = expanded ? EXPANDED_MAX_HEIGHT : COMPACT_MAX_HEIGHT;
+  useAutosizeTextarea(textareaRef, value, maxHeight);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -95,16 +107,27 @@ export default function AiComposer({
           {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
         </button>
         <AiTemplatesPicker mode={mode} onSelect={onChange} hasDraft={!!value.trim()} />
-        <textarea
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          disabled={sending || limitExceeded}
-          placeholder={placeholder}
-          rows={1}
-          className="flex-1 resize-none rounded-lg border border-border bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 max-h-40 overflow-y-auto scrollbar-thin"
-          style={{ minHeight: '42px' }}
-        />
+        <div className="relative flex-1">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={sending || limitExceeded}
+            placeholder={placeholder}
+            rows={1}
+            className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
+            style={{ minHeight: '42px', maxHeight }}
+          />
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
+            className="absolute right-1.5 bottom-1.5 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={13} />
+          </button>
+        </div>
         <button
           onClick={onSend}
           disabled={sending || limitExceeded || !value.trim()}
