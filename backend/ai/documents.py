@@ -9,8 +9,11 @@ LLM не умеет генерировать корректные zip-конте
 
 import io
 import json
+import os
 import re
-from datetime import datetime, timezone
+import urllib.error
+import urllib.request
+import uuid
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -447,3 +450,174 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
         },
         'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
     })
+
+
+def _multipart_body(fields: dict, file_field: str, filename: str, file_bytes: bytes, content_type: str):
+    '''Собирает тело multipart/form-data вручную: в стандартной библиотеке Python готового
+    сборщика нет, а тянуть requests в зависимости функции ради одного запроса незачем.'''
+    boundary = '----AiDocBoundary' + uuid.uuid4().hex
+    parts = []
+    for name, value in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode('utf-8')
+        )
+    parts.append(
+        f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; filename="{filename}"\r\n'
+        f'Content-Type: {content_type}\r\n\r\n'.encode('utf-8')
+    )
+    parts.append(file_bytes)
+    parts.append(f'\r\n--{boundary}--\r\n'.encode('utf-8'))
+    return b''.join(parts), f'multipart/form-data; boundary={boundary}'
+
+
+def _tg_send_document(chat_id, file_url, filename, caption):
+    '''Отправляет файл в личные сообщения Telegram.
+
+    Файл передаём БАЙТАМИ через multipart, а не ссылкой на CDN. Вариант со ссылкой выглядит проще
+    (Telegram скачивает сам), но на практике упирается в таймаут: Telegram тянет файл с нашего CDN
+    неопределённо долго, и запрос обрывается по urlopen timeout. Скачать документ из S3 самим и
+    отдать готовые байты — предсказуемо быстро, документы весят единицы мегабайт.
+    Возвращает (True, None) при успехе либо (False, 'текст ошибки') — вызывающий код показывает
+    её сотруднику как есть.'''
+    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    if not token:
+        return False, 'Бот Telegram не настроен — обратитесь к администратору'
+    if not chat_id:
+        return False, 'У получателя не привязан Telegram'
+
+    try:
+        with urllib.request.urlopen(file_url, timeout=25) as resp:
+            file_bytes = resp.read()
+    except Exception as e:
+        print(f'[ai/documents] cdn download error: {e}')
+        return False, 'Не удалось получить файл из хранилища — попробуйте ещё раз'
+
+    body, content_type_header = _multipart_body(
+        {'chat_id': str(chat_id), 'caption': caption[:1024]},
+        'document', filename or 'document', file_bytes,
+        'application/octet-stream',
+    )
+    req = urllib.request.Request(
+        f'https://api.telegram.org/bot{token}/sendDocument',
+        data=body, headers={'Content-Type': content_type_header}, method='POST',
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            json.loads(resp.read().decode('utf-8'))
+        return True, None
+    except urllib.error.HTTPError as e:
+        raw = e.read().decode('utf-8', 'ignore')
+        description = ''
+        try:
+            description = (json.loads(raw) or {}).get('description', '')
+        except Exception:
+            description = raw
+        print(f'[ai/documents] telegram sendDocument HTTP {e.code}: {raw}')
+        # Самая частая причина — сотрудник не открывал диалог с ботом: боту запрещено писать первым.
+        if 'bot can\'t initiate conversation' in description or 'chat not found' in description:
+            return False, 'Получатель ещё не начал диалог с ботом — попросите его написать боту любое сообщение'
+        if 'blocked' in description:
+            return False, 'Получатель заблокировал бота в Telegram'
+        return False, 'Telegram не принял файл — попробуйте ещё раз'
+    except Exception as e:
+        print(f'[ai/documents] telegram sendDocument error: {e}')
+        return False, 'Не удалось связаться с Telegram — попробуйте ещё раз'
+
+
+def handle_send_document_telegram(cur, conn, schema, me, body, qs):
+    '''Отправляет ранее собранный документ в личные сообщения Telegram — себе или коллеге.
+
+    Файл не пересылается через функцию: Telegram скачивает его сам по CDN-ссылке из вложения
+    сообщения. Отправить можно только документ из СВОЕГО диалога (проверка user_id), получатель —
+    любой активный сотрудник, видимый в списке команды.
+    '''
+    message_id = body.get('messageId')
+    # recipientId не передан → отправляем самому себе (самый частый сценарий).
+    recipient_id = body.get('recipientId') or me['id']
+    if not message_id:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+
+    # Вложение берём из БД, а не из тела запроса: иначе можно было бы подсунуть произвольную
+    # ссылку и разослать её команде от имени сервиса.
+    cur.execute(
+        f"SELECT m.attachments FROM {schema}.ai_messages m "
+        f"JOIN {schema}.ai_chats c ON c.id = m.chat_id "
+        f"WHERE m.id = %s AND c.user_id = %s",
+        (message_id, me['id'])
+    )
+    row = cur.fetchone()
+    if not row or not row[0]:
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+
+    attachments = [a for a in row[0] if isinstance(a, dict) and a.get('url')]
+    document = next(
+        (a for a in attachments if a.get('contentType') in (XLSX_CONTENT_TYPE, DOCX_CONTENT_TYPE)),
+        None
+    )
+    if not document:
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+
+    cur.execute(
+        f"SELECT telegram_id, first_name FROM {schema}.users "
+        f"WHERE id = %s AND is_active = true AND telegram_id > 0",
+        (recipient_id,)
+    )
+    recipient = cur.fetchone()
+    if not recipient:
+        cur.close(); conn.close()
+        return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({
+            'error': 'recipient_unavailable',
+            'message': 'У получателя не привязан Telegram или сотрудник неактивен',
+        })}
+
+    telegram_id, recipient_name = recipient
+    caption = f'{document.get("name", "Документ")}\n\nДокумент из раздела AI'
+    if recipient_id != me['id']:
+        # Имя отправителя подписываем только при отправке коллеге — чтобы получатель понимал,
+        # от кого пришёл файл. В _current_user имени нет, поэтому берём отдельным запросом.
+        cur.execute(f"SELECT first_name FROM {schema}.users WHERE id = %s", (me['id'],))
+        sender_row = cur.fetchone()
+        sender = (sender_row[0] or '').strip() if sender_row else ''
+        if sender:
+            caption += f' · отправил {sender}'
+
+    ok, error_text = _tg_send_document(telegram_id, document['url'], document.get('name'), caption)
+    cur.close(); conn.close()
+    if not ok:
+        return {'statusCode': 502, 'headers': _cors_headers(), 'body': json.dumps({
+            'error': 'telegram_failed', 'message': error_text,
+        })}
+    return _ok({
+        'sent': True,
+        'recipientName': recipient_name,
+        'toSelf': recipient_id == me['id'],
+    })
+
+def handle_document_recipients(cur, conn, schema, me, body, qs):
+    '''Список сотрудников, которым можно отправить документ в Telegram.
+
+    Берём тех же людей, что видны в списке команды (auth action=team): активные, не скрытые,
+    с привязанным Telegram. Сам сотрудник всегда идёт первым с пометкой isSelf — отправка себе
+    самый частый сценарий.
+    '''
+    cur.execute(
+        f"SELECT id, COALESCE(NULLIF(nickname, ''), first_name) AS name, last_name, "
+        f"(id = %s) AS is_self "
+        f"FROM {schema}.users "
+        f"WHERE is_active = true AND is_hidden = false AND show_in_team = true AND telegram_id > 0 "
+        f"ORDER BY (id = %s) DESC, first_name ASC",
+        (me['id'], me['id'])
+    )
+    recipients = [
+        {
+            'id': r[0],
+            'name': ' '.join(part for part in (r[1], r[2]) if part) or 'Без имени',
+            'isSelf': bool(r[3]),
+        }
+        for r in cur.fetchall()
+    ]
+    cur.close(); conn.close()
+    return _ok({'recipients': recipients})

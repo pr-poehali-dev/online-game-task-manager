@@ -43,6 +43,8 @@ ACTIONS = {
     'regenerate': generate_actions.handle_regenerate,
     # Сборка готовых офисных документов (Excel/Word) по текстовому запросу
     'generate_document': documents_actions.handle_generate_document,
+    'document_recipients': documents_actions.handle_document_recipients,
+    'send_document_telegram': documents_actions.handle_send_document_telegram,
 }
 
 
@@ -77,7 +79,9 @@ def handler(event: dict, context) -> dict:
 
     - documents.py: generate_document (готовый Excel/Word по текстовому запросу — модель отдаёт
       СТРУКТУРУ документа в JSON, а бинарный файл собирается на сервере через openpyxl/python-docx
-      и кладётся в S3; ссылка приходит вложением к ответу ассистента).
+      и кладётся в S3; ссылка приходит вложением к ответу ассистента), document_recipients
+      (список сотрудников с привязанным Telegram), send_document_telegram (отправка собранного
+      документа в личные сообщения себе или коллеге — Telegram скачивает файл по CDN-ссылке сам).
 
     Доступ ко всем действиям — только с правом ai_access (отдельное привилегированное право,
     см. db_migrations V0076). Подробное описание раздела: docs/ai-section-overview.md.'''
