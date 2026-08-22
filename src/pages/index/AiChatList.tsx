@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
+import { useUndoDelete } from './useUndoDelete';
 import type { AiChatSummary, AiMessageSearchResult } from './AiTypes';
 
 interface AiChatListProps {
@@ -42,6 +43,13 @@ export default function AiChatList({
   const [search, setSearch] = useState('');
   const [messageHits, setMessageHits] = useState<AiMessageSearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+
+  // Удаление чата — необратимое действие (переписка стирается на сервере), поэтому не удаляем
+  // сразу по клику: строка чата на 5 секунд превращается в плашку "Удаление через: N Вернуть ×",
+  // и только когда отсчёт доходит до нуля, вызывается настоящий onDeleteChat.
+  const { pending: pendingDelete, scheduleDelete, undo: undoDelete } = useUndoDelete<AiChatSummary>(
+    (chat) => onDeleteChat(chat.id)
+  );
 
   // Поиск по переписке идёт на сервер, поэтому запускаем его с задержкой после последнего
   // нажатия клавиши — иначе на каждый символ уходил бы отдельный запрос.
@@ -141,7 +149,36 @@ export default function AiChatList({
             Ничего не найдено по запросу «{search}»
           </div>
         ) : (
-          filteredChats.map((chat) => (
+          filteredChats.map((chat) => {
+            // Чат, для которого сейчас идёт отсчёт отмены — вместо обычной строки показываем
+            // плашку "Удаление через: N Вернуть ×" (см. useUndoDelete). Кликнуть на такую строку
+            // и открыть уже "удаляемый" чат нельзя — только вернуть его или дождаться удаления.
+            if (pendingDelete?.item.id === chat.id) {
+              return (
+                <div
+                  key={chat.id}
+                  className="flex items-center gap-2 px-2.5 py-2 rounded-lg text-xs bg-destructive/10 border border-destructive/20 text-muted-foreground"
+                >
+                  <span className="flex-1 min-w-0 truncate">
+                    Удаление через: {pendingDelete.secondsLeft}
+                  </span>
+                  <button
+                    onClick={undoDelete}
+                    className="shrink-0 font-medium text-foreground hover:text-primary transition-colors"
+                  >
+                    Вернуть
+                  </button>
+                  <button
+                    title="Закрыть"
+                    onClick={undoDelete}
+                    className="shrink-0 h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Icon name="X" size={13} />
+                  </button>
+                </div>
+              );
+            }
+            return (
             <div
               key={chat.id}
               onClick={() => onSelectChat(chat.id)}
@@ -186,14 +223,15 @@ export default function AiChatList({
                 </button>
                 <button
                   title="Удалить"
-                  onClick={(e) => { e.stopPropagation(); onDeleteChat(chat.id); }}
+                  onClick={(e) => { e.stopPropagation(); scheduleDelete(chat); }}
                   className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                 >
                   <Icon name="Trash2" size={12} />
                 </button>
               </div>
             </div>
-          ))
+            );
+          })
         )}
 
         {/* Найденное в тексте переписки — отдельным блоком под списком диалогов, чтобы не
