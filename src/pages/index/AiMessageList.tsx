@@ -4,6 +4,8 @@ import remarkGfm from 'remark-gfm';
 import Icon from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import AiCodeBlock from './AiCodeBlock';
+import AiCodeDiff from './AiCodeDiff';
+import { findComparablePair } from './aiCodeDiff';
 import { exportPinnedMessages } from './aiExportPinned';
 import AiImageLightbox from './AiImageLightbox';
 import type { AiMessage, AiMode } from './AiTypes';
@@ -55,6 +57,25 @@ function CodeRenderer({ className, children }: { className?: string; children: R
     return <code className="px-1 py-0.5 rounded bg-secondary/80 text-[13px] font-mono break-words">{code}</code>;
   }
   return <AiCodeBlock language={match ? match[1] : null} code={code} />;
+}
+
+// Кнопка «Сравнить с исходным» под ответом в режиме кода: сопоставляет код из вопроса сотрудника
+// с исправленной версией из ответа модели. Показывается только когда пара реально найдена
+// (см. findComparablePair), чтобы не мозолить глаза в обычной переписке.
+function DiffToggle({ before, after }: { before: string; after: string }) {
+  const [open, setOpen] = useState(false);
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-2 flex items-center gap-1.5 h-7 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+      >
+        <Icon name="GitCompare" size={12} />
+        Сравнить с исходным
+      </button>
+    );
+  }
+  return <AiCodeDiff before={before} after={after} title="Что изменилось" onClose={() => setOpen(false)} />;
 }
 
 function MessageContent({ content }: { content: string }) {
@@ -231,6 +252,23 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   const lastMessage = messages[messages.length - 1];
   const regenerableId = lastMessage?.role === 'assistant' && lastMessage.content && lastMessage.id > 0 ? lastMessage.id : null;
 
+  // diffPairs — для каждого ответа ассистента в режиме кода ищем, с чем его сравнивать: берём
+  // предшествующее сообщение сотрудника и сопоставляем блоки кода. Считаем один раз на список,
+  // а не при каждом рендере строки, т.к. разбор markdown не бесплатный.
+  const diffPairs = useMemo(() => {
+    const map = new Map<number, { before: string; after: string }>();
+    if (mode !== 'code') return map;
+    for (let i = 0; i < messages.length; i++) {
+      const m = messages[i];
+      if (m.role !== 'assistant' || !m.content) continue;
+      const prevUser = [...messages.slice(0, i)].reverse().find((x) => x.role === 'user' && x.content);
+      if (!prevUser?.content) continue;
+      const pair = findComparablePair(prevUser.content, m.content);
+      if (pair) map.set(m.id, pair);
+    }
+    return map;
+  }, [messages, mode]);
+
   function jumpToMessage(id: number) {
     const el = messageRefs.current.get(id);
     if (!el) return;
@@ -266,7 +304,10 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               ref={(el) => { if (el) messageRefs.current.set(m.id, el); else messageRefs.current.delete(m.id); }}
-              className={`group/msg relative max-w-[85%] sm:max-w-[75%] rounded-xl px-3.5 py-2.5 text-sm transition-shadow ${
+              /* Сообщение со сравнением делаем шире: две колонки кода в узком пузыре нечитаемы. */
+              className={`group/msg relative rounded-xl px-3.5 py-2.5 text-sm transition-shadow ${
+                diffPairs.has(m.id) ? 'max-w-full w-full' : 'max-w-[85%] sm:max-w-[75%]'
+              } ${
                 m.role === 'user'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-card border border-border'
@@ -288,7 +329,14 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
               {m.role === 'assistant' && m.content && <CopyAnswerButton content={m.content} />}
               <MessageAttachments message={m} onOpenImage={(url, name) => setLightboxImage({ url, name })} />
               {m.role === 'assistant' ? (
-                m.content && <MessageContent content={m.content} />
+                m.content && (
+                  <>
+                    <MessageContent content={m.content} />
+                    {diffPairs.has(m.id) && (
+                      <DiffToggle before={diffPairs.get(m.id)!.before} after={diffPairs.get(m.id)!.after} />
+                    )}
+                  </>
+                )
               ) : (
                 m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>
               )}

@@ -3,6 +3,8 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { atomDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Icon from '@/components/ui/icon';
 import { useTheme } from '@/lib/theme';
+import AiCodeDiff from './AiCodeDiff';
+import { parseUnifiedDiff } from './aiCodeDiff';
 
 // Длинные ответы моделей (целый файл на 200+ строк) занимали весь экран, и до текста после кода
 // приходилось долго скроллить — такие блоки сворачиваем, показывая только начало.
@@ -52,10 +54,29 @@ export default function AiCodeBlock({ language, code }: AiCodeBlockProps) {
   const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [wrap, setWrap] = useState(false);
+  const [showRawDiff, setShowRawDiff] = useState(false);
 
   const raw = (language || '').toLowerCase();
   const prismLanguage = LANGUAGE_ALIASES[raw] || raw || 'text';
   const label = LANGUAGE_LABELS[raw] || (raw ? raw : 'Код');
+
+  // Блок ```diff модели присылают как готовый список правок со строками -/+. Читать его в сыром
+  // виде неудобно, поэтому восстанавливаем версии «до» и «после» и показываем двумя колонками.
+  const unified = raw === 'diff' ? parseUnifiedDiff(code) : null;
+  if (unified && !showRawDiff) {
+    return (
+      <div>
+        <AiCodeDiff before={unified.before} after={unified.after} title="Предложенные правки" />
+        <button
+          onClick={() => setShowRawDiff(true)}
+          className="text-[11px] text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1 mb-2"
+        >
+          <Icon name="Code2" size={11} />
+          Показать в текстовом виде
+        </button>
+      </div>
+    );
+  }
 
   const lines = code.split('\n');
   const collapsible = lines.length > COLLAPSE_THRESHOLD;
