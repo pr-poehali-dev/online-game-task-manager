@@ -40,6 +40,9 @@ const App = () => (
                 <Route path="/task/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/idea/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/kb/:id" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                {/* Раздел AI — постоянный адрес, чтобы его можно было сохранить в закладки и
+                    открывать напрямую. Остальные разделы живут в состоянии Index (см. ViewId). */}
+                <Route path="/ai" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                 <Route path="/login" element={<Login />} />
                 <Route path="/cabinet" element={<ProtectedRoute><Cabinet /></ProtectedRoute>} />
                 {/* Админка и личный кабинет объединены в единый /cabinet (см. src/pages/Cabinet.tsx) —

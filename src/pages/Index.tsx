@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import {
@@ -25,15 +25,29 @@ export default function Index() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [view, setView] = useState<ViewId>('board');
+  // Раздел AI имеет постоянный адрес /ai — если страницу открыли по нему (закладка, прямая
+  // ссылка, F5), сразу показываем именно его, а не доску по умолчанию.
+  const [view, setView] = useState<ViewId>(() => (location.pathname === '/ai' ? 'ai' : 'board'));
 
   // Переключение раздела через меню/сайдбар — если открыта карточка по постоянной ссылке
   // (/task/:id, /idea/:id, /kb/:id), сначала возвращаем адрес на корень, иначе при обновлении
   // страницы (F5) снова откроется та же карточка вместо выбранного раздела.
+  // Для AI ведём адрес /ai, чтобы раздел переживал перезагрузку и сохранялся в закладки.
   function changeView(v: ViewId) {
-    if (location.pathname !== '/') navigate('/');
+    const target = v === 'ai' ? '/ai' : '/';
+    if (location.pathname !== target) navigate(target);
     setView(v);
   }
+
+  // Синхронизация в обратную сторону: кнопки «назад/вперёд» в браузере меняют только адрес,
+  // поэтому подтягиваем под него раздел. Уход с /ai возвращает на доску.
+  useEffect(() => {
+    if (location.pathname === '/ai') {
+      setView((prev) => (prev === 'ai' ? prev : 'ai'));
+    } else if (location.pathname === '/') {
+      setView((prev) => (prev === 'ai' ? 'board' : prev));
+    }
+  }, [location.pathname]);
   const [server, setServer] = useState<ServerId | 'all'>('all');
   const [category, setCategory] = useState<CategoryId | 'all'>('all');
   const [sprintFilter, setSprintFilter] = useState<string | 'all'>('all');
