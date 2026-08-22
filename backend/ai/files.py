@@ -9,11 +9,20 @@ import uuid
 
 from common import (
     _bad, _ok, _decode_data, _upload_bytes, _s3_client, _extract_attachment_text,
+    _check_file_limit, _register_file,
     MAX_UPLOAD_SIZE,
 )
 
 
 def handle_upload_attachment(cur, conn, schema, me, body, qs):
+    # Лимит на КОЛИЧЕСТВО хранимых файлов сотрудника (users.ai_file_limit, задаётся администратором
+    # в разделе "Команда"). Проверяем ДО чтения тела запроса: нет смысла принимать и раскодировать
+    # мегабайты, если файл всё равно некуда положить. Освободить место сотрудник может сам —
+    # раздел "Мои файлы" (backend/ai/userfiles.py).
+    _used, _limit, denied = _check_file_limit(cur, schema, me['id'])
+    if denied:
+        cur.close(); conn.close()
+        return denied
     data_b64 = body.get('data')
     if not data_b64:
         cur.close(); conn.close()
@@ -31,10 +40,13 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
     content_type = body.get('contentType') or 'application/octet-stream'
     url = _upload_bytes(raw, ext, content_type, 'uploads')
     attachment_text = _extract_attachment_text(raw, name, content_type)
-    cur.close(); conn.close()
     attachment = {'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type}
     if attachment_text is not None:
         attachment['text'] = attachment_text
+    # kind берём из запроса: обычное вложение в чат ('upload') или загруженный бланк документа
+    # ('template') — в разделе "Мои файлы" они показываются разными группами.
+    _register_file(cur, schema, me['id'], attachment, 'template' if body.get('kind') == 'template' else 'upload')
+    cur.close(); conn.close()
     return _ok({'attachment': attachment})
 
 # --- Загрузка больших файлов по частям (до MAX_UPLOAD_SIZE = 200 МБ) — тот же паттерн, что
@@ -44,10 +56,16 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
 
 
 def handle_file_init(cur, conn, schema, me, body, qs):
+    # Лимит файлов проверяем в САМОМ НАЧАЛЕ кусочной загрузки — иначе сотрудник впустую отправил бы
+    # десятки мегабайт по частям и получил отказ только на последнем шаге.
+    _used, _limit, denied = _check_file_limit(cur, schema, me['id'])
+    if denied:
+        cur.close(); conn.close()
+        return denied
     name = (body.get('name') or 'file').strip() or 'file'
     content_type = body.get('contentType') or 'application/octet-stream'
     file_id = uuid.uuid4().hex
-    meta = {'name': name, 'contentType': content_type}
+    meta = {'name': name, 'contentType': content_type, 'kind': 'template' if body.get('kind') == 'template' else 'upload'}
     _s3_client().put_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=f"ai/_chunks/{file_id}/meta.json", Body=json.dumps(meta).encode())
     cur.close(); conn.close()
     return _ok({'fileId': file_id})
@@ -119,10 +137,11 @@ def handle_file_complete(cur, conn, schema, me, body, qs):
     except Exception:
         pass
 
-    cur.close(); conn.close()
     attachment = {'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type}
     if attachment_text is not None:
         attachment['text'] = attachment_text
+    _register_file(cur, schema, me['id'], attachment, meta.get('kind') or 'upload')
+    cur.close(); conn.close()
     return _ok({'attachment': attachment})
 
 

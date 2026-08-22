@@ -24,7 +24,7 @@ from docx.shared import Pt
 
 from common import (
     _aitunnel_request, _bad, _cors_headers, _current_month, _get_or_create_usage, _ok,
-    _service_key, _upload_bytes,
+    _service_key, _upload_bytes, _register_file,
 )
 from templates import (
     FILL_SYSTEM_PROMPT, MAX_TEMPLATE_BYTES,
@@ -344,6 +344,7 @@ def _fill_template_flow(cur, conn, schema, me, api_key, model, prompt,
         'id': f'doc-{user_msg_id}', 'name': filename, 'url': url,
         'size': len(filled), 'contentType': content_type,
     }
+    _register_file(cur, schema, me['id'], attachment, 'document', chat_id)
     filled_count = sum(1 for f in fields if f in values)
     missing = [f for f in fields if f not in values]
     summary = f'Заполнил ваш бланк «{base_name}» — {filled_count} из {len(fields)} полей.'
@@ -561,6 +562,7 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
         'size': len(raw),
         'contentType': content_type,
     }
+    _register_file(cur, schema, me['id'], attachment, 'document', chat_id)
     # Короткое человекочитаемое описание вместо сырого JSON — в ленте показывается как текст ответа.
     updated = base_spec is not None
     if kind == 'xlsx':

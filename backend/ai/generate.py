@@ -9,7 +9,7 @@ import uuid
 
 from common import (
     _cors_headers, _bad, _ok, _service_key, _get_or_create_usage, _current_month,
-    _history_row_to_message, _aitunnel_request, _aitunnel_get, _upload_bytes,
+    _history_row_to_message, _aitunnel_request, _aitunnel_get, _upload_bytes, _register_file,
     AITUNNEL_BASE, MAX_HISTORY_MESSAGES, CODE_SYSTEM_PROMPT, TITLE_MODEL, TITLE_SYSTEM_PROMPT,
 )
 
@@ -195,7 +195,12 @@ def handle_generate_image(cur, conn, schema, me, body, qs):
         ext = media_type.split('/')[-1] or 'png'
         raw = base64.b64decode(b64)
         url = _upload_bytes(raw, ext, media_type, 'images')
-        attachments.append({'id': uuid.uuid4().hex, 'name': f'image.{ext}', 'url': url, 'size': len(raw), 'contentType': media_type})
+        image_attachment = {'id': uuid.uuid4().hex, 'name': f'image.{ext}', 'url': url, 'size': len(raw), 'contentType': media_type}
+        attachments.append(image_attachment)
+        # Сгенерированные файлы тоже попадают в персональный реестр "Мои файлы" — сотрудник должен
+        # видеть и уметь очищать ВСЁ, что занимает место в хранилище от его имени. В лимит на
+        # количество загрузок они не считаются (см. COUNTED_FILE_KINDS в common.py).
+        _register_file(cur, schema, me['id'], image_attachment, 'image', chat_id)
 
     cur.execute(
         f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments, model, cost_rub) "
@@ -397,6 +402,7 @@ def handle_check_video_job(cur, conn, schema, me, body, qs):
             return _bad('aitunnel_unreachable', 502)
         url = _upload_bytes(raw, 'mp4', 'video/mp4', 'videos')
         attachment = {'id': uuid.uuid4().hex, 'name': 'video.mp4', 'url': url, 'size': len(raw), 'contentType': 'video/mp4'}
+        _register_file(cur, schema, me['id'], attachment, 'video', chat_id)
         usage = data.get('usage') or {}
         cost_rub = usage.get('cost_rub') or 0
         cur.execute(

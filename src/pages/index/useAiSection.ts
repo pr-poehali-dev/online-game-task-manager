@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AI_URL, authHeaders } from './shared';
 import type { ImageGenerateParams, VideoGenerateParams } from './AiGenerateComposer';
 import { useAiPromptTemplates } from './useAiPromptTemplates';
+import { useAiFiles } from './useAiFiles';
 import { uploadAiAttachment } from './aiUploadApi';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
 import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode, AiMessageSearchResult } from './AiTypes';
@@ -55,6 +56,11 @@ export function useAiSection() {
   const [modelFaqOpen, setModelFaqOpen] = useState(false);
   const [templatesManagerOpen, setTemplatesManagerOpen] = useState(false);
   const promptTemplates = useAiPromptTemplates();
+  // "Мои файлы" — личное хранилище сотрудника в разделе AI. Список грузится только при открытии
+  // панели, но после КАЖДОЙ загрузки файла обновляем расход лимита, чтобы счётчик на кнопке был
+  // актуальным даже с закрытой панелью.
+  const [filesPanelOpen, setFilesPanelOpen] = useState(false);
+  const files = useAiFiles(filesPanelOpen);
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -179,8 +185,9 @@ export function useAiSection() {
     setUploadProgress(null);
     setSendError('');
     try {
-      const attachment = await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction));
+      const attachment = await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction), 'template');
       setDocumentTemplate(attachment);
+      files.load();
     } catch (err) {
       const code = (err as { code?: string })?.code;
       const message = (err as { message?: string })?.message;
@@ -197,6 +204,7 @@ export function useAiSection() {
     try {
       const attachment = await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction));
       setPendingAttachments((prev) => [...prev, attachment]);
+      files.load();
     } catch (err) {
       const code = (err as { code?: string })?.code;
       const message = (err as { message?: string })?.message;
@@ -496,6 +504,7 @@ export function useAiSection() {
     modelFaqOpen, setModelFaqOpen,
     templatesManagerOpen, setTemplatesManagerOpen,
     promptTemplates,
+    files, filesPanelOpen, setFilesPanelOpen,
     handleModeChange, handleNewChat, handleAddFile, handleRemoveAttachment,
     handleSend, handleGenerateImage, handleGenerateVideo, handleRegenerate,
     handleSearchMessages, handleRenameChat, handleTogglePinned, handleDeleteChat,

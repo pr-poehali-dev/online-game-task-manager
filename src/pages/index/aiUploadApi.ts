@@ -31,17 +31,20 @@ async function postJson(body: Record<string, unknown>): Promise<Record<string, u
 // (action=upload_attachment), файлы покрупнее — кусочками по CHUNK_SIZE (action=file_init/
 // file_chunk/file_complete, тот же паттерн, что uploadFileInChunks в patchesApi.ts). onProgress —
 // доля загруженного (0..1), вызывается только при кусочной загрузке.
+// kind — куда файл попадёт в разделе "Мои файлы": 'upload' (обычное вложение в чат) или
+// 'template' (загруженный бланк документа). Оба типа расходуют личный лимит файлов сотрудника.
 export async function uploadAiAttachment(
   file: File,
-  onProgress?: (fraction: number) => void
+  onProgress?: (fraction: number) => void,
+  kind: 'upload' | 'template' = 'upload'
 ): Promise<AiAttachment> {
   if (file.size <= CHUNK_THRESHOLD) {
     const dataUrl = await blobToBase64(file);
-    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type });
+    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type, kind });
     return data.attachment as AiAttachment;
   }
 
-  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type });
+  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind });
   const fileId = init.fileId as string;
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   try {

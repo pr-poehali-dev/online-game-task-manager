@@ -36,6 +36,8 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
   const [editSpecValue, setEditSpecValue] = useState('');
   const [editAiLimitId, setEditAiLimitId] = useState<number | null>(null);
   const [editAiLimitValue, setEditAiLimitValue] = useState('');
+  const [editAiFileLimitId, setEditAiFileLimitId] = useState<number | null>(null);
+  const [editAiFileLimitValue, setEditAiFileLimitValue] = useState('');
   const [editNameId, setEditNameId] = useState<number | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
@@ -91,6 +93,17 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     await authFetch({ action: 'set_ai_limit', user_id: id, limit_rub: value });
     setEditAiLimitId(null);
     setEditAiLimitValue('');
+    load();
+  }
+
+  // Лимит КОЛИЧЕСТВА файлов сотрудника в разделе "AI" (users.ai_file_limit) — 0 полностью
+  // запрещает загрузку файлов, поэтому пустое/отрицательное значение просто отменяет правку.
+  async function saveAiFileLimit(id: number) {
+    const value = Number(editAiFileLimitValue.trim());
+    if (!Number.isFinite(value) || value < 0) { setEditAiFileLimitId(null); return; }
+    await authFetch({ action: 'set_ai_file_limit', user_id: id, file_limit: Math.round(value) });
+    setEditAiFileLimitId(null);
+    setEditAiFileLimitValue('');
     load();
   }
 
@@ -192,6 +205,9 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     editAiLimitId, setEditAiLimitId,
     editAiLimitValue, setEditAiLimitValue,
     saveAiLimit,
+    editAiFileLimitId, setEditAiFileLimitId,
+    editAiFileLimitValue, setEditAiFileLimitValue,
+    saveAiFileLimit,
     editNameId, setEditNameId,
     editFirstName, setEditFirstName,
     editLastName, setEditLastName,

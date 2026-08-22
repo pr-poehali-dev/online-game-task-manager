@@ -17,6 +17,9 @@ interface AiSidebarProps {
   onTogglePinned: (id: number, pinned: boolean) => void;
   onDeleteChat: (id: number) => void;
   onSearchMessages: (query: string) => Promise<AiMessageSearchResult[]>;
+  onOpenFiles: () => void;
+  filesUsed?: number;
+  filesLimit?: number;
 }
 
 // AiSidebar — левая колонка со списком диалогов в двух вариантах отображения: постоянная колонка
@@ -34,6 +37,9 @@ export default function AiSidebar({
   onTogglePinned,
   onDeleteChat,
   onSearchMessages,
+  onOpenFiles,
+  filesUsed,
+  filesLimit,
 }: AiSidebarProps) {
   const isMobile = useIsMobile();
   // Координата начала касания на самой панели — для закрытия обратным свайпом.
@@ -56,6 +62,9 @@ export default function AiSidebar({
           onTogglePinned={onTogglePinned}
           onDeleteChat={onDeleteChat}
           onSearchMessages={onSearchMessages}
+          onOpenFiles={onOpenFiles}
+          filesUsed={filesUsed}
+          filesLimit={filesLimit}
         />
       </div>
 
@@ -88,6 +97,9 @@ export default function AiSidebar({
             onTogglePinned={onTogglePinned}
             onDeleteChat={onDeleteChat}
             onSearchMessages={onSearchMessages}
+            onOpenFiles={() => { onOpenFiles(); setChatListOpen(false); }}
+            filesUsed={filesUsed}
+            filesLimit={filesLimit}
             onClose={() => setChatListOpen(false)}
             bare
           />

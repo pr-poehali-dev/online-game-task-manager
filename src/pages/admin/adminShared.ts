@@ -134,6 +134,10 @@ export interface TeamUser {
   tg_notify_muted: boolean;
   show_tg_contact: boolean;
   ai_limit_rub: number;
+  // Лимит на КОЛИЧЕСТВО файлов сотрудника в разделе "AI" (users.ai_file_limit) и текущий расход —
+  // в отличие от лимита трат не сбрасывается ежемесячно, это ограничение занимаемого места.
+  ai_file_limit: number;
+  ai_files_used: number;
 }
 
 // Сводка трат сотрудника на раздел "AI" за текущий месяц (action=ai_usage_summary в
@@ -226,6 +230,8 @@ export const ACTIVITY_META: Record<string, ActivityMeta> = {
   user_set_role: { label: 'Изменил роль участника', icon: 'Shield', color: '35 85% 58%' },
   user_set_active: { label: 'Изменил доступ участника', icon: 'UserCheck', color: '35 85% 58%' },
   user_permissions: { label: 'Изменил права участника', icon: 'KeySquare', color: '35 85% 58%' },
+  user_set_ai_limit: { label: 'Изменил лимит трат на AI', icon: 'Sparkles', color: '35 85% 58%' },
+  user_set_ai_file_limit: { label: 'Изменил лимит файлов в AI', icon: 'FolderCog', color: '35 85% 58%' },
   user_remove: { label: 'Скрыл участника из команды', icon: 'UserX', color: '0 65% 60%' },
   user_set_name: { label: 'Изменил имя участника', icon: 'Pencil', color: '35 85% 58%' },
   user_set_tg_muted: { label: 'Изменил переписку в Telegram', icon: 'BellOff', color: '35 85% 58%' },

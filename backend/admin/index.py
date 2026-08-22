@@ -190,7 +190,7 @@ ADMIN_ONLY_ACTIONS = {'impersonate', 'set_permissions', 'set_role'}
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit), лимит количества файлов сотрудника в разделе "AI" (action=set_ai_file_limit — users.ai_file_limit, см. db_migrations V0082; список GET отдаёт ai_file_limit и текущий расход ai_files_used) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -238,7 +238,9 @@ def handler(event: dict, context) -> dict:
             f"(SELECT MAX(s.expires_at) FROM {schema}.sessions s WHERE s.user_id = u.id) AS last_session, "
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
             f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact, u.nickname, u.avatar_url, "
-            f"(SELECT limit_rub FROM {schema}.ai_usage a WHERE a.user_id = u.id AND a.month = %s) AS ai_limit_rub "
+            f"(SELECT limit_rub FROM {schema}.ai_usage a WHERE a.user_id = u.id AND a.month = %s) AS ai_limit_rub, "
+            f"u.ai_file_limit, "
+            f"(SELECT COUNT(*) FROM {schema}.ai_files f WHERE f.user_id = u.id AND f.kind IN ('upload','template')) AS ai_files_used "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC",
             (month,)
         )
@@ -261,6 +263,8 @@ def handler(event: dict, context) -> dict:
                 'nickname': nickname, 'avatar_url': avatar_url,
                 'tg_first_name': r[3], 'tg_last_name': r[4], 'tg_photo_url': r[5],
                 'ai_limit_rub': float(r[20]) if r[20] is not None else 300.0,
+                'ai_file_limit': int(r[21]) if r[21] is not None else 50,
+                'ai_files_used': int(r[22] or 0),
             })
         cur.close(); conn.close()
         # isOwner — единый источник истины для фронта (показывать ли UI редактирования владельческих
@@ -656,6 +660,20 @@ def handler(event: dict, context) -> dict:
             (user_id, month, limit_rub)
         )
         _log_activity(cur, schema, admin_id, 'user_set_ai_limit', 'user', user_id, _target_name, f'{limit_rub:.0f} ₽/мес')
+    elif action == 'set_ai_file_limit':
+        # Лимит на КОЛИЧЕСТВО файлов, которые сотрудник может одновременно хранить в разделе "AI"
+        # (users.ai_file_limit, см. db_migrations V0082). В отличие от лимита трат он не привязан к
+        # месяцу: это ограничение занимаемого места, а не расходов. 0 — загрузка файлов запрещена.
+        try:
+            file_limit = int(body.get('file_limit'))
+        except (TypeError, ValueError):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
+        if file_limit < 0:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
+        cur.execute(f"UPDATE {schema}.users SET ai_file_limit = %s, updated_at = NOW() WHERE id = %s", (file_limit, user_id))
+        _log_activity(cur, schema, admin_id, 'user_set_ai_file_limit', 'user', user_id, _target_name, f'{file_limit} файлов')
     elif action == 'set_show_in_team':
         show_in_team = bool(body.get('show_in_team'))
         cur.execute(f"UPDATE {schema}.users SET show_in_team = %s, updated_at = NOW() WHERE id = %s", (show_in_team, user_id))

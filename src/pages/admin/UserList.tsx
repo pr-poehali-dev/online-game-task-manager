@@ -17,6 +17,11 @@ export default function UserList({
   editAiLimitValue,
   setEditAiLimitValue,
   saveAiLimit,
+  editAiFileLimitId,
+  setEditAiFileLimitId,
+  editAiFileLimitValue,
+  setEditAiFileLimitValue,
+  saveAiFileLimit,
   editNameId,
   setEditNameId,
   editFirstName,
@@ -63,6 +68,11 @@ export default function UserList({
   editAiLimitValue: string;
   setEditAiLimitValue: (v: string) => void;
   saveAiLimit: (id: number) => void;
+  editAiFileLimitId: number | null;
+  setEditAiFileLimitId: (id: number | null) => void;
+  editAiFileLimitValue: string;
+  setEditAiFileLimitValue: (v: string) => void;
+  saveAiFileLimit: (id: number) => void;
   editNameId: number | null;
   setEditNameId: (id: number | null) => void;
   editFirstName: string;
@@ -200,6 +210,36 @@ export default function UserList({
                   >
                     <Icon name="Sparkles" size={11} />
                     Лимит AI: {u.ai_limit_rub.toFixed(0)} ₽/мес
+                  </button>
+                )
+              )}
+              {/* Лимит на КОЛИЧЕСТВО файлов в разделе "AI" — отдельно от лимита трат: он не
+                  сбрасывается ежемесячно и ограничивает занимаемое место, а не расходы.
+                  0 — загрузка файлов сотруднику полностью запрещена. */}
+              {u.permissions.ai_access && (
+                editAiFileLimitId === u.id ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Icon name="FolderCog" size={11} className="text-muted-foreground shrink-0" />
+                    <input
+                      value={editAiFileLimitValue}
+                      onChange={(e) => setEditAiFileLimitValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveAiFileLimit(u.id); if (e.key === 'Escape') setEditAiFileLimitId(null); }}
+                      autoFocus
+                      inputMode="numeric"
+                      placeholder="50"
+                      className="w-16 rounded border border-border bg-secondary/60 px-2 py-0.5 text-xs focus:outline-none"
+                    />
+                    <span className="text-xs text-muted-foreground">файлов</span>
+                    <button onClick={() => saveAiFileLimit(u.id)} className="text-xs text-primary hover:underline">OK</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditAiFileLimitId(u.id); setEditAiFileLimitValue(String(u.ai_file_limit)); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
+                    title="Сколько файлов сотрудник может одновременно хранить в разделе «AI». 0 — загрузка запрещена"
+                  >
+                    <Icon name="FolderCog" size={11} />
+                    Файлы AI: {u.ai_files_used} из {u.ai_file_limit}
                   </button>
                 )
               )}

@@ -3,6 +3,8 @@ import AiModelFaqModal from './AiModelFaqModal';
 import AiTemplatesManager from './AiTemplatesManager';
 import AiSidebar from './AiSidebar';
 import AiChatPane from './AiChatPane';
+import AiFilesPanel from './AiFilesPanel';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useAiSection } from './useAiSection';
 
 // Раздел "AI" — общение сотрудников с ИИ-моделями через AI Tunnel (текст, код, изображения,
@@ -49,6 +51,9 @@ export default function Ai() {
         onTogglePinned={ai.handleTogglePinned}
         onDeleteChat={ai.handleDeleteChat}
         onSearchMessages={ai.handleSearchMessages}
+        onOpenFiles={() => ai.setFilesPanelOpen(true)}
+        filesUsed={ai.files.usedFiles}
+        filesLimit={ai.files.limitFiles}
       />
 
       <AiChatPane
@@ -90,6 +95,14 @@ export default function Ai() {
         onGenerateImage={ai.handleGenerateImage}
         onGenerateVideo={ai.handleGenerateVideo}
       />
+
+      {/* "Мои файлы" — выезжающая панель поверх чата: личное хранилище сотрудника с деревом
+          файлов, расходом лимита и самостоятельной очисткой. */}
+      <Sheet open={ai.filesPanelOpen} onOpenChange={ai.setFilesPanelOpen}>
+        <SheetContent side="right" className="p-0 w-full sm:w-96 flex flex-col [&>button]:hidden">
+          <AiFilesPanel state={ai.files} onClose={() => ai.setFilesPanelOpen(false)} />
+        </SheetContent>
+      </Sheet>
 
       {ai.modelFaqOpen && <AiModelFaqModal onClose={() => ai.setModelFaqOpen(false)} />}
       {ai.templatesManagerOpen && (

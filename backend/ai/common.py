@@ -381,6 +381,67 @@ def _get_or_create_usage(cur, schema, user_id):
     return float(spent), float(limit_)
 
 
+# --- Реестр файлов сотрудника (ai_files) и лимит на их количество -----------------------------
+# Файлы раздела "AI" физически лежат в S3, а раньше их единственным следом в БД было поле
+# attachments у сообщения (JSONB). Из-за этого нельзя было ни посчитать файлы сотрудника, ни
+# показать ему их общим списком, ни убрать один файл, не трогая переписку. Теперь КАЖДАЯ загрузка
+# и каждый сгенерированный файл регистрируются строкой в ai_files (см. db_migrations V0082) —
+# это источник истины и для лимита, и для раздела "Мои файлы" в интерфейсе.
+#
+# В лимит считаются ТОЛЬКО файлы, которые сотрудник загрузил сам (kind in upload/template):
+# сгенерированные моделью изображения/видео/документы уже ограничены месячным лимитом трат
+# (ai_usage), второй раз ограничивать их количеством смысла нет.
+COUNTED_FILE_KINDS = ('upload', 'template')
+
+
+def _file_limit(cur, schema, user_id):
+    '''Сколько файлов сотруднику разрешено хранить одновременно (users.ai_file_limit, настраивается
+    администратором в разделе "Команда"). 0 — загрузка файлов запрещена полностью.'''
+    cur.execute(f"SELECT ai_file_limit FROM {schema}.users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 50
+
+
+def _file_count(cur, schema, user_id):
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ai_files WHERE user_id = %s AND kind IN %s",
+        (user_id, COUNTED_FILE_KINDS)
+    )
+    return int(cur.fetchone()[0])
+
+
+def _check_file_limit(cur, schema, user_id):
+    '''Возвращает (used, limit) и None, если место ещё есть, либо готовый ответ 403 с понятным
+    кодом file_limit_exceeded — фронт покажет сотруднику предложение очистить "Мои файлы".'''
+    limit_ = _file_limit(cur, schema, user_id)
+    used = _file_count(cur, schema, user_id)
+    if used >= limit_:
+        return used, limit_, {
+            'statusCode': 403,
+            'headers': _cors_headers(),
+            'body': json.dumps({'error': 'file_limit_exceeded', 'usedFiles': used, 'limitFiles': limit_}),
+        }
+    return used, limit_, None
+
+
+def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None):
+    '''Записывает файл в персональный реестр сотрудника. Ошибка записи НЕ должна ронять саму
+    загрузку — файл уже в S3 и сотруднику важнее получить его в чат, чем строгий учёт.'''
+    key = _extract_key(attachment.get('url'))
+    if not key:
+        return
+    try:
+        cur.execute(
+            f"INSERT INTO {schema}.ai_files (user_id, file_key, name, url, size, content_type, kind, chat_id) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (user_id, key, attachment.get('name') or 'file', attachment.get('url'),
+             int(attachment.get('size') or 0), attachment.get('contentType') or 'application/octet-stream',
+             kind, chat_id)
+        )
+    except Exception:
+        pass
+
+
 def _chat_to_dict(row):
     cid, title, mode, model, pinned, created_at, updated_at = row
     return {

@@ -16,6 +16,13 @@ interface AiChatListProps {
   // дополнение к локальной фильтрации по названиям диалогов. Результаты показываются отдельным
   // блоком под списком чатов.
   onSearchMessages: (query: string) => Promise<AiMessageSearchResult[]>;
+  // onOpenFiles — открыть панель "Мои файлы" (личное хранилище сотрудника в разделе AI с
+  // расходом лимита и самостоятельной очисткой, см. AiFilesPanel).
+  onOpenFiles: () => void;
+  // filesUsed/filesLimit — краткий расход лимита файлов прямо на кнопке, чтобы сотрудник видел
+  // приближение к пределу до того, как получит отказ при загрузке.
+  filesUsed?: number;
+  filesLimit?: number;
   // bare — используется внутри мобильного Sheet (Ai.tsx): там уже задана своя ширина/фон
   // контейнера, поэтому убираем фиксированную ширину и правую границу, чтобы список не выглядел
   // "вложенной колонкой внутри колонки".
@@ -35,6 +42,9 @@ export default function AiChatList({
   onTogglePinned,
   onDeleteChat,
   onSearchMessages,
+  onOpenFiles,
+  filesUsed,
+  filesLimit,
   bare = false,
   onClose,
 }: AiChatListProps) {
@@ -257,6 +267,23 @@ export default function AiChatList({
             ))}
           </div>
         )}
+      </div>
+
+      {/* "Мои файлы" — вход в личное хранилище сотрудника: всё, что он загрузил в AI, с расходом
+          лимита и возможностью очистить лишнее самому, без обращения к администратору. */}
+      <div className="p-2 border-t border-border shrink-0">
+        <button
+          onClick={onOpenFiles}
+          className="w-full h-9 px-2.5 rounded-lg flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+        >
+          <Icon name="FolderCog" size={14} className="shrink-0" />
+          <span className="flex-1 text-left">Мои файлы</span>
+          {filesLimit != null && filesLimit > 0 && (
+            <span className={`shrink-0 text-[10px] ${filesUsed != null && filesUsed >= filesLimit ? 'text-destructive' : ''}`}>
+              {filesUsed ?? 0}/{filesLimit}
+            </span>
+          )}
+        </button>
       </div>
     </div>
   );

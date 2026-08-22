@@ -5,6 +5,7 @@ import chats as chats_actions
 import documents as documents_actions
 import files as files_actions
 import generate as generate_actions
+import userfiles as userfiles_actions
 
 
 # Карта action → функция-обработчик. Все обработчики имеют одинаковую сигнатуру
@@ -34,6 +35,10 @@ ACTIONS = {
     'file_chunk': files_actions.handle_file_chunk,
     'file_complete': files_actions.handle_file_complete,
     'file_abort': files_actions.handle_file_abort,
+    # "Мои файлы" — персональный список файлов сотрудника и самостоятельная очистка
+    'list_files': userfiles_actions.handle_list_files,
+    'delete_file': userfiles_actions.handle_delete_file,
+    'clear_files': userfiles_actions.handle_clear_files,
     # Обращения к моделям
     'send_message': generate_actions.handle_send_message,
     'generate_image': generate_actions.handle_generate_image,
@@ -66,7 +71,13 @@ def handler(event: dict, context) -> dict:
     - files.py: upload_attachment (маленький файл одним запросом base64 → S3; для текстовых
       файлов сразу извлекает содержимое в поле 'text'), file_init/file_chunk/file_complete/
       file_abort (большой файл кусочками, до MAX_UPLOAD_SIZE=200 МБ — одиночный запрос к функции
-      ограничен ~3.5 МБ на уровне платформы).
+      ограничен ~3.5 МБ на уровне платформы). Каждая загрузка проверяется против ЛИЧНОГО ЛИМИТА
+      КОЛИЧЕСТВА файлов сотрудника (users.ai_file_limit, задаёт администратор в разделе "Команда")
+      и регистрируется в реестре ai_files.
+
+    - userfiles.py: list_files (все файлы сотрудника с группировкой по типу и текущим расходом
+      лимита), delete_file (убрать один файл), clear_files (очистить всё или одну группу) —
+      раздел "Мои файлы", сотрудник управляет своим местом сам, без администратора.
 
     - generate.py: send_message (текстовое сообщение с вложениями; mode='code' подставляет
       системный промпт код-ревью; НЕ потоковый режим — платформа не даёт проксировать SSE дольше
