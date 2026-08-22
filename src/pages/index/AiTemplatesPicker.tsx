@@ -95,12 +95,20 @@ export default function AiTemplatesPicker({ mode, templates, loading, onSelect, 
                         key={t.id}
                         value={`${t.title} ${t.category} ${t.description}`}
                         onSelect={() => handleSelect(t.prompt)}
-                        className="flex items-start gap-2 py-2"
+                        className="group flex items-start gap-2 py-2"
                       >
                         <Icon name={t.icon} size={15} className="text-primary shrink-0 mt-0.5" />
                         <div className="min-w-0">
                           <div className="text-sm font-medium">{t.title}</div>
-                          {t.description && <div className="text-[11px] text-muted-foreground truncate">{t.description}</div>}
+                          {/* На выделенном пункте (data-selected, задаётся CommandItem из
+                              command.tsx) поднимаем яркость описания — muted-foreground один и
+                              тот же цвет что на обычном фоне, что на выделенном, и при выделении
+                              контраст к мелкому 11px тексту проседал ниже нормы читаемости. */}
+                          {t.description && (
+                            <div className="text-[11px] text-muted-foreground group-data-[selected=true]:text-foreground/70 truncate">
+                              {t.description}
+                            </div>
+                          )}
                         </div>
                       </CommandItem>
                     ))}

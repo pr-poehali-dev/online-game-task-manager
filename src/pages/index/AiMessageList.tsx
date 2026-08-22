@@ -383,8 +383,13 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
               className={`group/msg relative rounded-xl px-3.5 py-2.5 text-sm transition-shadow ${
                 diffPairs.has(m.id) ? 'max-w-full w-full' : m.role === 'assistant' ? 'max-w-[95%] sm:max-w-[75%]' : 'max-w-[85%] sm:max-w-[75%]'
               } ${
+                // Сплошной bg-primary давал очень яркий (жёлтый) пузырь, от которого быстро
+                // устают глаза при долгом чтении переписки — особенно в тёмной теме, где primary
+                // ярче фона в разы. Мягкая заливка primary/15 с обычным текстом foreground даёт
+                // тот же акцент, но не "горит": контраст текста при этом даже выше (~11:1 против
+                // ~8.5:1 у чёрного текста на сплошном жёлтом), см. AI_MANAGER_PLAN цветокор.
                 m.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-primary/15 text-foreground border border-primary/25'
                   : 'bg-card border border-border'
               } ${highlightedId === m.id ? 'ring-2 ring-amber-500' : ''} ${m.pinned ? 'border-amber-500/40' : ''}`}
             >

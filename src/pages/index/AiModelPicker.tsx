@@ -189,10 +189,13 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
                         key={id}
                         value={`${id} ${g.label}`}
                         onSelect={() => { onChange(id); setOpen(false); }}
-                        className="flex flex-col items-start gap-0.5 py-2"
+                        className="group flex flex-col items-start gap-0.5 py-2"
                       >
                         <div className="flex items-center gap-2 w-full">
-                          <span className={`flex-1 truncate font-mono text-xs ${legacy ? 'text-muted-foreground' : ''}`}>{id}</span>
+                          {/* group-data-[selected=true] поднимает яркость приглушённого текста на
+                              выделенном пункте — иначе он терял контраст (см. комментарий в
+                              command.tsx про смену --accent на --secondary для фона выделения). */}
+                          <span className={`flex-1 truncate font-mono text-xs ${legacy ? 'text-muted-foreground group-data-[selected=true]:text-foreground/70' : ''}`}>{id}</span>
                           {legacy && (
                             <span
                               title={`Есть более новая и не более дорогая модель: ${legacyOf.get(id)}`}
@@ -203,7 +206,7 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
                           )}
                           {value === id && <Icon name="Check" size={14} className="text-primary shrink-0" />}
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground group-data-[selected=true]:text-foreground/70">
                           {info.description && <span className="truncate max-w-[200px]">{info.description}</span>}
                           <span className="shrink-0">{fmtPrice(info)}</span>
                         </div>

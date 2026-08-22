@@ -115,7 +115,13 @@ const CommandItem = React.forwardRef<
   <CommandPrimitive.Item
     ref={ref}
     className={cn(
-      "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-accent data-[selected=true]:text-accent-foreground data-[disabled=true]:opacity-50",
+      // Выделенный пункт красился в сплошной --accent (в тёмной теме это яркий жёлтый, почти
+      // как --primary) с текстом --accent-foreground — но вложенные элементы с собственным
+      // text-muted-foreground (например второстепенное описание пункта) этот цвет не наследуют
+      // и остаются серыми поверх яркого фона, из-за чего текст практически не читался. Мягкая
+      // заливка secondary + обычный foreground не спорит с контентом пункта, а серый
+      // muted-foreground внутри всё ещё остаётся ощутимо темнее/светлее фона и читается.
+      "relative flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none data-[disabled=true]:pointer-events-none data-[selected='true']:bg-secondary data-[selected=true]:text-foreground data-[disabled=true]:opacity-50",
       className
     )}
     {...props}
