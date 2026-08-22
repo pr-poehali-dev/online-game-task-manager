@@ -459,7 +459,7 @@ def _check_file_limit(cur, schema, user_id, incoming_size=0):
     return used, count_limit, None
 
 
-def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None):
+def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None, project_id=None):
     '''Записывает файл в персональный реестр сотрудника. Ошибка записи НЕ должна ронять саму
     загрузку — файл уже в S3 и сотруднику важнее получить его в чат, чем строгий учёт.'''
     key = _extract_key(attachment.get('url'))
@@ -467,11 +467,11 @@ def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None
         return
     try:
         cur.execute(
-            f"INSERT INTO {schema}.ai_files (user_id, file_key, name, url, size, content_type, kind, chat_id) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            f"INSERT INTO {schema}.ai_files (user_id, file_key, name, url, size, content_type, kind, chat_id, project_id) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (user_id, key, attachment.get('name') or 'file', attachment.get('url'),
              int(attachment.get('size') or 0), attachment.get('contentType') or 'application/octet-stream',
-             kind, chat_id)
+             kind, chat_id, project_id)
         )
     except Exception:
         pass

@@ -44,8 +44,8 @@ def handle_send_message(cur, conn, schema, me, body, qs):
     else:
         title = content[:60] + ('…' if len(content) > 60 else '')
         cur.execute(
-            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, %s, %s) RETURNING id",
-            (me['id'], title, mode, model)
+            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model, project_id) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+            (me['id'], title, mode, model, body.get('projectId'))
         )
         chat_id = cur.fetchone()[0]
 
@@ -142,8 +142,8 @@ def handle_generate_image(cur, conn, schema, me, body, qs):
     else:
         title = 'Изображение: ' + (prompt[:45] + ('…' if len(prompt) > 45 else ''))
         cur.execute(
-            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'image', %s) RETURNING id",
-            (me['id'], title, model)
+            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model, project_id) VALUES (%s, %s, 'image', %s, %s) RETURNING id",
+            (me['id'], title, model, body.get('projectId'))
         )
         chat_id = cur.fetchone()[0]
 
@@ -266,8 +266,8 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
     else:
         title = 'Видео: ' + (prompt[:45] + ('…' if len(prompt) > 45 else ''))
         cur.execute(
-            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'video', %s) RETURNING id",
-            (me['id'], title, model)
+            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model, project_id) VALUES (%s, %s, 'video', %s, %s) RETURNING id",
+            (me['id'], title, model, body.get('projectId'))
         )
         chat_id = cur.fetchone()[0]
 

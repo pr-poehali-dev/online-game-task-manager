@@ -5,6 +5,8 @@ import chats as chats_actions
 import documents as documents_actions
 import files as files_actions
 import generate as generate_actions
+import indexing as indexing_actions
+import projects as projects_actions
 import userfiles as userfiles_actions
 
 
@@ -35,6 +37,18 @@ ACTIONS = {
     'file_chunk': files_actions.handle_file_chunk,
     'file_complete': files_actions.handle_file_complete,
     'file_abort': files_actions.handle_file_abort,
+    # Проекты — личное рабочее пространство сотрудника (файлы + диалоги)
+    'list_projects': projects_actions.handle_list_projects,
+    'get_project': projects_actions.handle_get_project,
+    'create_project': projects_actions.handle_create_project,
+    'update_project': projects_actions.handle_update_project,
+    'delete_project': projects_actions.handle_delete_project,
+    'attach_files': projects_actions.handle_attach_files,
+    'project_usage': projects_actions.handle_project_usage,
+    # Разбор файлов проекта и поиск по их содержимому
+    'index_step': indexing_actions.handle_index_step,
+    'index_status': indexing_actions.handle_index_status,
+    'search_project': indexing_actions.handle_search_project,
     # "Мои файлы" — персональный список файлов сотрудника и самостоятельная очистка
     'list_files': userfiles_actions.handle_list_files,
     'delete_file': userfiles_actions.handle_delete_file,

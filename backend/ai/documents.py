@@ -427,8 +427,8 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
     else:
         title = 'Документ: ' + (prompt[:45] + ('…' if len(prompt) > 45 else ''))
         cur.execute(
-            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model) VALUES (%s, %s, 'document', %s) RETURNING id",
-            (me['id'], title, model)
+            f"INSERT INTO {schema}.ai_chats (user_id, title, mode, model, project_id) VALUES (%s, %s, 'document', %s, %s) RETURNING id",
+            (me['id'], title, model, body.get('projectId'))
         )
         chat_id = cur.fetchone()[0]
 

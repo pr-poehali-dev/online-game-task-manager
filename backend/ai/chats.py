@@ -55,10 +55,20 @@ def handle_balance(cur, conn, schema, me, body, qs):
 
 
 def handle_list_chats(cur, conn, schema, me, body, qs):
+    '''Диалоги сотрудника. По умолчанию — только те, что ВНЕ проектов: диалоги проекта живут на
+    его странице и в общем списке дублироваться не должны. projectId=<id> отдаёт диалоги
+    конкретного проекта, projectId=all — вообще все (на случай общего поиска).'''
+    project_filter = qs.get('projectId') or body.get('projectId')
+    if project_filter == 'all':
+        where, params = "user_id = %s", (me['id'],)
+    elif project_filter:
+        where, params = "user_id = %s AND project_id = %s", (me['id'], project_filter)
+    else:
+        where, params = "user_id = %s AND project_id IS NULL", (me['id'],)
     cur.execute(
         f"SELECT id, title, mode, model, pinned, created_at, updated_at FROM {schema}.ai_chats "
-        f"WHERE user_id = %s ORDER BY pinned DESC, updated_at DESC",
-        (me['id'],)
+        f"WHERE {where} ORDER BY pinned DESC, updated_at DESC",
+        params
     )
     chats = [_chat_to_dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()

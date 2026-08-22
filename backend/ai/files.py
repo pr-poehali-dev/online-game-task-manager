@@ -50,7 +50,10 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
         attachment['text'] = attachment_text
     # kind берём из запроса: обычное вложение в чат ('upload') или загруженный бланк документа
     # ('template') — в разделе "Мои файлы" они показываются разными группами.
-    _register_file(cur, schema, me['id'], attachment, 'template' if body.get('kind') == 'template' else 'upload')
+    # projectId — если файл загружается со страницы проекта, он сразу попадает в этот проект.
+    _register_file(cur, schema, me['id'], attachment,
+                   'template' if body.get('kind') == 'template' else 'upload',
+                   project_id=body.get('projectId'))
     cur.close(); conn.close()
     return _ok({'attachment': attachment})
 
@@ -75,7 +78,9 @@ def handle_file_init(cur, conn, schema, me, body, qs):
     name = (body.get('name') or 'file').strip() or 'file'
     content_type = body.get('contentType') or 'application/octet-stream'
     file_id = uuid.uuid4().hex
-    meta = {'name': name, 'contentType': content_type, 'kind': 'template' if body.get('kind') == 'template' else 'upload'}
+    meta = {'name': name, 'contentType': content_type,
+            'kind': 'template' if body.get('kind') == 'template' else 'upload',
+            'projectId': body.get('projectId')}
     _s3_client().put_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=f"ai/_chunks/{file_id}/meta.json", Body=json.dumps(meta).encode())
     cur.close(); conn.close()
     return _ok({'fileId': file_id})
@@ -162,7 +167,8 @@ def handle_file_complete(cur, conn, schema, me, body, qs):
     attachment = {'id': uuid.uuid4().hex, 'name': name, 'url': url, 'size': len(raw), 'contentType': content_type}
     if attachment_text is not None:
         attachment['text'] = attachment_text
-    _register_file(cur, schema, me['id'], attachment, meta.get('kind') or 'upload')
+    _register_file(cur, schema, me['id'], attachment, meta.get('kind') or 'upload',
+                   project_id=meta.get('projectId'))
     cur.close(); conn.close()
     return _ok({'attachment': attachment})
 
