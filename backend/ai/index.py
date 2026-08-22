@@ -1,6 +1,7 @@
 import json
 
 from common import _cors_headers, _schema, _db, _bad, _current_user
+import agent as agent_actions
 import chats as chats_actions
 import documents as documents_actions
 import files as files_actions
@@ -49,6 +50,8 @@ ACTIONS = {
     'index_step': indexing_actions.handle_index_step,
     'index_status': indexing_actions.handle_index_status,
     'search_project': indexing_actions.handle_search_project,
+    # Сообщение в сессии проекта: ассистент сам ищет по документам и отвечает со ссылками на них
+    'project_message': agent_actions.handle_project_message,
     # "Мои файлы" — персональный список файлов сотрудника и самостоятельная очистка
     'list_files': userfiles_actions.handle_list_files,
     'delete_file': userfiles_actions.handle_delete_file,
@@ -94,6 +97,11 @@ def handler(event: dict, context) -> dict:
       Excel и текстовые/кодовые файлы), index_status (сколько файлов ещё не разобрано),
       search_project (поиск по содержимому файлов проекта — полнотекстовый поиск PostgreSQL с
       русской морфологией, см. AI_PROJECTS_PLAN.md этап 2).
+
+    - agent.py: project_message (сообщение в сессии проекта — модель получает ИНСТРУМЕНТЫ
+      search_project_files/read_file/list_project_files и сама решает, что прочитать; до
+      MAX_AGENT_STEPS шагов, использованные документы возвращаются как источники и сохраняются
+      в ai_messages.sources, см. AI_PROJECTS_PLAN.md этап 3).
 
     - userfiles.py: list_files (все файлы сотрудника с группировкой по типу и текущим расходом
       лимита), delete_file (убрать один файл), clear_files (очистить всё или одну группу) —

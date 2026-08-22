@@ -68,6 +68,8 @@ export function useAiSection() {
   // sessionProjectId — проект, в котором нажали "Начать сессию". Диалог ещё не создан (он
   // создаётся при первой отправке), поэтому проект держим здесь и передаём с первым сообщением.
   const [sessionProjectId, setSessionProjectId] = useState<number | null>(null);
+  // Проект уже существующего открытого диалога (приходит в ответе get_chat).
+  const [chatProjectId, setChatProjectId] = useState<number | null>(null);
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -133,6 +135,7 @@ export function useAiSection() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessages(data.messages || []);
+        setChatProjectId(data.chat?.projectId ?? null);
         if (data.chat?.mode) setMode(data.chat.mode);
         if (data.chat?.model) setModel(data.chat.model);
       } else {
@@ -217,6 +220,7 @@ export function useAiSection() {
 
   function handleNewChat() {
     setSessionProjectId(null);
+    setChatProjectId(null);
     setActiveChatId(null);
     setMessages([]);
     setSendError('');
@@ -296,6 +300,9 @@ export function useAiSection() {
   // — сотрудник мог уже начать печатать следующий вопрос.
   async function sendMessage(content: string, attachmentsToSend: AiAttachment[]) {
     if (sending) return;
+    // Проект текущей переписки: либо сессия только что начата из проекта (sessionProjectId), либо
+    // открыт уже существующий диалог проекта (chatProjectId приходит с историей сообщений).
+    const activeProjectId = sessionProjectId ?? chatProjectId;
     setSending(true);
     setSendError('');
     setRetryAction(null);
@@ -309,7 +316,11 @@ export function useAiSection() {
         headers: authHeaders(),
         // Режим 'document' идёт отдельным действием: модель отдаёт структуру документа, а
         // .xlsx/.docx собирается на сервере и возвращается вложением (backend/ai/documents.py).
-        body: JSON.stringify(mode === 'document'
+        // Сессия ПРОЕКТА идёт отдельным действием: там ассистент сам ищет по документам проекта
+        // (инструменты search_project_files/read_file) и возвращает источники — backend/ai/agent.py.
+        body: JSON.stringify(activeProjectId != null && mode === 'chat'
+          ? { action: 'project_message', chatId: activeChatId, projectId: activeProjectId, model, content }
+          : mode === 'document'
           ? {
               action: 'generate_document', chatId: activeChatId, projectId: sessionProjectId, model, prompt: content,
               format: documentFormat,
@@ -550,7 +561,12 @@ export function useAiSection() {
     templatesManagerOpen, setTemplatesManagerOpen,
     promptTemplates,
     files, filesPanelOpen, setFilesPanelOpen,
-    projects, sessionProjectId,
+    projects, sessionProjectId, chatProjectId,
+    // Название проекта текущей сессии — шапка чата показывает, что ассистент работает с его файлами.
+    activeSessionProjectName: (() => {
+      const pid = sessionProjectId ?? chatProjectId;
+      return pid == null ? null : (projects.projects.find((p) => p.id === pid)?.name ?? null);
+    })(),
     handleUploadProjectFile, handleOpenProjectChat, handleStartProjectSession,
     handleModeChange, handleNewChat, handleAddFile, handleRemoveAttachment,
     handleSend, handleGenerateImage, handleGenerateVideo, handleRegenerate,

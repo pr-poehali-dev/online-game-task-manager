@@ -81,7 +81,7 @@ def handle_get_chat(cur, conn, schema, me, body, qs):
         cur.close(); conn.close()
         return _bad('bad_chat_id')
     cur.execute(
-        f"SELECT id, title, mode, model, pinned, created_at, updated_at FROM {schema}.ai_chats "
+        f"SELECT id, title, mode, model, pinned, created_at, updated_at, project_id FROM {schema}.ai_chats "
         f"WHERE id = %s AND user_id = %s",
         (chat_id, me['id'])
     )
@@ -89,15 +89,20 @@ def handle_get_chat(cur, conn, schema, me, body, qs):
     if not row:
         cur.close(); conn.close()
         return _bad('not_found', 404)
+    # project_id нужен фронту, чтобы понять: продолжение сессии ПРОЕКТА (ассистент ищет по
+    # документам, action=project_message) или обычный диалог.
+    chat_project_id = row[7]
     cur.execute(
         f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned, "
-        f"(doc_spec IS NOT NULL) AS has_doc_spec "
+        f"(doc_spec IS NOT NULL) AS has_doc_spec, sources, agent_steps "
         f"FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id ASC",
         (chat_id,)
     )
     messages = [_message_to_dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
-    return _ok({'chat': _chat_to_dict(row), 'messages': messages})
+    chat = _chat_to_dict(row[:7])
+    chat['projectId'] = chat_project_id
+    return _ok({'chat': chat, 'messages': messages})
 
 
 def handle_search_messages(cur, conn, schema, me, body, qs):

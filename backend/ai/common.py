@@ -500,4 +500,10 @@ def _message_to_dict(row):
     }
     if len(row) > 10:
         result['hasDocSpec'] = bool(row[10])
+    # Источники и шаги агента — только у ответов в сессиях проекта (backend/ai/agent.py):
+    # какие документы ассистент прочитал, чтобы ответить, и что он для этого делал.
+    if len(row) > 11:
+        result['sources'] = row[11]
+    if len(row) > 12:
+        result['agentSteps'] = row[12]
     return result

@@ -5,6 +5,7 @@ import Icon from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import AiCodeBlock from './AiCodeBlock';
 import AiCodeDiff from './AiCodeDiff';
+import AiMessageSources from './AiMessageSources';
 import { findComparablePair } from './aiCodeDiff';
 import { exportPinnedMessages } from './aiExportPinned';
 import AiImageLightbox from './AiImageLightbox';
@@ -418,6 +419,8 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
                     {m.id === lastDocumentId && onPickDocumentHint && !sending && (
                       <DocumentEditHints onPick={onPickDocumentHint} />
                     )}
+                    {/* Документы проекта, на которые опирался ассистент (сессии проекта). */}
+                    <AiMessageSources sources={m.sources} steps={m.agentSteps} />
                   </>
                 )
               ) : (

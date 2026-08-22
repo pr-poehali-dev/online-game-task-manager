@@ -78,6 +78,7 @@ export default function Ai() {
         model={ai.model}
         onModelChange={ai.setModel}
         activeChatTitle={ai.activeChatTitle}
+        sessionProjectName={ai.activeSessionProjectName}
         onOpenChatList={() => ai.setChatListOpen(true)}
         onOpenModelFaq={() => ai.setModelFaqOpen(true)}
         messages={ai.messages}

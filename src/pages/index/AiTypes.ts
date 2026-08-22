@@ -24,6 +24,19 @@ export interface AiAttachment {
   text?: string;
 }
 
+export interface AiMessageSource {
+  fileId: number;
+  fileName: string;
+  fileUrl: string;
+  quote: string;
+}
+
+export interface AiAgentStep {
+  tool: 'search' | 'read' | 'list';
+  arg: string;
+  found: number;
+}
+
 export interface AiMessage {
   id: number;
   role: 'user' | 'assistant' | 'system';
@@ -41,6 +54,10 @@ export interface AiMessage {
   // дорабатывать уточнениями («добавь позиции», «пересчитай с НДС»). Сама структура на фронт не
   // приходит — она нужна только серверу (см. backend/ai/documents.py).
   hasDocSpec?: boolean;
+  // sources/agentSteps — только у ответов в сессиях проекта: какие документы ассистент прочитал,
+  // чтобы ответить, и что он для этого делал (см. backend/ai/agent.py).
+  sources?: AiMessageSource[] | null;
+  agentSteps?: AiAgentStep[] | null;
 }
 
 // Одна модель из публичного каталога AI Tunnel (GET /public/aitunnel/models/{chat,images,videos})
