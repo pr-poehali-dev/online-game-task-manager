@@ -5,16 +5,38 @@
 Проекты — НАДСТРОЙКА над уже работающим разделом: файлы и диалоги без проекта (project_id IS NULL)
 продолжают работать ровно как раньше, ничего переносить принудительно не нужно.'''
 
+import json
 import os
 
 from common import (
-    _bad, _ok, _s3_client, _file_limits, _file_usage, _delete_chat_attachments, MB,
+    _bad, _ok, _s3_client, _file_limits, _file_usage, _delete_chat_attachments,
+    _service_key, _get_or_create_usage, _current_month, _aitunnel_request, _cors_headers, MB,
+)
+
+# Модель для автосводки — дешёвая и быстрая: задача простая (пересказать, что за документы), а
+# платить полную цену за каждое обновление состава файлов незачем. Тот же подход, что у
+# автоназвания диалогов (TITLE_MODEL в common.py).
+SUMMARY_MODEL = 'gpt-5-nano'
+
+# Сколько текста берём из КАЖДОГО файла на сводку. Начала документа почти всегда достаточно, чтобы
+# понять, что это за материал, а весь текст стоил бы дорого и не влез бы в контекст.
+SUMMARY_CHARS_PER_FILE = 1200
+# Максимум файлов, попадающих в запрос — у проекта с сотней документов сводка всё равно должна
+# оставаться короткой и дешёвой.
+SUMMARY_MAX_FILES = 25
+
+SUMMARY_SYSTEM_PROMPT = (
+    'Ты кратко описываешь, что за материалы собраны в рабочем проекте. По присланным фрагментам '
+    'документов напиши 2-4 предложения на русском языке: что это за документы, о чём они, что '
+    'объединяет. Без вступлений вроде "В проекте собраны", без списков и заголовков — просто '
+    'связный короткий текст. Не выдумывай того, чего нет во фрагментах.'
 )
 
 
 def _project_to_dict(row):
     (pid, name, description, instructions, summary, icon, color, archived,
-     created_at, updated_at, files_count, files_size, chats_count) = row
+     created_at, updated_at, files_count, files_size, chats_count,
+     summary_files_count, summary_updated_at) = row
     return {
         'id': pid, 'name': name, 'description': description, 'instructions': instructions,
         'summary': summary, 'icon': icon or 'Folder', 'color': color or '',
@@ -24,6 +46,10 @@ def _project_to_dict(row):
         'chatsCount': int(chats_count or 0),
         'createdAt': created_at.isoformat() if created_at else None,
         'updatedAt': updated_at.isoformat() if updated_at else None,
+        # summaryStale — состав файлов изменился с момента сборки сводки, её пора обновить.
+        # Интерфейс по этому признаку сам запускает пересборку при открытии проекта.
+        'summaryStale': int(files_count or 0) != int(summary_files_count or 0),
+        'summaryUpdatedAt': summary_updated_at.isoformat() if summary_updated_at else None,
     }
 
 
@@ -35,7 +61,8 @@ def _select_projects(schema, where):
         f"p.created_at, p.updated_at, "
         f"(SELECT COUNT(*) FROM {schema}.ai_files f WHERE f.project_id = p.id) AS files_count, "
         f"(SELECT COALESCE(SUM(f.size), 0) FROM {schema}.ai_files f WHERE f.project_id = p.id) AS files_size, "
-        f"(SELECT COUNT(*) FROM {schema}.ai_chats c WHERE c.project_id = p.id) AS chats_count "
+        f"(SELECT COUNT(*) FROM {schema}.ai_chats c WHERE c.project_id = p.id) AS chats_count, "
+        f"p.summary_files_count, p.summary_updated_at "
         f"FROM {schema}.ai_projects p WHERE {where}"
     )
 
@@ -289,4 +316,105 @@ def handle_project_usage(cur, conn, schema, me, body, qs):
         'usedFiles': used, 'limitFiles': count_limit,
         'usedMb': round(used_bytes / MB, 1), 'limitMb': size_limit_mb,
         'usedProjects': used_projects, 'limitProjects': project_limit,
+    })
+
+
+def handle_project_summary(cur, conn, schema, me, body, qs):
+    '''Автосводка по проекту: ассистент читает начала документов и коротко описывает, что за
+    материалы внутри. Показывается на вкладке "Обзор", чтобы контекст проекта был виден сразу.
+
+    Пересобирается НЕ при каждом открытии, а только когда изменился состав файлов (иначе каждое
+    открытие проекта стоило бы денег). Стоимость списывается в общий месячный лимит сотрудника.
+    '''
+    project_id = body.get('projectId') or qs.get('projectId')
+    if not project_id:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+
+    cur.execute(
+        f"SELECT id, name, summary, summary_files_count FROM {schema}.ai_projects "
+        f"WHERE id = %s AND user_id = %s",
+        (project_id, me['id'])
+    )
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+    _pid, project_name, old_summary, summary_files_count = row
+
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s",
+        (me['id'], project_id)
+    )
+    files_count = int(cur.fetchone()[0])
+
+    # Состав не менялся — отдаём готовую сводку, к модели не обращаемся (экономия денег).
+    if files_count == int(summary_files_count or 0) and not body.get('force'):
+        cur.close(); conn.close()
+        return _ok({'summary': old_summary, 'cached': True, 'filesCount': files_count})
+
+    if files_count == 0:
+        cur.execute(
+            f"UPDATE {schema}.ai_projects SET summary = '', summary_files_count = 0, "
+            f"summary_updated_at = NOW() WHERE id = %s",
+            (project_id,)
+        )
+        cur.close(); conn.close()
+        return _ok({'summary': '', 'cached': False, 'filesCount': 0})
+
+    # Берём НАЧАЛО каждого файла: этого достаточно, чтобы понять характер документа.
+    cur.execute(
+        f"SELECT f.id, f.name, "
+        f"(SELECT c.content FROM {schema}.ai_file_chunks c WHERE c.file_id = f.id "
+        f" ORDER BY c.chunk_index ASC LIMIT 1) AS head "
+        f"FROM {schema}.ai_files f WHERE f.user_id = %s AND f.project_id = %s "
+        f"ORDER BY f.id ASC LIMIT %s",
+        (me['id'], project_id, SUMMARY_MAX_FILES)
+    )
+    parts = []
+    for _fid, name, head in cur.fetchall():
+        snippet = (head or '')[:SUMMARY_CHARS_PER_FILE].strip()
+        parts.append(f'Файл «{name}»:\n{snippet}' if snippet else f'Файл «{name}» (текст недоступен)')
+
+    spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
+    if spent >= limit_:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+    api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
+    if not api_key:
+        cur.close(); conn.close()
+        return _bad('aitunnel_not_configured')
+
+    data, err = _aitunnel_request('/chat/completions', api_key, {
+        'model': SUMMARY_MODEL,
+        'messages': [
+            {'role': 'system', 'content': SUMMARY_SYSTEM_PROMPT},
+            {'role': 'user', 'content': f'Проект «{project_name}».\n\n' + '\n\n---\n\n'.join(parts)},
+        ],
+        'max_tokens': 400,
+    })
+    if err:
+        # Неудачная сводка — не повод показывать сотруднику ошибку на весь экран: проект работает
+        # и без неё. Оставляем прежний текст и просто сообщаем, что обновить не вышло.
+        cur.close(); conn.close()
+        return _ok({'summary': old_summary, 'cached': True, 'failed': True, 'filesCount': files_count})
+
+    choice = (data.get('choices') or [{}])[0]
+    summary = ((choice.get('message') or {}).get('content') or '').strip()
+    cost_rub = (data.get('usage') or {}).get('cost_rub') or 0
+
+    cur.execute(
+        f"UPDATE {schema}.ai_projects SET summary = %s, summary_files_count = %s, "
+        f"summary_updated_at = NOW() WHERE id = %s",
+        (summary, files_count, project_id)
+    )
+    cur.execute(
+        f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+        (cost_rub, me['id'], _current_month())
+    )
+    cur.close(); conn.close()
+    return _ok({
+        'summary': summary, 'cached': False, 'filesCount': files_count,
+        'costRub': float(cost_rub),
     })

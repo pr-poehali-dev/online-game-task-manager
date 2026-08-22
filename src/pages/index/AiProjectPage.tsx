@@ -160,6 +160,46 @@ export default function AiProjectPage({
                 </div>
               )}
 
+              {/* Автосводка — ассистент сам читает документы и коротко описывает, что внутри.
+                  Пересобирается только при изменении состава файлов, поэтому открытие проекта не
+                  стоит денег. */}
+              {(project.filesCount > 0 || project.summary) && (
+                <div className="rounded-xl border border-border bg-card/40 p-3.5">
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <Icon name="Sparkles" size={13} className="shrink-0 text-primary" />
+                    <span className="text-xs font-medium">О чём этот проект</span>
+                    {state.summaryLoading ? (
+                      <span className="ml-auto flex items-center gap-1 text-[11px] text-muted-foreground">
+                        <Icon name="Loader2" size={11} className="animate-spin" />
+                        Читаю документы…
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => state.refreshSummary(true)}
+                        title="Пересобрать описание по документам"
+                        className="ml-auto h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                      >
+                        <Icon name="RefreshCw" size={11} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-sm text-foreground/85 leading-relaxed">
+                    {project.summary
+                      ? project.summary
+                      : state.summaryLoading
+                        ? 'Ассистент просматривает файлы проекта…'
+                        : state.indexing
+                          ? 'Описание появится, когда файлы будут прочитаны'
+                          : 'Добавьте файлы — ассистент опишет, что в них'}
+                  </div>
+                  {project.summaryUpdatedAt && !state.summaryLoading && (
+                    <div className="text-[10px] text-muted-foreground mt-1.5">
+                      Обновлено {new Date(project.summaryUpdatedAt).toLocaleDateString('ru-RU')}
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   Сессии проекта
@@ -295,7 +335,7 @@ export default function AiProjectPage({
               <div>
                 <div className="text-xs font-medium mb-1.5">Сводка по проекту</div>
                 <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 text-sm text-muted-foreground">
-                  {project.summary || 'Сводка появится, когда ассистент научится читать файлы проекта'}
+                  {project.summary || 'Добавьте файлы в проект — ассистент сам опишет, что в них'}
                 </div>
               </div>
             </div>
@@ -316,6 +356,12 @@ export default function AiProjectPage({
               className="w-full rounded-lg border border-border bg-secondary/40 px-2.5 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-y"
             />
           </div>
+          {project.summary && (
+            <div>
+              <div className="text-xs font-medium mb-1.5">Сводка</div>
+              <div className="text-xs text-muted-foreground leading-relaxed">{project.summary}</div>
+            </div>
+          )}
           <div>
             <div className="text-xs font-medium mb-1.5">Материалы</div>
             <div className="text-xs text-muted-foreground space-y-1">

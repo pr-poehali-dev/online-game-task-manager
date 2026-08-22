@@ -12,6 +12,9 @@ export interface AiProject {
   icon: string;
   color: string;
   archived: boolean;
+  // summaryStale — состав файлов изменился с момента сборки автосводки, её пора обновить.
+  summaryStale: boolean;
+  summaryUpdatedAt: string | null;
   filesCount: number;
   filesSizeMb: number;
   chatsCount: number;
@@ -74,6 +77,9 @@ export interface AiProjectsState {
   indexPending: number;
   indexing: boolean;
   searchProject: (query: string) => Promise<AiSearchHit[]>;
+  // Автосводка по документам проекта (вкладка «Обзор»).
+  summaryLoading: boolean;
+  refreshSummary: (force?: boolean) => Promise<void>;
 }
 
 // useAiProjects — состояние проектов: список слева и подробности открытого проекта (файлы,
@@ -93,6 +99,7 @@ export function useAiProjects(): AiProjectsState {
   const [error, setError] = useState('');
   const [indexPending, setIndexPending] = useState(0);
   const [indexing, setIndexing] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -265,6 +272,37 @@ export function useAiProjects(): AiProjectsState {
     return () => { cancelled = true; };
   }, [activeProjectId, projectFiles.length, runIndexing]);
 
+  // Автосводка собирается ассистентом и стоит денег, поэтому запрашиваем её только когда состав
+  // файлов изменился (сервер сам отдаст готовую, если пересобирать нечего).
+  const refreshSummary = useCallback(async (force = false) => {
+    if (activeProjectId == null) return;
+    setSummaryLoading(true);
+    try {
+      const res = await fetch(AI_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'project_summary', projectId: activeProjectId, force }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setActiveProject((prev) => (prev && prev.id === activeProjectId
+          ? { ...prev, summary: data.summary || '', summaryStale: false }
+          : prev));
+      }
+    } catch {
+      /* ignore — проект работает и без сводки */
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [activeProjectId]);
+
+  // Обновляем сводку, когда все файлы разобраны: пересобирать её раньше бессмысленно — текста
+  // документов ещё нет, ассистенту не из чего делать выводы.
+  useEffect(() => {
+    if (activeProjectId == null || !activeProject?.summaryStale || indexing || summaryLoading) return;
+    refreshSummary();
+  }, [activeProjectId, activeProject?.summaryStale, indexing, summaryLoading, refreshSummary]);
+
   const searchProject = useCallback(async (query: string): Promise<AiSearchHit[]> => {
     if (activeProjectId == null || query.trim().length < 2) return [];
     try {
@@ -283,6 +321,7 @@ export function useAiProjects(): AiProjectsState {
   return {
     projects, loading, usedProjects, limitProjects,
     indexPending, indexing, searchProject,
+    summaryLoading, refreshSummary,
     activeProject, activeProjectId, openProject,
     projectFiles, projectChats, detailLoading, error,
     load, loadProject, createProject, updateProject, deleteProject, attachFiles,

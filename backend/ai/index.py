@@ -46,6 +46,7 @@ ACTIONS = {
     'delete_project': projects_actions.handle_delete_project,
     'attach_files': projects_actions.handle_attach_files,
     'project_usage': projects_actions.handle_project_usage,
+    'project_summary': projects_actions.handle_project_summary,
     # Разбор файлов проекта и поиск по их содержимому
     'index_step': indexing_actions.handle_index_step,
     'index_status': indexing_actions.handle_index_status,
