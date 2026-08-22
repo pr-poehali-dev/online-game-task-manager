@@ -80,7 +80,8 @@ def handle_get_chat(cur, conn, schema, me, body, qs):
         cur.close(); conn.close()
         return _bad('not_found', 404)
     cur.execute(
-        f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned "
+        f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned, "
+        f"(doc_spec IS NOT NULL) AS has_doc_spec "
         f"FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id ASC",
         (chat_id,)
     )

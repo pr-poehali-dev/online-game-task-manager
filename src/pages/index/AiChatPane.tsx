@@ -40,6 +40,7 @@ interface AiChatPaneProps {
   onManageTemplates: () => void;
   documentFormat: string;
   onDocumentFormatChange: (format: string) => void;
+  onPickDocumentHint: (text: string) => void;
   onGenerateImage: (params: ImageGenerateParams) => void;
   onGenerateVideo: (params: VideoGenerateParams) => void;
 }
@@ -79,6 +80,7 @@ export default function AiChatPane({
   onManageTemplates,
   documentFormat,
   onDocumentFormatChange,
+  onPickDocumentHint,
   onGenerateImage,
   onGenerateVideo,
 }: AiChatPaneProps) {
@@ -134,6 +136,7 @@ export default function AiChatPane({
           onTogglePinned={onTogglePinnedMessage}
           onRetry={onRetry}
           onRegenerate={mode === 'chat' || mode === 'code' ? onRegenerate : undefined}
+          onPickDocumentHint={mode === 'document' ? onPickDocumentHint : undefined}
         />
       )}
       {mode === 'image' || mode === 'video' ? (
@@ -165,6 +168,7 @@ export default function AiChatPane({
           onManageTemplates={onManageTemplates}
           documentFormat={documentFormat}
           onDocumentFormatChange={onDocumentFormatChange}
+          hasDocument={messages.some((m) => m.hasDocSpec)}
         />
       )}
     </div>

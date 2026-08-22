@@ -37,6 +37,10 @@ export interface AiMessage {
   // AiChatSummary.pinned (закрепляет весь чат в списке слева) — для быстрого поиска полезного
   // ответа в длинной переписке (см. backend/ai/index.py, action=set_message_pinned).
   pinned: boolean;
+  // hasDocSpec — у сообщения сохранена структура собранного офисного документа, значит его можно
+  // дорабатывать уточнениями («добавь позиции», «пересчитай с НДС»). Сама структура на фронт не
+  // приходит — она нужна только серверу (см. backend/ai/documents.py).
+  hasDocSpec?: boolean;
 }
 
 // Одна модель из публичного каталога AI Tunnel (GET /public/aitunnel/models/{chat,images,videos})

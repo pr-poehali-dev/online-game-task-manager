@@ -48,13 +48,15 @@ interface AiComposerProps {
   // Выбранный формат документа в режиме 'document' ('auto' | 'xlsx' | 'docx').
   documentFormat?: string;
   onDocumentFormatChange?: (format: string) => void;
+  // hasDocument — в диалоге уже есть собранный документ: следующий запрос будет доработкой.
+  hasDocument?: boolean;
 }
 
 export default function AiComposer({
   mode, value, onChange, onSend, sending, usage, limitExceeded,
   attachments, onAddFile, onRemoveAttachment, uploading, uploadProgress,
   templates, templatesLoading, onManageTemplates,
-  documentFormat = 'auto', onDocumentFormatChange,
+  documentFormat = 'auto', onDocumentFormatChange, hasDocument = false,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -102,7 +104,10 @@ export default function AiComposer({
       ? 'Ctrl+Enter — отправить, Tab — отступ'
       : 'Вставьте код или опишите задачу… (Enter — отправить, Tab — отступ)'
     : mode === 'document'
-      ? 'Опишите документ: «смета на ремонт офиса, 10 позиций с ценами»…'
+      ? hasDocument
+        // Документ в диалоге уже есть — следующее сообщение будет доработкой, а не новым файлом.
+        ? 'Что поправить в документе? «добавь три позиции», «пересчитай с НДС 20%»…'
+        : 'Опишите документ: «смета на ремонт офиса, 10 позиций с ценами»…'
       : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
 
   return (
@@ -134,7 +139,15 @@ export default function AiComposer({
           <span>Загрузка файла… {Math.round(uploadProgress * 100)}%</span>
         </div>
       )}
-      {mode === 'document' && (
+      {mode === 'document' && hasDocument && (
+        <div className="mb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
+          <Icon name="Info" size={12} className="shrink-0" />
+          Следующее сообщение доработает уже созданный документ. Чтобы сделать новый — начните новый диалог.
+        </div>
+      )}
+      {/* Формат выбирается только для НОВОГО документа: при доработке он наследуется от исходного
+          файла, иначе таблица могла бы неожиданно превратиться в текстовый документ. */}
+      {mode === 'document' && !hasDocument && (
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
           <span className="text-[11px] text-muted-foreground mr-0.5">Формат:</span>
           {DOCUMENT_FORMATS.map((f) => (

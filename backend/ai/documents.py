@@ -38,6 +38,28 @@ MAX_ROWS = 500
 MAX_COLUMNS = 40
 MAX_BLOCKS = 300
 
+# Насколько большую структуру предыдущего документа отдаём модели как основу для правки. Целиком
+# слать нельзя: таблица на 500 строк съест весь контекст и подорожает запрос, а для правки вида
+# «пересчитай с НДС» модели достаточно увидеть все строки. Ограничиваем по символам.
+MAX_SPEC_CONTEXT_CHARS = 60000
+
+EDIT_SYSTEM_PROMPT = (
+    'Ты дорабатываешь УЖЕ СОЗДАННЫЙ офисный документ по уточнению пользователя и отвечаешь СТРОГО '
+    'одним JSON-объектом той же схемы, что и исходная структура, без markdown-обёртки и пояснений.\n\n'
+    'КЛЮЧЕВОЕ ПРАВИЛО: верни ПОЛНУЮ структуру документа целиком — со всеми строками и блоками, '
+    'которые были раньше, включая неизменённые. Не возвращай только изменённую часть и не '
+    'сокращай данные многоточиями: файл собирается строго из того, что ты вернёшь, поэтому всё '
+    'пропущенное будет безвозвратно потеряно.\n'
+    'Меняй ТОЛЬКО то, о чём просит пользователь, остальное переноси дословно. Сохраняй kind '
+    '(xlsx/docx), порядок колонок и названия — если пользователь явно не просит их изменить. '
+    'При пересчёте значений (НДС, скидка, наценка) обнови и итоговые строки.\n'
+    # Без этого указания на «добавь ещё три позиции» модель вставляет пустые заглушки вида
+    # «Новая позиция 1» с нулями — формально просьба выполнена, но пользоваться таким файлом нельзя.
+    'Если пользователь просит добавить строки или разделы, но не уточняет содержание — придумай '
+    'ПРАВДОПОДОБНЫЕ данные по теме документа с реалистичными значениями, а не пустые заготовки '
+    'вида «Новая позиция 1» с нулями. Отвечай только JSON.'
+)
+
 DOCUMENT_SYSTEM_PROMPT = (
     'Ты формируешь СТРУКТУРУ офисного документа по запросу пользователя и отвечаешь СТРОГО одним '
     'JSON-объектом, без markdown-обёртки и пояснений.\n\n'
@@ -233,6 +255,10 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
     model = (body.get('model') or '').strip() or DOCUMENT_MODEL
     # format='xlsx'|'docx' — явный выбор сотрудника в интерфейсе; 'auto' отдаёт решение модели.
     wanted = (body.get('format') or 'auto').strip().lower()
+    # baseMessageId — дорабатывать КОНКРЕТНЫЙ документ из переписки (кнопка «Доработать» у нужного
+    # файла). Если не передан, но в диалоге уже есть документ — правим последний, т.к. уточнение
+    # вида «добавь ещё три позиции» почти всегда относится к только что полученному файлу.
+    base_message_id = body.get('baseMessageId')
     if not prompt:
         cur.close(); conn.close()
         return _bad('bad_request')
@@ -260,21 +286,61 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
         )
         chat_id = cur.fetchone()[0]
 
+    # Структура документа, который дорабатываем. Ищем либо конкретное сообщение (baseMessageId),
+    # либо последний собранный документ в этом же диалоге. Проверка chat_id/user_id обязательна:
+    # иначе по чужому messageId можно было бы вытащить документ другого сотрудника.
+    base_spec = None
+    if chat_id:
+        if base_message_id:
+            cur.execute(
+                f"SELECT m.doc_spec FROM {schema}.ai_messages m "
+                f"JOIN {schema}.ai_chats c ON c.id = m.chat_id "
+                f"WHERE m.id = %s AND m.chat_id = %s AND c.user_id = %s AND m.doc_spec IS NOT NULL",
+                (base_message_id, chat_id, me['id'])
+            )
+        else:
+            cur.execute(
+                f"SELECT m.doc_spec FROM {schema}.ai_messages m "
+                f"JOIN {schema}.ai_chats c ON c.id = m.chat_id "
+                f"WHERE m.chat_id = %s AND c.user_id = %s AND m.doc_spec IS NOT NULL "
+                f"ORDER BY m.id DESC LIMIT 1",
+                (chat_id, me['id'])
+            )
+        row = cur.fetchone()
+        if row and row[0]:
+            base_spec = row[0]
+
     cur.execute(
         f"INSERT INTO {schema}.ai_messages (chat_id, role, content) VALUES (%s, 'user', %s) RETURNING id, created_at",
         (chat_id, prompt)
     )
     user_msg_id, user_created_at = cur.fetchone()
 
-    instruction = DOCUMENT_SYSTEM_PROMPT
-    if wanted in ('xlsx', 'docx'):
-        instruction += f'\n\nПользователь явно выбрал формат: используй kind="{wanted}".'
+    if base_spec is not None:
+        # Режим доработки: модель получает предыдущую структуру и возвращает её целиком с учётом
+        # правки. Слишком большую структуру не отправляем — вместо неверного результата лучше
+        # честно собрать документ заново по описанию.
+        base_json = json.dumps(base_spec, ensure_ascii=False)
+        if len(base_json) > MAX_SPEC_CONTEXT_CHARS:
+            base_spec = None
+
+    if base_spec is not None:
+        instruction = EDIT_SYSTEM_PROMPT
+        user_content = (
+            f'Текущая структура документа:\n{base_json}\n\n'
+            f'Уточнение пользователя: {prompt}'
+        )
+    else:
+        instruction = DOCUMENT_SYSTEM_PROMPT
+        user_content = prompt
+        if wanted in ('xlsx', 'docx'):
+            instruction += f'\n\nПользователь явно выбрал формат: используй kind="{wanted}".'
 
     data, err = _aitunnel_request('/chat/completions', api_key, {
         'model': model,
         'messages': [
             {'role': 'system', 'content': instruction},
-            {'role': 'user', 'content': prompt},
+            {'role': 'user', 'content': user_content},
         ],
         'response_format': {'type': 'json_object'},
     }, timeout=90)
@@ -313,6 +379,12 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
     kind = str(spec.get('kind') or wanted or 'xlsx').lower()
     if wanted in ('xlsx', 'docx'):
         kind = wanted
+    # При доработке формат наследуется от исходного документа: уточнение «добавь позиции» не должно
+    # неожиданно превратить таблицу Excel в документ Word, даже если модель ошиблась с kind.
+    if base_spec is not None and wanted not in ('xlsx', 'docx'):
+        base_kind = str(base_spec.get('kind') or '').lower()
+        if base_kind in ('xlsx', 'docx'):
+            kind = base_kind
     if kind not in ('xlsx', 'docx'):
         kind = 'xlsx' if spec.get('sheets') or spec.get('rows') else 'docx'
 
@@ -335,17 +407,24 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
         'contentType': content_type,
     }
     # Короткое человекочитаемое описание вместо сырого JSON — в ленте показывается как текст ответа.
+    updated = base_spec is not None
     if kind == 'xlsx':
         sheets = spec.get('sheets') or []
         total_rows = sum(len(s.get('rows') or []) for s in sheets if isinstance(s, dict))
-        summary = f'Готова таблица «{doc_title}» — {total_rows} строк.'
+        if updated:
+            was_rows = sum(len(s.get('rows') or []) for s in (base_spec.get('sheets') or []) if isinstance(s, dict))
+            delta = total_rows - was_rows
+            change = f', строк: {was_rows} → {total_rows}' if delta else ''
+            summary = f'Обновил таблицу «{doc_title}»{change}.'
+        else:
+            summary = f'Готова таблица «{doc_title}» — {total_rows} строк.'
     else:
-        summary = f'Готов документ «{doc_title}».'
+        summary = f'Обновил документ «{doc_title}».' if updated else f'Готов документ «{doc_title}».'
 
     cur.execute(
-        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments, model, cost_rub) "
-        f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
-        (chat_id, summary, json.dumps([attachment]), used_model, cost_rub)
+        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments, model, cost_rub, doc_spec) "
+        f"VALUES (%s, 'assistant', %s, %s, %s, %s, %s) RETURNING id, created_at",
+        (chat_id, summary, json.dumps([attachment]), used_model, cost_rub, json.dumps(spec, ensure_ascii=False))
     )
     assistant_msg_id, assistant_created_at = cur.fetchone()
     cur.execute(f"UPDATE {schema}.ai_chats SET updated_at = NOW() WHERE id = %s", (chat_id,))
@@ -363,6 +442,8 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
             'id': assistant_msg_id, 'role': 'assistant', 'content': summary,
             'attachments': [attachment], 'model': used_model, 'costRub': float(cost_rub),
             'createdAt': assistant_created_at.isoformat(),
+            # hasDocSpec — по этому признаку интерфейс показывает у сообщения кнопку «Доработать».
+            'hasDocSpec': True, 'documentUpdated': updated,
         },
         'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
     })

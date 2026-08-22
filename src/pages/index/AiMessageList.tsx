@@ -23,6 +23,8 @@ interface AiMessageListProps {
   // onRegenerate — перегенерация последнего ответа ассистента. Передаётся только в текстовых
   // режимах (chat/code): для картинок и видео "перегенерация" — это обычный новый платный запуск.
   onRegenerate?: () => void;
+  // onPickDocumentHint — подставить готовую формулировку доработки документа в поле ввода.
+  onPickDocumentHint?: (text: string) => void;
 }
 
 const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
@@ -58,6 +60,31 @@ const OFFICE_TYPES: Record<string, { icon: string; label: string; color: string 
     icon: 'FileText', label: 'Документ Word', color: 'bg-blue-600',
   },
 };
+
+// Подсказки-кнопки под готовым документом: самые частые доработки в один клик. Текст подставляется
+// в поле ввода, а не отправляется сразу — сотрудник может дополнить формулировку перед отправкой.
+const DOCUMENT_HINTS = [
+  'Добавь ещё три позиции',
+  'Пересчитай всё с НДС 20%',
+  'Отсортируй по убыванию суммы',
+];
+
+function DocumentEditHints({ onPick }: { onPick: (text: string) => void }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-[11px] text-muted-foreground">Доработать:</span>
+      {DOCUMENT_HINTS.map((hint) => (
+        <button
+          key={hint}
+          onClick={() => onPick(hint)}
+          className="h-6 px-2 rounded-md border border-border text-[11px] text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          {hint}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -273,7 +300,7 @@ function PinnedPanel({ pinnedMessages, chatTitle, onJump }: { pinnedMessages: Ai
   );
 }
 
-export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate }: AiMessageListProps) {
+export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate, onPickDocumentHint }: AiMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -290,6 +317,15 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   // последнее сообщение, см. action=regenerate).
   const lastMessage = messages[messages.length - 1];
   const regenerableId = lastMessage?.role === 'assistant' && lastMessage.content && lastMessage.id > 0 ? lastMessage.id : null;
+
+  // Подсказки по доработке показываем только у ПОСЛЕДНЕГО документа: уточнение всегда применяется
+  // к самой свежей версии, и дублировать кнопки у каждой промежуточной версии незачем.
+  const lastDocumentId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'assistant' && messages[i].hasDocSpec) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
 
   // diffPairs — для каждого ответа ассистента в режиме кода ищем, с чем его сравнивать: берём
   // предшествующее сообщение сотрудника и сопоставляем блоки кода. Считаем один раз на список,
@@ -373,6 +409,9 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
                     <MessageContent content={m.content} />
                     {diffPairs.has(m.id) && (
                       <DiffToggle before={diffPairs.get(m.id)!.before} after={diffPairs.get(m.id)!.after} />
+                    )}
+                    {m.id === lastDocumentId && onPickDocumentHint && !sending && (
+                      <DocumentEditHints onPick={onPickDocumentHint} />
                     )}
                   </>
                 )

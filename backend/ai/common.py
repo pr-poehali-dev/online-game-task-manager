@@ -391,10 +391,17 @@ def _chat_to_dict(row):
 
 
 def _message_to_dict(row):
-    mid, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned = row
-    return {
+    '''Строка ai_messages → сообщение для фронта. Последним элементом row может идти признак
+    наличия doc_spec (собранный офисный документ) — по нему интерфейс показывает у сообщения
+    кнопку «Доработать». Сам doc_spec наружу не отдаём: он нужен только серверу при правке, а
+    объём у него приличный (вся структура таблицы).'''
+    mid, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned = row[:10]
+    result = {
         'id': mid, 'role': role, 'content': content, 'attachments': attachments,
         'model': model, 'costRub': float(cost_rub) if cost_rub is not None else None,
         'jobId': job_id, 'jobStatus': job_status, 'createdAt': created_at.isoformat() if created_at else None,
         'pinned': bool(pinned),
     }
+    if len(row) > 10:
+        result['hasDocSpec'] = bool(row[10])
+    return result
