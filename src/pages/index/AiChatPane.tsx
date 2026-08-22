@@ -92,40 +92,64 @@ export default function AiChatPane({
 }: AiChatPaneProps) {
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      <div className="flex items-center gap-2 px-3 sm:px-4 py-2.5 border-b border-border flex-wrap">
-        <button
-          onClick={onOpenChatList}
-          title="Список диалогов"
-          className="lg:hidden h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-        >
-          <Icon name="PanelLeft" size={16} />
-        </button>
-        {activeChatTitle && (
-          <span className="lg:hidden text-sm font-medium truncate max-w-[140px]">{activeChatTitle}</span>
-        )}
-        <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg">
+      {/* Шапка. На телефоне всё помещается в ОДИН ряд (кнопка диалогов + выбор модели + справка),
+          а вкладки режимов уезжают в отдельную прокручиваемую строку под ним — иначе на узком
+          экране они переносились на три ряда и съедали половину высоты, а часть вкладок
+          («Видео») вообще обрезалась за краем. На десктопе раскладка прежняя — всё в одну строку. */}
+      <div className="border-b border-border">
+        <div className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5">
+          <button
+            onClick={onOpenChatList}
+            title="Список диалогов"
+            className="lg:hidden h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name="PanelLeft" size={18} />
+          </button>
+          {activeChatTitle && (
+            <span className="lg:hidden text-sm font-medium truncate min-w-0 flex-1">{activeChatTitle}</span>
+          )}
+          {/* Вкладки в самой шапке — только на широких экранах */}
+          <div className="hidden sm:flex gap-1 bg-secondary/60 p-1 rounded-lg">
+            {MODE_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => onModeChange(t.id)}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  mode === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <Icon name={t.icon} size={13} />
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="ml-auto flex items-center gap-2 min-w-0">
+            <button
+              onClick={onOpenModelFaq}
+              title="Как выбрать модель"
+              className="h-9 w-9 shrink-0 rounded-lg border border-border bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="HelpCircle" size={15} />
+            </button>
+            <AiModelPicker models={models} modelsLoading={modelsLoading} value={model} onChange={onModelChange} />
+          </div>
+        </div>
+        {/* Вкладки режимов на телефоне: горизонтальная прокрутка, чтобы влезали все пять */}
+        <div className="sm:hidden flex gap-1.5 px-3 pb-2 overflow-x-auto scrollbar-none">
           {MODE_TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => onModeChange(t.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                mode === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              className={`shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-medium border transition-colors ${
+                mode === t.id
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-secondary/60 border-border text-muted-foreground'
               }`}
             >
               <Icon name={t.icon} size={13} />
               {t.label}
             </button>
           ))}
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            onClick={onOpenModelFaq}
-            title="Как выбрать модель"
-            className="h-9 w-9 shrink-0 rounded-lg border border-border bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          >
-            <Icon name="HelpCircle" size={15} />
-          </button>
-          <AiModelPicker models={models} modelsLoading={modelsLoading} value={model} onChange={onModelChange} />
         </div>
       </div>
       {messagesLoading ? (

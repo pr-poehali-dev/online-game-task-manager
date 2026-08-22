@@ -44,14 +44,14 @@ export default function AiGeneratePromptInput({
                   : 'Опишите видео, которое нужно сгенерировать…'
           }
           rows={1}
-          className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
-          style={{ minHeight: '42px', maxHeight }}
+          className="w-full resize-none rounded-2xl sm:rounded-lg border border-border bg-background pl-3.5 pr-10 py-3 sm:py-2.5 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
+          style={{ minHeight: '46px', maxHeight }}
         />
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
           title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
-          className="absolute right-1.5 bottom-1.5 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          className="absolute right-2 bottom-2 h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
           <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={13} />
         </button>
@@ -59,7 +59,7 @@ export default function AiGeneratePromptInput({
       <button
         onClick={onSubmit}
         disabled={generating || limitExceeded || !prompt.trim()}
-        className="h-[42px] w-[42px] shrink-0 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+        className="h-[46px] w-[46px] sm:h-[42px] sm:w-[42px] shrink-0 rounded-xl sm:rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
       >
         {generating ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Wand2" size={16} />}
       </button>

@@ -374,14 +374,14 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <PinnedPanel pinnedMessages={pinnedMessages} chatTitle={chatTitle} onJump={jumpToMessage} />
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-4 sm:px-6 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-6 py-4 space-y-4">
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
               ref={(el) => { if (el) messageRefs.current.set(m.id, el); else messageRefs.current.delete(m.id); }}
               /* Сообщение со сравнением делаем шире: две колонки кода в узком пузыре нечитаемы. */
               className={`group/msg relative rounded-xl px-3.5 py-2.5 text-sm transition-shadow ${
-                diffPairs.has(m.id) ? 'max-w-full w-full' : 'max-w-[85%] sm:max-w-[75%]'
+                diffPairs.has(m.id) ? 'max-w-full w-full' : m.role === 'assistant' ? 'max-w-[95%] sm:max-w-[75%]' : 'max-w-[85%] sm:max-w-[75%]'
               } ${
                 m.role === 'user'
                   ? 'bg-primary text-primary-foreground'

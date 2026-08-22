@@ -62,7 +62,7 @@ export default function AiGenerateParams({
                 onChange={(e) => setAspectRatio(e.target.value)}
                 disabled={referenceImagesCount > 0}
                 title={referenceImagesCount > 0 ? 'При редактировании по референсу сохраняются пропорции исходного фото' : 'Соотношение сторон'}
-                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
               >
                 {caps.aspectRatios.map((r) => <option key={r} value={r}>{r}</option>)}
               </select>
@@ -75,7 +75,7 @@ export default function AiGenerateParams({
                 value={n}
                 onChange={(e) => setN(Number(e.target.value))}
                 title="Количество изображений"
-                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 {countOptions.map((c) => <option key={c} value={c}>{c} шт.</option>)}
               </select>
@@ -86,7 +86,7 @@ export default function AiGenerateParams({
               value={quality}
               onChange={(e) => setQuality(e.target.value)}
               title="Качество"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {caps.qualities.map((q) => <option key={q.value} value={q.value}>{q.label}</option>)}
             </select>
@@ -96,7 +96,7 @@ export default function AiGenerateParams({
               value={outputFormat}
               onChange={(e) => setOutputFormat(e.target.value)}
               title="Формат файла"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {caps.outputFormats.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
             </select>
@@ -106,7 +106,7 @@ export default function AiGenerateParams({
             type="button"
             onClick={() => setTransparentBackground((v) => !v)}
             title="Прозрачный фон"
-            className={`h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+            className={`h-9 sm:h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
               transparentBackground ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
             }`}
           >
@@ -119,7 +119,7 @@ export default function AiGenerateParams({
             onClick={() => fileInputRef.current?.click()}
             disabled={uploadingRef}
             title="Прикрепить фото для редактирования (image-to-image)"
-            className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+            className="h-9 sm:h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
           >
             {uploadingRef ? <Icon name="Loader2" size={12} className="animate-spin" /> : <Icon name="Paperclip" size={12} />}
             Референс
@@ -136,7 +136,7 @@ export default function AiGenerateParams({
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
               title="Длительность"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {vcaps.durations.map((d) => <option key={d} value={d}>{d} сек</option>)}
             </select>
@@ -148,7 +148,7 @@ export default function AiGenerateParams({
                 value={videoAspect}
                 onChange={(e) => setVideoAspect(e.target.value)}
                 title="Соотношение сторон"
-                className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+                className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
               >
                 <option value="">Авто</option>
                 {vcaps.aspectRatios.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -160,7 +160,7 @@ export default function AiGenerateParams({
               value={videoResolution}
               onChange={(e) => setVideoResolution(e.target.value)}
               title="Качество видео"
-              className="h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+              className="h-9 sm:h-8 px-2 rounded-lg border border-border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
             >
               <option value="">Авто</option>
               {vcaps.resolutions.map((r) => <option key={r} value={r}>{r}</option>)}
@@ -171,7 +171,7 @@ export default function AiGenerateParams({
               type="button"
               onClick={() => setVideoAudio((v) => !v)}
               title={videoAudio ? 'Видео будет со звуком' : 'Видео будет без звука'}
-              className={`h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+              className={`h-9 sm:h-8 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
                 videoAudio ? 'bg-primary/15 border-primary/40 text-primary' : 'border-border text-muted-foreground hover:text-foreground'
               }`}
             >
@@ -192,7 +192,7 @@ export default function AiGenerateParams({
               onClick={() => { pendingFrameType.current = 'first_frame'; frameInputRef.current?.click(); }}
               disabled={uploadingRef}
               title="Картинка, с которой начнётся видео (оживить фото)"
-              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              className="h-9 sm:h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               <Icon name="ImagePlus" size={12} />
               Первый кадр
@@ -204,7 +204,7 @@ export default function AiGenerateParams({
               onClick={() => { pendingFrameType.current = 'last_frame'; frameInputRef.current?.click(); }}
               disabled={uploadingRef}
               title="Картинка, которой видео закончится — модель сделает переход"
-              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              className="h-9 sm:h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               <Icon name="ImageDown" size={12} />
               Последний кадр
@@ -218,7 +218,7 @@ export default function AiGenerateParams({
               title={vcaps.supportsVideoInput
                 ? 'Референс стиля или исходное видео для правки'
                 : 'Картинка-референс стиля и содержания'}
-              className="h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+              className="h-9 sm:h-8 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
             >
               {uploadingRef ? <Icon name="Loader2" size={12} className="animate-spin" /> : <Icon name="Paperclip" size={12} />}
               Референс

@@ -248,35 +248,18 @@ export default function AiComposer({
           ))}
         </div>
       )}
-      <div className="flex items-end gap-2">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={ACCEPT_FILES}
-          className="hidden"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) onAddFile(f); e.target.value = ''; }}
-        />
-        {/* В режиме документов вложения не участвуют: запрос уходит отдельным действием
-            generate_document, которое принимает только текстовое описание. */}
-        {mode !== 'document' && (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-            title="Прикрепить файл или картинку"
-            className="h-[42px] w-[42px] shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
-          >
-            {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
-          </button>
-        )}
-        <AiTemplatesPicker
-          mode={mode}
-          templates={templates}
-          loading={templatesLoading}
-          onSelect={onChange}
-          onManage={onManageTemplates}
-          hasDraft={!!value.trim()}
-        />
-        <div className="relative flex-1">
+      {/* Блок ввода. На телефоне поле занимает ВСЮ ширину, а кнопки уходят в ряд под ним —
+          иначе три кнопки по бокам сжимали поле в узкую полоску, где не помещалась даже строка
+          подсказки (см. скриншот пользователя). На десктопе всё остаётся в одну строку. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={ACCEPT_FILES}
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) onAddFile(f); e.target.value = ''; }}
+      />
+      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+        <div className="relative order-1 sm:order-2 flex-1 min-w-0">
           <textarea
             ref={textareaRef}
             value={value}
@@ -287,22 +270,52 @@ export default function AiComposer({
             spellCheck={mode !== 'code'}
             placeholder={placeholder}
             rows={1}
-            className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
-            style={{ minHeight: '42px', maxHeight }}
+            className="w-full resize-none rounded-2xl sm:rounded-lg border border-border bg-background pl-3.5 pr-10 py-3 sm:py-2.5 text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"
+            style={{ minHeight: '46px', maxHeight }}
           />
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
             title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
-            className="absolute right-1.5 bottom-1.5 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="absolute right-2 bottom-2 h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
-            <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={13} />
+            <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={14} />
+          </button>
+        </div>
+        <div className="order-2 sm:order-1 flex items-center gap-2 shrink-0">
+          {/* В режиме документов вложения не участвуют: запрос уходит отдельным действием
+              generate_document, которое принимает только текстовое описание. */}
+          {mode !== 'document' && (
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Прикрепить файл или картинку"
+              className="h-11 w-11 sm:h-[42px] sm:w-[42px] shrink-0 rounded-xl sm:rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              {uploading ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Paperclip" size={18} />}
+            </button>
+          )}
+          <AiTemplatesPicker
+            mode={mode}
+            templates={templates}
+            loading={templatesLoading}
+            onSelect={onChange}
+            onManage={onManageTemplates}
+            hasDraft={!!value.trim()}
+          />
+          {/* Кнопка отправки на телефоне прижата к правому краю ряда кнопок — как в мессенджерах */}
+          <button
+            onClick={onSend}
+            disabled={sending || limitExceeded || !value.trim()}
+            className="ml-auto sm:hidden h-11 w-11 shrink-0 rounded-xl bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          >
+            {sending ? <Icon name="Loader2" size={18} className="animate-spin" /> : <Icon name="Send" size={18} />}
           </button>
         </div>
         <button
           onClick={onSend}
           disabled={sending || limitExceeded || !value.trim()}
-          className="h-[42px] w-[42px] shrink-0 rounded-lg bg-primary text-primary-foreground flex items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          className="hidden sm:flex order-3 h-[42px] w-[42px] shrink-0 rounded-lg bg-primary text-primary-foreground items-center justify-center hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
         >
           {sending ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Send" size={16} />}
         </button>

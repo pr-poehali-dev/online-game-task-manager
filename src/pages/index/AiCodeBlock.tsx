@@ -102,30 +102,31 @@ export default function AiCodeBlock({ language, code }: AiCodeBlockProps) {
     <div className="my-2 rounded-lg overflow-hidden border border-border">
       <div className="flex items-center gap-2 px-3 py-1.5 bg-secondary/60 text-[11px] text-muted-foreground">
         <span className="font-mono">{label}</span>
-        <span className="opacity-60">· {lines.length} стр.</span>
+        <span className="opacity-60 hidden sm:inline">· {lines.length} стр.</span>
         <div className="ml-auto flex items-center gap-2.5">
           {/* Длинные строки по умолчанию скроллятся вбок (как в редакторе кода), но иногда удобнее
               видеть всё целиком — переключатель переноса. */}
           <button
             onClick={() => setWrap((v) => !v)}
             title={wrap ? 'Не переносить длинные строки' : 'Переносить длинные строки'}
-            className={`flex items-center gap-1 transition-colors ${wrap ? 'text-primary' : 'hover:text-foreground'}`}
+            className={`h-7 w-7 sm:h-auto sm:w-auto rounded-md flex items-center justify-center gap-1 transition-colors ${wrap ? 'text-primary' : 'hover:text-foreground'}`}
           >
-            <Icon name="WrapText" size={11} />
+            <Icon name="WrapText" size={13} />
           </button>
           <button
             onClick={handleDownload}
             title="Скачать файлом"
-            className="flex items-center gap-1 hover:text-foreground transition-colors"
+            className="h-7 w-7 sm:h-auto sm:w-auto rounded-md flex items-center justify-center gap-1 hover:text-foreground transition-colors"
           >
-            <Icon name="Download" size={11} />
+            <Icon name="Download" size={13} />
           </button>
           <button
             onClick={handleCopy}
-            className={`flex items-center gap-1 transition-colors ${copied ? 'text-emerald-500' : 'hover:text-foreground'}`}
+            title="Копировать код"
+            className={`h-7 px-1.5 sm:px-0 sm:h-auto rounded-md flex items-center justify-center gap-1 transition-colors ${copied ? 'text-emerald-500' : 'hover:text-foreground'}`}
           >
-            <Icon name={copied ? 'Check' : 'Copy'} size={11} />
-            {copied ? 'Скопировано' : 'Копировать'}
+            <Icon name={copied ? 'Check' : 'Copy'} size={13} />
+            <span className="hidden sm:inline">{copied ? 'Скопировано' : 'Копировать'}</span>
           </button>
         </div>
       </div>
