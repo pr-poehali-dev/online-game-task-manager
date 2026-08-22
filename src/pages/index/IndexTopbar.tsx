@@ -348,20 +348,24 @@ export default function IndexTopbar({
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 flex flex-col">
-            <SidebarContent
-              view={view}
-              category={category}
-              setCategory={(c) => { setCategory(c); setMenuOpen(false); }}
-              kbArticles={kbArticles}
-              tasks={activeTasks}
-              team={team}
-              assigneeFilter={assigneeFilter}
-              setAssigneeFilter={(a) => { setAssigneeFilter(a); setMenuOpen(false); }}
-              setView={(v) => { setView(v); setMenuOpen(false); }}
-              showLogo={false}
-            />
-          </div>
+          {/* В разделе AI категории задач и список команды в мобильном меню тоже прячем —
+              переключение разделов выше остаётся доступным (см. IndexSidebar.tsx). */}
+          {view !== 'ai' && (
+            <div className="flex-1 min-h-0 flex flex-col">
+              <SidebarContent
+                view={view}
+                category={category}
+                setCategory={(c) => { setCategory(c); setMenuOpen(false); }}
+                kbArticles={kbArticles}
+                tasks={activeTasks}
+                team={team}
+                assigneeFilter={assigneeFilter}
+                setAssigneeFilter={(a) => { setAssigneeFilter(a); setMenuOpen(false); }}
+                setView={(v) => { setView(v); setMenuOpen(false); }}
+                showLogo={false}
+              />
+            </div>
+          )}
         </SheetContent>
       </Sheet>
     </>

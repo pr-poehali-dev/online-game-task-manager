@@ -169,6 +169,10 @@ export function SidebarContent({
 }
 
 export default function IndexSidebar(props: SidebarContentProps) {
+  // В разделе AI боковая колонка не нужна: категории задач и список команды к диалогам с
+  // моделями отношения не имеют, а у самого раздела есть собственная колонка со списком чатов.
+  // Скрываем её целиком, чтобы освободить место переписке (у AI своя навигация внутри).
+  if (props.view === 'ai') return null;
   return (
     <aside className="w-72 shrink-0 border-r border-border bg-card/60 backdrop-blur-sm hidden lg:flex flex-col">
       <SidebarContent {...props} />
