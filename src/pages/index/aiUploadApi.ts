@@ -38,15 +38,18 @@ export async function uploadAiAttachment(
   onProgress?: (fraction: number) => void,
   kind: 'upload' | 'template' = 'upload',
   // projectId — если файл грузится со страницы проекта, он сразу относится к этому проекту.
-  projectId?: number | null
+  projectId?: number | null,
+  // relPath — путь файла внутри загруженной папки (src/pages/Ai.tsx). Берётся из
+  // webkitRelativePath при выборе папки; для одиночных файлов пустой.
+  relPath?: string
 ): Promise<AiAttachment> {
   if (file.size <= CHUNK_THRESHOLD) {
     const dataUrl = await blobToBase64(file);
-    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type, kind, projectId });
+    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type, kind, projectId, relPath });
     return data.attachment as AiAttachment;
   }
 
-  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind, size: file.size, projectId });
+  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind, size: file.size, projectId, relPath });
   const fileId = init.fileId as string;
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   try {

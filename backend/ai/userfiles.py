@@ -22,19 +22,22 @@ def handle_list_files(cur, conn, schema, me, body, qs):
     '''Все файлы сотрудника с разбивкой по типу плюс текущий расход лимита. Чужие файлы не видны
     никогда — выборка всегда ограничена user_id из сессии.'''
     cur.execute(
-        f"SELECT id, name, url, size, content_type, kind, chat_id, created_at "
+        f"SELECT id, name, url, size, content_type, kind, chat_id, created_at, rel_path "
         f"FROM {schema}.ai_files WHERE user_id = %s ORDER BY created_at DESC",
         (me['id'],)
     )
     files = []
     total_size = 0
-    for fid, name, url, size, content_type, kind, chat_id, created_at in cur.fetchall():
+    for fid, name, url, size, content_type, kind, chat_id, created_at, rel_path in cur.fetchall():
         total_size += int(size or 0)
         files.append({
             'id': fid, 'name': name, 'url': url, 'size': int(size or 0),
             'contentType': content_type, 'kind': kind,
             'group': KIND_GROUPS.get(kind, 'Прочее'),
             'chatId': chat_id,
+            # relPath — путь внутри загруженной папки, чтобы дерево показывало структуру, а не
+            # плоский список одинаковых имён (index.ts из разных папок).
+            'relPath': rel_path or '',
             'createdAt': created_at.isoformat() if created_at else None,
         })
     count_limit, size_limit_mb = _file_limits(cur, schema, me['id'])

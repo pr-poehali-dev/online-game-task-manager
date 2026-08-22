@@ -34,6 +34,9 @@ export interface AiProjectFile {
   // unsupported — текста в файле нет (картинка/видео), failed — не удалось разобрать.
   indexStatus: string;
   chunksCount: number;
+  // relPath — путь файла внутри загруженной папки (src/pages/Ai.tsx). Пусто — файл загружен
+  // отдельно, вне папки.
+  relPath: string;
 }
 
 export interface AiSearchHit {

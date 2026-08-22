@@ -99,14 +99,14 @@ def handle_get_project(cur, conn, schema, me, body, qs):
     project = _project_to_dict(row)
 
     cur.execute(
-        f"SELECT id, name, url, size, content_type, kind, created_at, index_status, chunks_count "
+        f"SELECT id, name, url, size, content_type, kind, created_at, index_status, chunks_count, rel_path "
         f"FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s ORDER BY created_at DESC",
         (me['id'], project_id)
     )
     files = [{
         'id': r[0], 'name': r[1], 'url': r[2], 'size': int(r[3] or 0), 'contentType': r[4],
         'kind': r[5], 'createdAt': r[6].isoformat() if r[6] else None,
-        'indexStatus': r[7], 'chunksCount': int(r[8] or 0),
+        'indexStatus': r[7], 'chunksCount': int(r[8] or 0), 'relPath': r[9] or '',
     } for r in cur.fetchall()]
 
     cur.execute(

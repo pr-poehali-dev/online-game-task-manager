@@ -50,6 +50,9 @@ export function useAiSection() {
   // uploadProgress — доля загруженного файла (0..1), обновляется только при кусочной загрузке
   // больших файлов (см. aiUploadApi.ts); для маленьких файлов остаётся null — грузятся мгновенно.
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  // uploadQueue — прогресс загрузки ПАЧКИ файлов (папка целиком): сколько уже готово из скольких
+  // и какой файл идёт сейчас. null — пачечной загрузки нет.
+  const [uploadQueue, setUploadQueue] = useState<{ done: number; total: number; name: string } | null>(null);
 
   // Список чатов на мобильных экранах (< lg) скрыт за кнопкой-гамбургером и открывается поверх
   // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
@@ -182,23 +185,50 @@ export function useAiSection() {
   }, [messages, loadUsage]);
 
   // Файл, загруженный со страницы проекта, сразу попадает в этот проект.
-  async function handleUploadProjectFile(file: File) {
+  // Загрузка ПАЧКОЙ: сотрудник может перетащить целую папку с исходниками, поэтому файлы идут
+  // очередью по одному (параллельно нельзя — упрёмся в лимиты и таймауты), а прогресс считается
+  // по всей пачке: "3 из 40". Путь внутри папки берётся из webkitRelativePath и сохраняется,
+  // чтобы структура не превратилась в кучу одинаковых index.ts.
+  async function handleUploadProjectFiles(fileList: File[]) {
     const projectId = projects.activeProjectId;
-    if (projectId == null) return;
+    if (projectId == null || fileList.length === 0) return;
     setUploading(true);
-    setUploadProgress(null);
-    try {
-      await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction), 'upload', projectId);
-      await projects.loadProject(projectId);
-      files.load();
-    } catch (err) {
-      const code = (err as { code?: string })?.code;
-      const message = (err as { message?: string })?.message;
-      setSendError(code ? errorText(code, message) : 'Не удалось загрузить файл');
-    } finally {
-      setUploading(false);
+    setUploadQueue({ done: 0, total: fileList.length, name: '' });
+    setSendError('');
+    const failed: string[] = [];
+    for (let i = 0; i < fileList.length; i += 1) {
+      const file = fileList[i];
+      const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
+      setUploadQueue({ done: i, total: fileList.length, name: relPath || file.name });
       setUploadProgress(null);
+      try {
+        await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction), 'upload', projectId, relPath);
+      } catch (err) {
+        const code = (err as { code?: string })?.code;
+        // Лимит исчерпан — продолжать бессмысленно, остальные файлы тоже не влезут.
+        if (code === 'file_limit_exceeded' || code === 'size_limit_exceeded') {
+          const message = (err as { message?: string })?.message;
+          setSendError(errorText(code, message));
+          break;
+        }
+        failed.push(file.name);
+      }
     }
+    if (failed.length) {
+      setSendError(failed.length === 1
+        ? `Не удалось загрузить файл: ${failed[0]}`
+        : `Не удалось загрузить файлов: ${failed.length}`);
+    }
+    await projects.loadProject(projectId);
+    files.load();
+    setUploading(false);
+    setUploadProgress(null);
+    setUploadQueue(null);
+  }
+
+  // Совместимость с прежним вызовом по одному файлу.
+  function handleUploadProjectFile(file: File) {
+    return handleUploadProjectFiles([file]);
   }
 
   // Открыть сессию проекта в обычной ленте переписки.
@@ -567,7 +597,8 @@ export function useAiSection() {
       const pid = sessionProjectId ?? chatProjectId;
       return pid == null ? null : (projects.projects.find((p) => p.id === pid)?.name ?? null);
     })(),
-    handleUploadProjectFile, handleOpenProjectChat, handleStartProjectSession,
+    handleUploadProjectFile, handleUploadProjectFiles, uploadQueue,
+    handleOpenProjectChat, handleStartProjectSession,
     handleModeChange, handleNewChat, handleAddFile, handleRemoveAttachment,
     handleSend, handleGenerateImage, handleGenerateVideo, handleRegenerate,
     handleSearchMessages, handleRenameChat, handleTogglePinned, handleDeleteChat,

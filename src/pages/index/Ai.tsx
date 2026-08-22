@@ -65,9 +65,10 @@ export default function Ai() {
           state={ai.projects}
           onOpenChat={ai.handleOpenProjectChat}
           onStartSession={ai.handleStartProjectSession}
-          onUploadFile={ai.handleUploadProjectFile}
+          onUploadFiles={ai.handleUploadProjectFiles}
           uploading={ai.uploading}
           uploadProgress={ai.uploadProgress}
+          uploadQueue={ai.uploadQueue}
         />
       ) : (
       <AiChatPane

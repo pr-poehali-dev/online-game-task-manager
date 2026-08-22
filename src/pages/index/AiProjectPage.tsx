@@ -1,29 +1,9 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { fmtFileSize } from '../admin/adminShared';
 import AiProjectSettings from './AiProjectSettings';
 import AiProjectSearch from './AiProjectSearch';
-import type { AiProjectFile, AiProjectsState } from './useAiProjects';
-
-// Как показывать состояние разбора файла для поиска. unsupported — не ошибка: в картинке или
-// видео просто нет текста, файл остаётся в проекте, но в поиске не участвует.
-const INDEX_LABELS: Record<string, { icon: string; text: string; className: string }> = {
-  pending: { icon: 'Clock', text: 'В очереди', className: 'text-muted-foreground' },
-  indexing: { icon: 'Loader2', text: 'Обрабатывается', className: 'text-primary' },
-  ready: { icon: 'Check', text: 'Готов к поиску', className: 'text-muted-foreground' },
-  unsupported: { icon: 'Minus', text: 'Без текста', className: 'text-muted-foreground' },
-  failed: { icon: 'AlertCircle', text: 'Не удалось прочитать', className: 'text-destructive' },
-};
-
-function FileIndexBadge({ file }: { file: AiProjectFile }) {
-  const state = INDEX_LABELS[file.indexStatus] || INDEX_LABELS.pending;
-  return (
-    <span className={`shrink-0 hidden sm:flex items-center gap-1 text-[10px] ${state.className}`} title={state.text}>
-      <Icon name={state.icon} size={10} className={file.indexStatus === 'indexing' ? 'animate-spin' : ''} />
-      {state.text}
-    </span>
-  );
-}
+import AiProjectFiles from './AiProjectFiles';
+import type { AiProjectsState } from './useAiProjects';
 
 interface AiProjectPageProps {
   state: AiProjectsState;
@@ -31,9 +11,11 @@ interface AiProjectPageProps {
   onOpenChat: (chatId: number) => void;
   // Начать новую сессию внутри проекта — создаётся при первой отправке сообщения.
   onStartSession: () => void;
-  onUploadFile: (file: File) => void;
+  // Загрузка ПАЧКОЙ: сотрудник может выбрать или перетащить целую папку.
+  onUploadFiles: (files: File[]) => void;
   uploading: boolean;
   uploadProgress: number | null;
+  uploadQueue: { done: number; total: number; name: string } | null;
 }
 
 type Tab = 'overview' | 'files' | 'search' | 'knowledge' | 'settings';
@@ -53,12 +35,12 @@ export default function AiProjectPage({
   state,
   onOpenChat,
   onStartSession,
-  onUploadFile,
+  onUploadFiles,
   uploading,
   uploadProgress,
+  uploadQueue,
 }: AiProjectPageProps) {
   const [tab, setTab] = useState<Tab>('overview');
-  const [dragOver, setDragOver] = useState(false);
   const project = state.activeProject;
 
   if (state.detailLoading && !project) {
@@ -69,13 +51,6 @@ export default function AiProjectPage({
     );
   }
   if (!project) return null;
-
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    setDragOver(false);
-    const files = Array.from(e.dataTransfer.files || []);
-    files.forEach(onUploadFile);
-  }
 
   return (
     <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
@@ -238,80 +213,13 @@ export default function AiProjectPage({
           )}
 
           {tab === 'files' && (
-            <div className="space-y-3">
-              {/* Загрузка перетаскиванием — самый быстрый способ наполнить проект */}
-              <label
-                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={handleDrop}
-                className={`flex flex-col items-center justify-center gap-1.5 py-6 rounded-xl border border-dashed cursor-pointer transition-colors ${
-                  dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
-                }`}
-              >
-                <input
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    Array.from(e.target.files || []).forEach(onUploadFile);
-                    e.target.value = '';
-                  }}
-                />
-                {uploading ? (
-                  <>
-                    <Icon name="Loader2" size={18} className="animate-spin text-primary" />
-                    <span className="text-xs text-muted-foreground">
-                      Загрузка{uploadProgress != null ? `: ${Math.round(uploadProgress * 100)}%` : '…'}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <Icon name="Upload" size={18} className="text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      Перетащите файлы сюда или нажмите, чтобы выбрать
-                    </span>
-                  </>
-                )}
-              </label>
-
-              {state.projectFiles.length === 0 ? (
-                <div className="text-xs text-muted-foreground py-4 text-center">
-                  В проекте пока нет файлов
-                </div>
-              ) : (
-                <div className="space-y-0.5">
-                  {state.projectFiles.map((file) => (
-                    <div
-                      key={file.id}
-                      className="group flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-secondary/40 transition-colors"
-                    >
-                      <Icon
-                        name={file.contentType.startsWith('image/') ? 'Image' : 'File'}
-                        size={14}
-                        className="shrink-0 text-muted-foreground"
-                      />
-                      <a
-                        href={file.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 min-w-0 truncate text-sm hover:text-primary transition-colors"
-                      >
-                        {file.name}
-                      </a>
-                      <FileIndexBadge file={file} />
-                      <span className="shrink-0 text-[10px] text-muted-foreground">{fmtFileSize(file.size)}</span>
-                      <button
-                        onClick={() => state.attachFiles([file.id], null)}
-                        title="Убрать из проекта (файл останется в «Моих файлах»)"
-                        className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
-                      >
-                        <Icon name="X" size={12} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <AiProjectFiles
+              state={state}
+              onUploadFiles={onUploadFiles}
+              uploading={uploading}
+              uploadProgress={uploadProgress}
+              uploadQueue={uploadQueue}
+            />
           )}
 
           {tab === 'search' && <AiProjectSearch state={state} />}
