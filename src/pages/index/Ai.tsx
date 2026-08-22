@@ -29,8 +29,14 @@ export default function Ai() {
   // (рамка внутри и без того узкого экрана выглядела «коробкой в коробке», см. скриншот).
   // Отрицательные отступы компенсируют p-3 общего контейнера разделов (IndexMain).
   // На десктопе остаётся прежняя карточка со скруглением и границей.
+  //
+  // Резерв высоты на телефоне (7.5rem) — это высота шапки IndexTopbar (h-14 = 3.5rem) плюс
+  // компенсируемые отрицательным -my-3 отступы контейнера IndexMain (p-3 = 0.75rem сверху и
+  // снизу вместе = 1.5rem). Итого фактически занято 5rem — резерв 7.5rem был взят с запасом
+  // "на глаз" и оставлял под композером лишние ~40px пустого фона (видно точки декоративного
+  // grid-bg на скриншоте пользователя). Правильное значение — 5rem.
   return (
-    <div className="flex bg-background sm:bg-card/20 sm:rounded-xl sm:border sm:border-border overflow-hidden h-[calc(100dvh-7.5rem)] sm:h-[calc(100vh-8.5rem)] -mx-3 -my-3 sm:mx-0 sm:my-0">
+    <div className="flex bg-background sm:bg-card/20 sm:rounded-xl sm:border sm:border-border overflow-hidden h-[calc(100dvh-5rem)] sm:h-[calc(100vh-8.5rem)] -mx-3 -my-3 sm:mx-0 sm:my-0">
       <AiSidebar
         chats={ai.chats}
         chatsLoading={ai.chatsLoading}
