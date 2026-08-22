@@ -15,10 +15,9 @@ from common import (
 
 
 def handle_upload_attachment(cur, conn, schema, me, body, qs):
-    # Лимит на КОЛИЧЕСТВО хранимых файлов сотрудника (users.ai_file_limit, задаётся администратором
-    # в разделе "Команда"). Проверяем ДО чтения тела запроса: нет смысла принимать и раскодировать
-    # мегабайты, если файл всё равно некуда положить. Освободить место сотрудник может сам —
-    # раздел "Мои файлы" (backend/ai/userfiles.py).
+    # Личные лимиты сотрудника на файлы (количество и суммарный объём, задаются администратором в
+    # разделе "Команда"). Количество проверяем сразу, а объём — ниже, когда станет известен размер
+    # файла. Освободить место сотрудник может сам — раздел "Мои файлы" (backend/ai/userfiles.py).
     _used, _limit, denied = _check_file_limit(cur, schema, me['id'])
     if denied:
         cur.close(); conn.close()
@@ -35,6 +34,12 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
     if len(raw) > MAX_UPLOAD_SIZE:
         cur.close(); conn.close()
         return _bad('file_too_large', 413)
+    # Размер файла теперь известен — проверяем, влезает ли он в лимит суммарного объёма, ДО
+    # отправки в хранилище.
+    _used, _limit, denied = _check_file_limit(cur, schema, me['id'], len(raw))
+    if denied:
+        cur.close(); conn.close()
+        return denied
     name = (body.get('name') or 'file').strip() or 'file'
     ext = (body.get('ext') or (name.rsplit('.', 1)[-1] if '.' in name else '')).lstrip('.').lower() or 'bin'
     content_type = body.get('contentType') or 'application/octet-stream'
@@ -56,9 +61,14 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
 
 
 def handle_file_init(cur, conn, schema, me, body, qs):
-    # Лимит файлов проверяем в САМОМ НАЧАЛЕ кусочной загрузки — иначе сотрудник впустую отправил бы
-    # десятки мегабайт по частям и получил отказ только на последнем шаге.
-    _used, _limit, denied = _check_file_limit(cur, schema, me['id'])
+    # Лимиты проверяем в САМОМ НАЧАЛЕ кусочной загрузки — иначе сотрудник впустую отправил бы
+    # десятки мегабайт по частям и получил отказ только на последнем шаге. Размер большого файла
+    # известен клиенту заранее, поэтому он передаёт его в size и лимит объёма проверяется сразу.
+    try:
+        declared_size = int(body.get('size') or 0)
+    except (TypeError, ValueError):
+        declared_size = 0
+    _used, _limit, denied = _check_file_limit(cur, schema, me['id'], declared_size)
     if denied:
         cur.close(); conn.close()
         return denied
@@ -120,6 +130,18 @@ def handle_file_complete(cur, conn, schema, me, body, qs):
             cur.close(); conn.close()
             return _bad('file_too_large', 413)
     raw = buf.getvalue()
+
+    # Финальная проверка по ФАКТИЧЕСКОМУ размеру собранного файла: за время загрузки по частям
+    # сотрудник мог параллельно залить что-то ещё и выбрать остаток лимита.
+    _used, _limit, denied = _check_file_limit(cur, schema, me['id'], len(raw))
+    if denied:
+        for key in chunk_keys:
+            try:
+                s3.delete_object(Bucket=bucket, Key=key)
+            except Exception:
+                pass
+        cur.close(); conn.close()
+        return denied
 
     name = meta['name']
     content_type = meta['contentType']

@@ -394,34 +394,69 @@ def _get_or_create_usage(cur, schema, user_id):
 COUNTED_FILE_KINDS = ('upload', 'template')
 
 
-def _file_limit(cur, schema, user_id):
-    '''Сколько файлов сотруднику разрешено хранить одновременно (users.ai_file_limit, настраивается
-    администратором в разделе "Команда"). 0 — загрузка файлов запрещена полностью.'''
-    cur.execute(f"SELECT ai_file_limit FROM {schema}.users WHERE id = %s", (user_id,))
+MB = 1024 * 1024
+
+
+def _file_limits(cur, schema, user_id):
+    '''Два личных лимита сотрудника на файлы раздела "AI" (оба настраиваются администратором в
+    разделе "Команда"): количество файлов (users.ai_file_limit) и суммарный объём в мегабайтах
+    (users.ai_size_limit_mb, см. db_migrations V0083). Второй нужен потому, что количество плохо
+    отражает нагрузку на хранилище: десяток видео весит больше сотен документов. Любой из лимитов,
+    равный 0, полностью запрещает загрузку.'''
+    cur.execute(f"SELECT ai_file_limit, ai_size_limit_mb FROM {schema}.users WHERE id = %s", (user_id,))
     row = cur.fetchone()
-    return int(row[0]) if row and row[0] is not None else 50
+    if not row:
+        return 50, 1024
+    count_limit = int(row[0]) if row[0] is not None else 50
+    size_limit_mb = int(row[1]) if row[1] is not None else 1024
+    return count_limit, size_limit_mb
+
+
+def _file_limit(cur, schema, user_id):
+    return _file_limits(cur, schema, user_id)[0]
+
+
+def _file_usage(cur, schema, user_id):
+    '''Сколько файлов и байт сотрудник занимает СЕЙЧАС — считаются только те типы, что расходуют
+    лимит (загрузки и бланки, см. COUNTED_FILE_KINDS).'''
+    cur.execute(
+        f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {schema}.ai_files WHERE user_id = %s AND kind IN %s",
+        (user_id, COUNTED_FILE_KINDS)
+    )
+    count, total = cur.fetchone()
+    return int(count), int(total or 0)
 
 
 def _file_count(cur, schema, user_id):
-    cur.execute(
-        f"SELECT COUNT(*) FROM {schema}.ai_files WHERE user_id = %s AND kind IN %s",
-        (user_id, COUNTED_FILE_KINDS)
-    )
-    return int(cur.fetchone()[0])
+    return _file_usage(cur, schema, user_id)[0]
 
 
-def _check_file_limit(cur, schema, user_id):
-    '''Возвращает (used, limit) и None, если место ещё есть, либо готовый ответ 403 с понятным
-    кодом file_limit_exceeded — фронт покажет сотруднику предложение очистить "Мои файлы".'''
-    limit_ = _file_limit(cur, schema, user_id)
-    used = _file_count(cur, schema, user_id)
-    if used >= limit_:
-        return used, limit_, {
+def _check_file_limit(cur, schema, user_id, incoming_size=0):
+    '''Проверяет ОБА лимита перед загрузкой. Возвращает (used, limit, None), если место есть, либо
+    готовый ответ 403 с понятным кодом (file_limit_exceeded — исчерпано количество,
+    size_limit_exceeded — исчерпан объём); фронт покажет предложение очистить "Мои файлы".
+    incoming_size — размер загружаемого файла в байтах, если он уже известен: тогда отказ приходит
+    ДО того, как файл окажется в хранилище, а не после.'''
+    count_limit, size_limit_mb = _file_limits(cur, schema, user_id)
+    used, used_bytes = _file_usage(cur, schema, user_id)
+    size_limit_bytes = size_limit_mb * MB
+    if used >= count_limit:
+        return used, count_limit, {
             'statusCode': 403,
             'headers': _cors_headers(),
-            'body': json.dumps({'error': 'file_limit_exceeded', 'usedFiles': used, 'limitFiles': limit_}),
+            'body': json.dumps({'error': 'file_limit_exceeded', 'usedFiles': used, 'limitFiles': count_limit}),
         }
-    return used, limit_, None
+    if used_bytes + max(0, int(incoming_size or 0)) > size_limit_bytes:
+        return used, count_limit, {
+            'statusCode': 403,
+            'headers': _cors_headers(),
+            'body': json.dumps({
+                'error': 'size_limit_exceeded',
+                'usedMb': round(used_bytes / MB, 1),
+                'limitMb': size_limit_mb,
+            }),
+        }
+    return used, count_limit, None
 
 
 def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None):

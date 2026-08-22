@@ -27,7 +27,7 @@ function fileIcon(file: AiUserFile): string {
 // лимита и самостоятельной очисткой (по одному файлу или целой папкой). Показывается выезжающей
 // панелью поверх чата, чтобы не занимать место в основном интерфейсе.
 export default function AiFilesPanel({ state, onClose }: { state: AiFilesState; onClose: () => void }) {
-  const { files, totalSize, usedFiles, limitFiles, loading, busyId, clearing } = state;
+  const { files, totalSize, usedFiles, limitFiles, usedMb, limitMb, loading, busyId, clearing } = state;
   const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(['upload', 'template']));
   // Подтверждение очистки целой папки/всего — необратимое действие, спрашиваем прямо в панели,
   // а не системным confirm (он выглядит чужеродно и легко проскакивается).
@@ -48,7 +48,11 @@ export default function AiFilesPanel({ state, onClose }: { state: AiFilesState; 
   }, [files]);
 
   const percent = limitFiles > 0 ? Math.min(100, (usedFiles / limitFiles) * 100) : 0;
-  const nearLimit = limitFiles > 0 && usedFiles >= limitFiles;
+  const sizePercent = limitMb > 0 ? Math.min(100, (usedMb / limitMb) * 100) : 0;
+  // Загрузка блокируется, если исчерпан ЛЮБОЙ из двух лимитов — количество или объём.
+  const countExceeded = limitFiles > 0 && usedFiles >= limitFiles;
+  const sizeExceeded = limitMb > 0 && usedMb >= limitMb;
+  const nearLimit = countExceeded || sizeExceeded;
 
   function toggleGroup(kind: string) {
     setOpenGroups((prev) => {
@@ -82,23 +86,40 @@ export default function AiFilesPanel({ state, onClose }: { state: AiFilesState; 
 
         {/* Расход личного лимита: считаются только загруженные сотрудником файлы, результаты
             генерации место в лимите не занимают (они уже ограничены лимитом трат). */}
-        <div className="space-y-1">
-          <div className="h-1 rounded-full bg-secondary overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${nearLimit ? 'bg-destructive' : 'bg-primary'}`}
-              style={{ width: `${percent}%` }}
-            />
+        <div className="space-y-1.5">
+          <div className="space-y-1">
+            <div className="h-1 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${countExceeded ? 'bg-destructive' : 'bg-primary'}`}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>Файлов: {usedFiles} из {limitFiles}</span>
+              <span>всего {fmtFileSize(totalSize)}</span>
+            </div>
           </div>
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Загружено {usedFiles} из {limitFiles} файлов</span>
-            <span>{fmtFileSize(totalSize)}</span>
+          {/* Второй лимит — суммарный объём. Показываем отдельной полосой: упереться можно в
+              любой из двух, и сотруднику важно видеть, какой именно заканчивается. */}
+          <div className="space-y-1">
+            <div className="h-1 rounded-full bg-secondary overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${sizeExceeded ? 'bg-destructive' : 'bg-primary'}`}
+                style={{ width: `${sizePercent}%` }}
+              />
+            </div>
+            <div className="text-[11px] text-muted-foreground">
+              Объём: {usedMb} из {limitMb} МБ
+            </div>
           </div>
         </div>
 
         {nearLimit && (
           <div className="text-[11px] text-destructive flex items-start gap-1.5">
             <Icon name="AlertCircle" size={12} className="shrink-0 mt-0.5" />
-            Лимит файлов исчерпан — очистите ненужные, чтобы снова прикреплять файлы
+            {countExceeded
+              ? 'Лимит количества файлов исчерпан — очистите ненужные, чтобы снова прикреплять файлы'
+              : 'Лимит объёма исчерпан — очистите ненужные файлы, чтобы освободить место'}
           </div>
         )}
 

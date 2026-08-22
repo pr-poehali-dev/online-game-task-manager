@@ -138,6 +138,9 @@ export interface TeamUser {
   // в отличие от лимита трат не сбрасывается ежемесячно, это ограничение занимаемого места.
   ai_file_limit: number;
   ai_files_used: number;
+  // Второй лимит — на суммарный объём файлов сотрудника, МБ (users.ai_size_limit_mb).
+  ai_size_limit_mb: number;
+  ai_size_used_mb: number;
 }
 
 // Сводка трат сотрудника на раздел "AI" за текущий месяц (action=ai_usage_summary в
@@ -232,6 +235,7 @@ export const ACTIVITY_META: Record<string, ActivityMeta> = {
   user_permissions: { label: 'Изменил права участника', icon: 'KeySquare', color: '35 85% 58%' },
   user_set_ai_limit: { label: 'Изменил лимит трат на AI', icon: 'Sparkles', color: '35 85% 58%' },
   user_set_ai_file_limit: { label: 'Изменил лимит файлов в AI', icon: 'FolderCog', color: '35 85% 58%' },
+  user_set_ai_size_limit: { label: 'Изменил лимит объёма файлов в AI', icon: 'HardDrive', color: '35 85% 58%' },
   user_remove: { label: 'Скрыл участника из команды', icon: 'UserX', color: '0 65% 60%' },
   user_set_name: { label: 'Изменил имя участника', icon: 'Pencil', color: '35 85% 58%' },
   user_set_tg_muted: { label: 'Изменил переписку в Telegram', icon: 'BellOff', color: '35 85% 58%' },

@@ -5,7 +5,7 @@ S3. Лимит на количество файлов задаёт админи�
 import os
 
 from common import (
-    _bad, _ok, _s3_client, _file_limit, _file_count, COUNTED_FILE_KINDS,
+    _bad, _ok, _s3_client, _file_limits, _file_usage, COUNTED_FILE_KINDS, MB,
 )
 
 # Человекочитаемые группы для дерева файлов на фронте. Ключ — kind из ai_files.
@@ -37,12 +37,15 @@ def handle_list_files(cur, conn, schema, me, body, qs):
             'chatId': chat_id,
             'createdAt': created_at.isoformat() if created_at else None,
         })
-    limit_ = _file_limit(cur, schema, me['id'])
-    used = _file_count(cur, schema, me['id'])
+    count_limit, size_limit_mb = _file_limits(cur, schema, me['id'])
+    used, used_bytes = _file_usage(cur, schema, me['id'])
     cur.close(); conn.close()
     return _ok({
         'files': files, 'totalSize': total_size,
-        'usedFiles': used, 'limitFiles': limit_,
+        'usedFiles': used, 'limitFiles': count_limit,
+        # Объём считается по тем же типам файлов, что и количество (загрузки и бланки), поэтому
+        # usedMb может быть меньше totalSize — в totalSize входят ещё и сгенерированные файлы.
+        'usedMb': round(used_bytes / MB, 1), 'limitMb': size_limit_mb,
         'countedKinds': list(COUNTED_FILE_KINDS),
     })
 
@@ -85,10 +88,11 @@ def handle_delete_file(cur, conn, schema, me, body, qs):
     if not removed:
         cur.close(); conn.close()
         return _bad('not_found', 404)
-    used = _file_count(cur, schema, me['id'])
-    limit_ = _file_limit(cur, schema, me['id'])
+    count_limit, size_limit_mb = _file_limits(cur, schema, me['id'])
+    used, used_bytes = _file_usage(cur, schema, me['id'])
     cur.close(); conn.close()
-    return _ok({'ok': True, 'usedFiles': used, 'limitFiles': limit_})
+    return _ok({'ok': True, 'usedFiles': used, 'limitFiles': count_limit,
+                'usedMb': round(used_bytes / MB, 1), 'limitMb': size_limit_mb})
 
 
 def handle_clear_files(cur, conn, schema, me, body, qs):
@@ -104,7 +108,8 @@ def handle_clear_files(cur, conn, schema, me, body, qs):
         cur.execute(f"SELECT id FROM {schema}.ai_files WHERE user_id = %s", (me['id'],))
     ids = [r[0] for r in cur.fetchall()]
     removed = _drop_keys(cur, schema, me['id'], ids)
-    used = _file_count(cur, schema, me['id'])
-    limit_ = _file_limit(cur, schema, me['id'])
+    count_limit, size_limit_mb = _file_limits(cur, schema, me['id'])
+    used, used_bytes = _file_usage(cur, schema, me['id'])
     cur.close(); conn.close()
-    return _ok({'ok': True, 'removed': removed, 'usedFiles': used, 'limitFiles': limit_})
+    return _ok({'ok': True, 'removed': removed, 'usedFiles': used, 'limitFiles': count_limit,
+                'usedMb': round(used_bytes / MB, 1), 'limitMb': size_limit_mb})

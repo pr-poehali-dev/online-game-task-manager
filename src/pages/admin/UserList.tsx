@@ -22,6 +22,11 @@ export default function UserList({
   editAiFileLimitValue,
   setEditAiFileLimitValue,
   saveAiFileLimit,
+  editAiSizeLimitId,
+  setEditAiSizeLimitId,
+  editAiSizeLimitValue,
+  setEditAiSizeLimitValue,
+  saveAiSizeLimit,
   editNameId,
   setEditNameId,
   editFirstName,
@@ -73,6 +78,11 @@ export default function UserList({
   editAiFileLimitValue: string;
   setEditAiFileLimitValue: (v: string) => void;
   saveAiFileLimit: (id: number) => void;
+  editAiSizeLimitId: number | null;
+  setEditAiSizeLimitId: (id: number | null) => void;
+  editAiSizeLimitValue: string;
+  setEditAiSizeLimitValue: (v: string) => void;
+  saveAiSizeLimit: (id: number) => void;
   editNameId: number | null;
   setEditNameId: (id: number | null) => void;
   editFirstName: string;
@@ -240,6 +250,35 @@ export default function UserList({
                   >
                     <Icon name="FolderCog" size={11} />
                     Файлы AI: {u.ai_files_used} из {u.ai_file_limit}
+                  </button>
+                )
+              )}
+              {/* Второй лимит — на суммарный ОБЪЁМ файлов: количество плохо отражает нагрузку на
+                  хранилище (десяток видео весит больше сотен документов). 0 — запрет загрузки. */}
+              {u.permissions.ai_access && (
+                editAiSizeLimitId === u.id ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Icon name="HardDrive" size={11} className="text-muted-foreground shrink-0" />
+                    <input
+                      value={editAiSizeLimitValue}
+                      onChange={(e) => setEditAiSizeLimitValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveAiSizeLimit(u.id); if (e.key === 'Escape') setEditAiSizeLimitId(null); }}
+                      autoFocus
+                      inputMode="numeric"
+                      placeholder="1024"
+                      className="w-20 rounded border border-border bg-secondary/60 px-2 py-0.5 text-xs focus:outline-none"
+                    />
+                    <span className="text-xs text-muted-foreground">МБ</span>
+                    <button onClick={() => saveAiSizeLimit(u.id)} className="text-xs text-primary hover:underline">OK</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditAiSizeLimitId(u.id); setEditAiSizeLimitValue(String(u.ai_size_limit_mb)); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
+                    title="Суммарный объём файлов, который сотрудник может хранить в разделе «AI». 0 — загрузка запрещена"
+                  >
+                    <Icon name="HardDrive" size={11} />
+                    Объём AI: {u.ai_size_used_mb} из {u.ai_size_limit_mb} МБ
                   </button>
                 )
               )}

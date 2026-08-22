@@ -19,6 +19,9 @@ export interface AiFilesState {
   totalSize: number;
   usedFiles: number;
   limitFiles: number;
+  // Второй лимит — суммарный объём файлов сотрудника, МБ (задаётся администратором там же).
+  usedMb: number;
+  limitMb: number;
   loading: boolean;
   busyId: number | null;
   clearing: boolean;
@@ -35,6 +38,8 @@ export function useAiFiles(enabled: boolean): AiFilesState {
   const [totalSize, setTotalSize] = useState(0);
   const [usedFiles, setUsedFiles] = useState(0);
   const [limitFiles, setLimitFiles] = useState(0);
+  const [usedMb, setUsedMb] = useState(0);
+  const [limitMb, setLimitMb] = useState(0);
   const [loading, setLoading] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [clearing, setClearing] = useState(false);
@@ -49,6 +54,8 @@ export function useAiFiles(enabled: boolean): AiFilesState {
         setTotalSize(data.totalSize || 0);
         setUsedFiles(data.usedFiles || 0);
         setLimitFiles(data.limitFiles || 0);
+        setUsedMb(data.usedMb || 0);
+        setLimitMb(data.limitMb || 0);
       }
     } catch {
       /* ignore — список просто останется прежним, повторить можно кнопкой обновления */
@@ -74,6 +81,8 @@ export function useAiFiles(enabled: boolean): AiFilesState {
         setFiles((prev) => prev.filter((f) => f.id !== id));
         setUsedFiles(data.usedFiles ?? 0);
         setLimitFiles(data.limitFiles ?? 0);
+        setUsedMb(data.usedMb ?? 0);
+        setLimitMb(data.limitMb ?? 0);
       }
     } catch {
       /* ignore */
@@ -98,5 +107,5 @@ export function useAiFiles(enabled: boolean): AiFilesState {
     }
   }, [load]);
 
-  return { files, totalSize, usedFiles, limitFiles, loading, busyId, clearing, load, deleteFile, clearFiles };
+  return { files, totalSize, usedFiles, limitFiles, usedMb, limitMb, loading, busyId, clearing, load, deleteFile, clearFiles };
 }

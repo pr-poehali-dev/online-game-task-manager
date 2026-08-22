@@ -44,7 +44,7 @@ export async function uploadAiAttachment(
     return data.attachment as AiAttachment;
   }
 
-  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind });
+  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind, size: file.size });
   const fileId = init.fileId as string;
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   try {
