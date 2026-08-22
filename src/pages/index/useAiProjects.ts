@@ -83,6 +83,8 @@ export interface AiProjectsState {
   // Автосводка по документам проекта (вкладка «Обзор»).
   summaryLoading: boolean;
   refreshSummary: (force?: boolean) => Promise<void>;
+  // Удаление сессии прямо со страницы проекта.
+  deleteProjectChat: (chatId: number) => Promise<void>;
 }
 
 // useAiProjects — состояние проектов: список слева и подробности открытого проекта (файлы,
@@ -132,10 +134,14 @@ export function useAiProjects(): AiProjectsState {
         setActiveProject(data.project || null);
         setProjectFiles(data.files || []);
         setProjectChats(data.chats || []);
-      } else {
+      } else if (res.status === 404) {
+        // Проект действительно удалён — только тогда закрываем его страницу.
         setActiveProject(null);
         setActiveProjectId(null);
       }
+      // Любая другая неудача (таймаут, обрыв связи, перегрузка во время разбора файлов) — НЕ повод
+      // закрывать проект: раньше это молча выбрасывало сотрудника в чат прямо посреди чтения
+      // файлов. Оставляем открытым то, что уже загружено, и пробуем снова при следующем шаге.
     } catch {
       /* ignore */
     } finally {
@@ -306,6 +312,22 @@ export function useAiProjects(): AiProjectsState {
     refreshSummary();
   }, [activeProjectId, activeProject?.summaryStale, indexing, summaryLoading, refreshSummary]);
 
+  // Удаление сессии проекта. Строка убирается сразу (ждать ответ сервера незачем — операция
+  // почти всегда успешна), затем данные проекта перезагружаются, чтобы счётчик сессий сошёлся.
+  const deleteProjectChat = useCallback(async (chatId: number) => {
+    setProjectChats((prev) => prev.filter((c) => c.id !== chatId));
+    try {
+      await fetch(AI_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'delete_chat', chatId }),
+      });
+    } catch {
+      /* ignore */
+    }
+    if (activeProjectId != null) loadProject(activeProjectId);
+  }, [activeProjectId, loadProject]);
+
   const searchProject = useCallback(async (query: string): Promise<AiSearchHit[]> => {
     if (activeProjectId == null || query.trim().length < 2) return [];
     try {
@@ -324,7 +346,7 @@ export function useAiProjects(): AiProjectsState {
   return {
     projects, loading, usedProjects, limitProjects,
     indexPending, indexing, searchProject,
-    summaryLoading, refreshSummary,
+    summaryLoading, refreshSummary, deleteProjectChat,
     activeProject, activeProjectId, openProject,
     projectFiles, projectChats, detailLoading, error,
     load, loadProject, createProject, updateProject, deleteProject, attachFiles,

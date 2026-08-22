@@ -41,6 +41,8 @@ export default function AiProjectPage({
   uploadQueue,
 }: AiProjectPageProps) {
   const [tab, setTab] = useState<Tab>('overview');
+  // Сессия, для которой показывается подтверждение удаления.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const project = state.activeProject;
 
   if (state.detailLoading && !project) {
@@ -195,17 +197,46 @@ export default function AiProjectPage({
               ) : (
                 <div className="space-y-1">
                   {state.projectChats.map((chat) => (
-                    <button
+                    <div
                       key={chat.id}
-                      onClick={() => onOpenChat(chat.id)}
-                      className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left hover:bg-secondary/40 transition-colors"
+                      className="group flex items-center gap-2 px-3 py-2.5 rounded-lg hover:bg-secondary/40 transition-colors"
                     >
-                      {chat.pinned && <Icon name="Pin" size={11} className="shrink-0 opacity-70" />}
-                      <span className="flex-1 min-w-0 truncate text-sm">{chat.title}</span>
+                      <button
+                        onClick={() => onOpenChat(chat.id)}
+                        className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                      >
+                        {chat.pinned && <Icon name="Pin" size={11} className="shrink-0 opacity-70" />}
+                        <span className="flex-1 min-w-0 truncate text-sm">{chat.title}</span>
+                      </button>
                       <span className="shrink-0 text-[10px] text-muted-foreground">
                         {chat.updatedAt ? new Date(chat.updatedAt).toLocaleDateString('ru-RU') : ''}
                       </span>
-                    </button>
+                      {/* Подтверждение обязательно: переписку сессии восстановить нельзя. */}
+                      {confirmDeleteId === chat.id ? (
+                        <span className="shrink-0 flex items-center gap-1">
+                          <button
+                            onClick={() => { state.deleteProjectChat(chat.id); setConfirmDeleteId(null); }}
+                            className="h-6 px-2 rounded text-[10px] font-medium bg-destructive text-destructive-foreground hover:opacity-90 transition-opacity"
+                          >
+                            Удалить
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+                          >
+                            <Icon name="X" size={12} />
+                          </button>
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeleteId(chat.id)}
+                          title="Удалить сессию"
+                          className="h-6 w-6 shrink-0 rounded flex items-center justify-center text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
+                        >
+                          <Icon name="Trash2" size={12} />
+                        </button>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}

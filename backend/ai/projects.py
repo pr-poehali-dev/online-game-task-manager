@@ -16,7 +16,10 @@ from common import (
 # Модель для автосводки — дешёвая и быстрая: задача простая (пересказать, что за документы), а
 # платить полную цену за каждое обновление состава файлов незачем. Тот же подход, что у
 # автоназвания диалогов (TITLE_MODEL в common.py).
-SUMMARY_MODEL = 'gpt-5-nano'
+# ВАЖНО: модель должна быть ОБЫЧНОЙ, не «рассуждающей». Рассуждающие (gpt-5-nano и подобные)
+# тратят весь бюджет токенов на внутренние размышления и возвращают ПУСТОЙ текст — сводка
+# выходила пустой при полностью прочитанных файлах. gpt-4.1-nano отвечает сразу и стоит столько же.
+SUMMARY_MODEL = 'gpt-4.1-nano'
 
 # Сколько текста берём из КАЖДОГО файла на сводку. Начала документа почти всегда достаточно, чтобы
 # понять, что это за материал, а весь текст стоил бы дорого и не влез бы в контекст.
@@ -403,6 +406,20 @@ def handle_project_summary(cur, conn, schema, me, body, qs):
     choice = (data.get('choices') or [{}])[0]
     summary = ((choice.get('message') or {}).get('content') or '').strip()
     cost_rub = (data.get('usage') or {}).get('cost_rub') or 0
+
+    if not summary:
+        # Пишем в лог, чтобы при повторении было видно, какая модель молчит и что она вернула.
+        print(f'[summary] empty answer from {SUMMARY_MODEL}, usage={data.get("usage")}, '
+              f'finish_reason={choice.get("finish_reason")}')
+        # Модель вернула пустой текст — не запоминаем это как готовую сводку, иначе проект
+        # навсегда остался бы с пустым описанием и пересборка больше не запустилась бы.
+        if cost_rub:
+            cur.execute(
+                f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+                (cost_rub, me['id'], _current_month())
+            )
+        cur.close(); conn.close()
+        return _ok({'summary': old_summary, 'cached': True, 'failed': True, 'filesCount': files_count})
 
     cur.execute(
         f"UPDATE {schema}.ai_projects SET summary = %s, summary_files_count = %s, "

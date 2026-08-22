@@ -69,6 +69,19 @@ export default function AiProjectList({
 
       {open && (
         <div className="px-2 pb-2 space-y-0.5">
+          {/* Явная кнопка-близнец «Нового чата»: маленький плюсик у заголовка сотрудники не
+              замечали, и создать проект было неочевидно. */}
+          {!creating && (
+            <button
+              onClick={() => setCreating(true)}
+              disabled={limitReached}
+              title={limitReached ? 'Достигнут лимит проектов' : 'Создать новый проект'}
+              className="w-full h-9 px-3 mb-1 rounded-lg border border-primary/40 bg-primary/10 text-primary text-sm font-medium hover:bg-primary/15 transition-colors flex items-center justify-center gap-2 disabled:opacity-40"
+            >
+              <Icon name="Plus" size={15} />
+              Новый проект
+            </button>
+          )}
           {creating && (
             <input
               autoFocus

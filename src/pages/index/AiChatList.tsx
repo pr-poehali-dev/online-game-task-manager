@@ -108,9 +108,34 @@ export default function AiChatList({
 
   return (
     <div className={bare ? 'flex flex-col h-full' : 'w-64 shrink-0 border-r border-border flex flex-col h-full'}>
+      {onClose && (
+        <div className="flex justify-end px-2 pt-2">
+          <button
+            onClick={onClose}
+            title="Закрыть список"
+            className="h-8 w-8 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name="X" size={16} />
+          </button>
+        </div>
+      )}
+
+      <AiProjectList
+        projects={projects.projects}
+        loading={projects.loading}
+        activeProjectId={projects.activeProjectId}
+        usedProjects={projects.usedProjects}
+        limitProjects={projects.limitProjects}
+        error={projects.error}
+        onOpenProject={projects.openProject}
+        onCreateProject={projects.createProject}
+      />
+
       <div className="p-3 border-b border-border space-y-2">
-        {/* Кнопка закрытия стоит В РЯД с «Новый чат», а не поверх неё: штатный крестик Sheet
-            позиционируется абсолютно и перекрывал кнопку (см. скриншот пользователя). */}
+        {/* «Новый чат» и «Поиск» относятся к списку ДИАЛОГОВ, поэтому стоят под секцией
+            проектов, а не над ней: раньше кнопка чата и заголовок «Проекты» читались как одно
+            целое и путали. Кнопка закрытия — в ряд с «Новый чат» (штатный крестик Sheet
+            позиционируется абсолютно и перекрывал бы её). */}
         <div className="flex items-center gap-2">
           <button
             onClick={onNewChat}
@@ -119,15 +144,6 @@ export default function AiChatList({
             <Icon name="Plus" size={15} />
             Новый чат
           </button>
-          {onClose && (
-            <button
-              onClick={onClose}
-              title="Закрыть список"
-              className="h-9 w-9 shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            >
-              <Icon name="X" size={16} />
-            </button>
-          )}
         </div>
         {chats.length > 0 && (
           <div className="relative">
@@ -150,17 +166,6 @@ export default function AiChatList({
           </div>
         )}
       </div>
-      <AiProjectList
-        projects={projects.projects}
-        loading={projects.loading}
-        activeProjectId={projects.activeProjectId}
-        usedProjects={projects.usedProjects}
-        limitProjects={projects.limitProjects}
-        error={projects.error}
-        onOpenProject={projects.openProject}
-        onCreateProject={projects.createProject}
-      />
-
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-0.5">
         {chatsLoading ? (
           <div className="py-8 flex justify-center">
