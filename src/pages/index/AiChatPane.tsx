@@ -92,21 +92,21 @@ export default function AiChatPane({
 }: AiChatPaneProps) {
   return (
     <div className="flex-1 min-w-0 flex flex-col">
-      {/* Шапка. На телефоне всё помещается в ОДИН ряд (кнопка диалогов + выбор модели + справка),
-          а вкладки режимов уезжают в отдельную прокручиваемую строку под ним — иначе на узком
-          экране они переносились на три ряда и съедали половину высоты, а часть вкладок
-          («Видео») вообще обрезалась за краем. На десктопе раскладка прежняя — всё в одну строку. */}
-      <div className="border-b border-border">
+      {/* Шапка. Мобильная раскладка повторяет привычные чат-приложения: слева кнопка списка
+          диалогов, по центру — активная модель, справа справка. Название чата на телефоне не
+          показываем: оно дублирует список диалогов и вытесняло выбор модели за край экрана.
+          Вкладки режимов — отдельной строкой с горизонтальной прокруткой. */}
+      <div className="border-b border-border shrink-0">
         <div className="flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5">
           <button
             onClick={onOpenChatList}
             title="Список диалогов"
-            className="lg:hidden h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            className="lg:hidden h-9 w-9 shrink-0 rounded-full sm:rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
           >
             <Icon name="PanelLeft" size={18} />
           </button>
           {activeChatTitle && (
-            <span className="lg:hidden text-sm font-medium truncate min-w-0 flex-1">{activeChatTitle}</span>
+            <span className="hidden lg:inline text-sm font-medium truncate min-w-0">{activeChatTitle}</span>
           )}
           {/* Вкладки в самой шапке — только на широких экранах */}
           <div className="hidden sm:flex gap-1 bg-secondary/60 p-1 rounded-lg">
@@ -123,16 +123,17 @@ export default function AiChatPane({
               </button>
             ))}
           </div>
-          <div className="ml-auto flex items-center gap-2 min-w-0">
-            <button
-              onClick={onOpenModelFaq}
-              title="Как выбрать модель"
-              className="h-9 w-9 shrink-0 rounded-lg border border-border bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-            >
-              <Icon name="HelpCircle" size={15} />
-            </button>
+          {/* На телефоне выбор модели занимает центр шапки, как в приложениях-аналогах */}
+          <div className="flex-1 min-w-0 flex justify-center sm:flex-none sm:ml-auto sm:justify-end">
             <AiModelPicker models={models} modelsLoading={modelsLoading} value={model} onChange={onModelChange} />
           </div>
+          <button
+            onClick={onOpenModelFaq}
+            title="Как выбрать модель"
+            className="h-9 w-9 shrink-0 rounded-full sm:rounded-lg sm:border sm:border-border sm:bg-secondary/60 flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors sm:order-first"
+          >
+            <Icon name="HelpCircle" size={16} />
+          </button>
         </div>
         {/* Вкладки режимов на телефоне: горизонтальная прокрутка, чтобы влезали все пять */}
         <div className="sm:hidden flex gap-1.5 px-3 pb-2 overflow-x-auto scrollbar-none">
@@ -140,10 +141,10 @@ export default function AiChatPane({
             <button
               key={t.id}
               onClick={() => onModeChange(t.id)}
-              className={`shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-medium border transition-colors ${
+              className={`shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-medium transition-colors ${
                 mode === t.id
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-secondary/60 border-border text-muted-foreground'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-secondary/70 text-muted-foreground'
               }`}
             >
               <Icon name={t.icon} size={13} />

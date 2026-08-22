@@ -25,8 +25,12 @@ export default function Ai() {
     );
   }
 
+  // На телефоне чат занимает весь экран без рамки и скруглений — как в мобильных мессенджерах
+  // (рамка внутри и без того узкого экрана выглядела «коробкой в коробке», см. скриншот).
+  // Отрицательные отступы компенсируют p-3 общего контейнера разделов (IndexMain).
+  // На десктопе остаётся прежняя карточка со скруглением и границей.
   return (
-    <div className="flex rounded-xl border border-border overflow-hidden bg-card/20 h-[calc(100vh-8.5rem)]">
+    <div className="flex sm:rounded-xl sm:border sm:border-border overflow-hidden sm:bg-card/20 h-[calc(100dvh-7.5rem)] sm:h-[calc(100vh-8.5rem)] -mx-3 -my-3 sm:mx-0 sm:my-0">
       <AiSidebar
         chats={ai.chats}
         chatsLoading={ai.chatsLoading}

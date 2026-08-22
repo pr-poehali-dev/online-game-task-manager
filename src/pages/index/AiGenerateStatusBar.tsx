@@ -27,7 +27,8 @@ export default function AiGenerateStatusBar({
               style={{ width: `${usagePercent}%` }}
             />
           </div>
-          <span>Потрачено {usage.spentRub.toFixed(2)} ₽ из {usage.limitRub.toFixed(0)} ₽ в этом месяце</span>
+          <span className="sm:hidden">{usage.spentRub.toFixed(0)} / {usage.limitRub.toFixed(0)} ₽</span>
+          <span className="hidden sm:inline">Потрачено {usage.spentRub.toFixed(2)} ₽ из {usage.limitRub.toFixed(0)} ₽ в этом месяце</span>
         </div>
       )}
       {limitExceeded && (

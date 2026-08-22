@@ -54,7 +54,7 @@ export default function AiTemplatesPicker({ mode, templates, loading, onSelect, 
       <PopoverTrigger asChild>
         <button
           title="Шаблоны промптов"
-          className="h-[42px] w-[42px] shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          className="h-9 w-9 sm:h-[42px] sm:w-[42px] shrink-0 rounded-full sm:rounded-lg sm:border sm:border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
           <Icon name="LayoutTemplate" size={16} />
         </button>
