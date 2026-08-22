@@ -72,13 +72,14 @@ def handle_get_project(cur, conn, schema, me, body, qs):
     project = _project_to_dict(row)
 
     cur.execute(
-        f"SELECT id, name, url, size, content_type, kind, created_at "
+        f"SELECT id, name, url, size, content_type, kind, created_at, index_status, chunks_count "
         f"FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s ORDER BY created_at DESC",
         (me['id'], project_id)
     )
     files = [{
         'id': r[0], 'name': r[1], 'url': r[2], 'size': int(r[3] or 0), 'contentType': r[4],
         'kind': r[5], 'createdAt': r[6].isoformat() if r[6] else None,
+        'indexStatus': r[7], 'chunksCount': int(r[8] or 0),
     } for r in cur.fetchall()]
 
     cur.execute(
@@ -202,6 +203,10 @@ def handle_delete_project(cur, conn, schema, me, body, qs):
                 except Exception:
                     pass
             cur.execute(
+                f"DELETE FROM {schema}.ai_file_chunks WHERE user_id = %s AND project_id = %s",
+                (me['id'], project_id)
+            )
+            cur.execute(
                 f"DELETE FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s",
                 (me['id'], project_id)
             )
@@ -215,7 +220,12 @@ def handle_delete_project(cur, conn, schema, me, body, qs):
             cur.execute(f"DELETE FROM {schema}.ai_chats WHERE id = %s", (chat_id,))
     else:
         cur.execute(
-            f"UPDATE {schema}.ai_files SET project_id = NULL WHERE user_id = %s AND project_id = %s",
+            f"DELETE FROM {schema}.ai_file_chunks WHERE user_id = %s AND project_id = %s",
+            (me['id'], project_id)
+        )
+        cur.execute(
+            f"UPDATE {schema}.ai_files SET project_id = NULL, index_status = 'pending', "
+            f"index_offset = 0, chunks_count = 0 WHERE user_id = %s AND project_id = %s",
             (me['id'], project_id)
         )
         cur.execute(
@@ -243,11 +253,20 @@ def handle_attach_files(cur, conn, schema, me, body, qs):
             cur.close(); conn.close()
             return _bad('not_found', 404)
 
+    # Файл, попавший в проект, отправляется в очередь разбора для поиска (index_status='pending'),
+    # а вынутый из проекта — теряет свои фрагменты: искать по нему больше негде.
     cur.execute(
-        f"UPDATE {schema}.ai_files SET project_id = %s WHERE user_id = %s AND id IN %s",
+        f"UPDATE {schema}.ai_files SET project_id = %s, index_status = 'pending', index_offset = 0, "
+        f"chunks_count = 0, index_error = '' WHERE user_id = %s AND id IN %s",
         (project_id, me['id'], tuple(int(f) for f in file_ids))
     )
     moved = cur.rowcount
+    # Старые фрагменты убираем всегда: при добавлении в проект они пересоздадутся разбором с
+    # правильным project_id, при удалении из проекта искать по файлу больше негде.
+    cur.execute(
+        f"DELETE FROM {schema}.ai_file_chunks WHERE user_id = %s AND file_id IN %s",
+        (me['id'], tuple(int(f) for f in file_ids))
+    )
     if project_id is not None:
         cur.execute(f"UPDATE {schema}.ai_projects SET updated_at = NOW() WHERE id = %s", (project_id,))
     cur.close(); conn.close()

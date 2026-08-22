@@ -70,6 +70,12 @@ def _drop_keys(cur, schema, user_id, ids):
         except Exception:
             pass
     found_ids = tuple(r[0] for r in rows)
+    # Фрагменты для поиска живут отдельной таблицей — удаляем их вместе с самим файлом, иначе
+    # ассистент продолжил бы находить текст уже удалённого документа.
+    cur.execute(
+        f"DELETE FROM {schema}.ai_file_chunks WHERE user_id = %s AND file_id IN %s",
+        (user_id, found_ids)
+    )
     cur.execute(
         f"DELETE FROM {schema}.ai_files WHERE user_id = %s AND id IN %s",
         (user_id, found_ids)

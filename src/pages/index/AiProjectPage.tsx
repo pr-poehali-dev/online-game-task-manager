@@ -2,7 +2,28 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { fmtFileSize } from '../admin/adminShared';
 import AiProjectSettings from './AiProjectSettings';
-import type { AiProjectsState } from './useAiProjects';
+import AiProjectSearch from './AiProjectSearch';
+import type { AiProjectFile, AiProjectsState } from './useAiProjects';
+
+// Как показывать состояние разбора файла для поиска. unsupported — не ошибка: в картинке или
+// видео просто нет текста, файл остаётся в проекте, но в поиске не участвует.
+const INDEX_LABELS: Record<string, { icon: string; text: string; className: string }> = {
+  pending: { icon: 'Clock', text: 'В очереди', className: 'text-muted-foreground' },
+  indexing: { icon: 'Loader2', text: 'Обрабатывается', className: 'text-primary' },
+  ready: { icon: 'Check', text: 'Готов к поиску', className: 'text-muted-foreground' },
+  unsupported: { icon: 'Minus', text: 'Без текста', className: 'text-muted-foreground' },
+  failed: { icon: 'AlertCircle', text: 'Не удалось прочитать', className: 'text-destructive' },
+};
+
+function FileIndexBadge({ file }: { file: AiProjectFile }) {
+  const state = INDEX_LABELS[file.indexStatus] || INDEX_LABELS.pending;
+  return (
+    <span className={`shrink-0 hidden sm:flex items-center gap-1 text-[10px] ${state.className}`} title={state.text}>
+      <Icon name={state.icon} size={10} className={file.indexStatus === 'indexing' ? 'animate-spin' : ''} />
+      {state.text}
+    </span>
+  );
+}
 
 interface AiProjectPageProps {
   state: AiProjectsState;
@@ -15,11 +36,12 @@ interface AiProjectPageProps {
   uploadProgress: number | null;
 }
 
-type Tab = 'overview' | 'files' | 'knowledge' | 'settings';
+type Tab = 'overview' | 'files' | 'search' | 'knowledge' | 'settings';
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Обзор' },
   { id: 'files', label: 'Файлы' },
+  { id: 'search', label: 'Поиск' },
   { id: 'knowledge', label: 'Знания' },
   { id: 'settings', label: 'Настройки' },
 ];
@@ -72,6 +94,12 @@ export default function AiProjectPage({
             <Icon name={project.icon || 'Folder'} size={18} className="text-primary" fallback="Folder" />
           </div>
           <h1 className="font-display text-xl truncate">{project.name}</h1>
+          {state.indexing && (
+            <span className="shrink-0 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <Icon name="Loader2" size={12} className="animate-spin text-primary" />
+              Читаю файлы{state.indexPending > 1 ? `: осталось ${state.indexPending}` : '…'}
+            </span>
+          )}
           {project.archived && (
             <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
               В архиве
@@ -230,6 +258,7 @@ export default function AiProjectPage({
                       >
                         {file.name}
                       </a>
+                      <FileIndexBadge file={file} />
                       <span className="shrink-0 text-[10px] text-muted-foreground">{fmtFileSize(file.size)}</span>
                       <button
                         onClick={() => state.attachFiles([file.id], null)}
@@ -244,6 +273,8 @@ export default function AiProjectPage({
               )}
             </div>
           )}
+
+          {tab === 'search' && <AiProjectSearch state={state} />}
 
           {tab === 'knowledge' && (
             <div className="space-y-4 max-w-2xl">

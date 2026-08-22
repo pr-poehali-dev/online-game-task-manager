@@ -27,6 +27,19 @@ export interface AiProjectFile {
   contentType: string;
   kind: string;
   createdAt: string | null;
+  // Статус разбора файла для поиска: pending/indexing — в обработке, ready — готов,
+  // unsupported — текста в файле нет (картинка/видео), failed — не удалось разобрать.
+  indexStatus: string;
+  chunksCount: number;
+}
+
+export interface AiSearchHit {
+  chunkId: number;
+  fileId: number;
+  fileName: string;
+  fileUrl: string;
+  chunkIndex: number;
+  content: string;
 }
 
 export interface AiProjectChat {
@@ -57,6 +70,10 @@ export interface AiProjectsState {
   updateProject: (id: number, patch: Partial<AiProject>) => Promise<void>;
   deleteProject: (id: number, withContent: boolean) => Promise<void>;
   attachFiles: (fileIds: number[], projectId: number | null) => Promise<void>;
+  // Разбор файлов для поиска: сколько ещё в очереди и идёт ли обработка прямо сейчас.
+  indexPending: number;
+  indexing: boolean;
+  searchProject: (query: string) => Promise<AiSearchHit[]>;
 }
 
 // useAiProjects — состояние проектов: список слева и подробности открытого проекта (файлы,
@@ -74,6 +91,8 @@ export function useAiProjects(): AiProjectsState {
   const [projectChats, setProjectChats] = useState<AiProjectChat[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
+  const [indexPending, setIndexPending] = useState(0);
+  const [indexing, setIndexing] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -198,8 +217,72 @@ export function useAiProjects(): AiProjectsState {
     }
   }, [activeProjectId, load, loadProject]);
 
+  // Разбор файлов идёт ПОРЦИЯМИ: один вызов index_step обрабатывает ограниченный кусок текста
+  // (иначе большой документ не уложится в таймаут функции). Поэтому крутим цикл, пока сервер не
+  // ответит, что всё готово, обновляя список файлов, чтобы статусы менялись на глазах.
+  const runIndexing = useCallback(async (projectId: number) => {
+    setIndexing(true);
+    try {
+      // Потолок шагов — защита от бесконечного цикла, если файл почему-то не может завершиться.
+      for (let step = 0; step < 200; step += 1) {
+        const res = await fetch(AI_URL, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ action: 'index_step', projectId }),
+        });
+        if (!res.ok) break;
+        const data = await res.json().catch(() => ({}));
+        setIndexPending(data.pending ?? 0);
+        if (data.done) break;
+      }
+      await loadProject(projectId);
+    } catch {
+      /* ignore — оставшиеся файлы обработаются при следующем открытии проекта */
+    } finally {
+      setIndexing(false);
+      setIndexPending(0);
+    }
+  }, [loadProject]);
+
+  // При открытии проекта проверяем, остались ли необработанные файлы, и если да — доразбираем их.
+  useEffect(() => {
+    if (activeProjectId == null) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${AI_URL}?action=index_status&projectId=${activeProjectId}`, {
+          method: 'GET', headers: authHeaders(),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && res.ok && (data.pending || 0) > 0) {
+          setIndexPending(data.pending);
+          runIndexing(activeProjectId);
+        }
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeProjectId, projectFiles.length, runIndexing]);
+
+  const searchProject = useCallback(async (query: string): Promise<AiSearchHit[]> => {
+    if (activeProjectId == null || query.trim().length < 2) return [];
+    try {
+      const res = await fetch(AI_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'search_project', projectId: activeProjectId, query }),
+      });
+      const data = await res.json().catch(() => ({}));
+      return res.ok ? (data.results || []) : [];
+    } catch {
+      return [];
+    }
+  }, [activeProjectId]);
+
   return {
     projects, loading, usedProjects, limitProjects,
+    indexPending, indexing, searchProject,
     activeProject, activeProjectId, openProject,
     projectFiles, projectChats, detailLoading, error,
     load, loadProject, createProject, updateProject, deleteProject, attachFiles,
