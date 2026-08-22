@@ -38,6 +38,8 @@ interface AiChatPaneProps {
   templates: AiPromptTemplate[];
   templatesLoading: boolean;
   onManageTemplates: () => void;
+  documentFormat: string;
+  onDocumentFormatChange: (format: string) => void;
   onGenerateImage: (params: ImageGenerateParams) => void;
   onGenerateVideo: (params: VideoGenerateParams) => void;
 }
@@ -75,6 +77,8 @@ export default function AiChatPane({
   templates,
   templatesLoading,
   onManageTemplates,
+  documentFormat,
+  onDocumentFormatChange,
   onGenerateImage,
   onGenerateVideo,
 }: AiChatPaneProps) {
@@ -159,6 +163,8 @@ export default function AiChatPane({
           templates={templates}
           templatesLoading={templatesLoading}
           onManageTemplates={onManageTemplates}
+          documentFormat={documentFormat}
+          onDocumentFormatChange={onDocumentFormatChange}
         />
       )}
     </div>

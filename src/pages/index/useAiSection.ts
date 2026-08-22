@@ -28,6 +28,8 @@ export function useAiSection() {
   const [model, setModel] = useState(() => localStorage.getItem(AI_MODEL_KEY_PREFIX + 'chat') || 'auto');
 
   const [input, setInput] = useState('');
+  // Формат документа в режиме 'document': 'auto' (решает модель) | 'xlsx' | 'docx'.
+  const [documentFormat, setDocumentFormat] = useState('auto');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   // retryAction — что именно повторить по кнопке "Повторить" рядом с текстом ошибки. Храним
@@ -230,7 +232,11 @@ export function useAiSection() {
       const res = await fetchWithTimeout(AI_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'send_message', chatId: activeChatId, model, content, mode, attachments: attachmentsToSend }),
+        // Режим 'document' идёт отдельным действием: модель отдаёт структуру документа, а
+        // .xlsx/.docx собирается на сервере и возвращается вложением (backend/ai/documents.py).
+        body: JSON.stringify(mode === 'document'
+          ? { action: 'generate_document', chatId: activeChatId, model, prompt: content, format: documentFormat }
+          : { action: 'send_message', chatId: activeChatId, model, content, mode, attachments: attachmentsToSend }),
       }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -457,6 +463,7 @@ export function useAiSection() {
     messages, messagesLoading,
     models, modelsLoading, model, setModel,
     input, setInput, sending, sendError, retryAction, usage, forbidden,
+    documentFormat, setDocumentFormat,
     pendingAttachments, uploading, uploadProgress,
     chatListOpen, setChatListOpen,
     modelFaqOpen, setModelFaqOpen,

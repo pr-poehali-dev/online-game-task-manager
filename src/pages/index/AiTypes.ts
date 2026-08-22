@@ -4,7 +4,7 @@
 export interface AiChatSummary {
   id: number;
   title: string;
-  mode: 'chat' | 'image' | 'video' | 'code';
+  mode: AiMode;
   model: string;
   pinned: boolean;
   createdAt: string | null;
@@ -206,13 +206,24 @@ export const AI_ACTIVE_CHAT_KEY = 'ai_active_chat_id';
 // вызывать при отправке (см. Ai.tsx). 'code' использует ту же группу моделей chat, что и обычный
 // текстовый режим, но backend подставляет системный промпт код-ревью (см. backend/ai/index.py,
 // CODE_SYSTEM_PROMPT).
-export type AiMode = 'chat' | 'code' | 'image' | 'video';
+export type AiMode = 'chat' | 'code' | 'document' | 'image' | 'video';
 
+// document использует те же текстовые модели, что chat/code: модель отдаёт СТРУКТУРУ документа
+// в JSON, а сам .xlsx/.docx собирается на сервере (backend/ai/documents.py).
 export const MODE_TABS: { id: AiMode; label: string; icon: string; modelGroup: 'chat' | 'images' | 'videos' }[] = [
   { id: 'chat', label: 'Чат', icon: 'MessageSquare', modelGroup: 'chat' },
   { id: 'code', label: 'Код', icon: 'Code2', modelGroup: 'chat' },
+  { id: 'document', label: 'Документы', icon: 'FileSpreadsheet', modelGroup: 'chat' },
   { id: 'image', label: 'Изображения', icon: 'Image', modelGroup: 'images' },
   { id: 'video', label: 'Видео', icon: 'Video', modelGroup: 'videos' },
+];
+
+// Форматы, которые умеет собирать backend/ai/documents.py. 'auto' — модель решает по смыслу
+// запроса (таблица/расчёт → xlsx, письмо/регламент → docx).
+export const DOCUMENT_FORMATS: { value: string; label: string; icon: string }[] = [
+  { value: 'auto', label: 'Авто', icon: 'Wand2' },
+  { value: 'xlsx', label: 'Excel', icon: 'FileSpreadsheet' },
+  { value: 'docx', label: 'Word', icon: 'FileText' },
 ];
 
 export const IMAGE_ASPECT_RATIOS = ['1:1', '16:9', '9:16', '4:3', '3:4'];

@@ -71,6 +71,8 @@ export default function Ai() {
         templates={ai.promptTemplates.templates}
         templatesLoading={ai.promptTemplates.loading}
         onManageTemplates={() => ai.setTemplatesManagerOpen(true)}
+        documentFormat={ai.documentFormat}
+        onDocumentFormatChange={ai.setDocumentFormat}
         onGenerateImage={ai.handleGenerateImage}
         onGenerateVideo={ai.handleGenerateVideo}
       />

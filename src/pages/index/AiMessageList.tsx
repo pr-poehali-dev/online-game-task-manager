@@ -34,6 +34,10 @@ const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
     icon: 'Code2',
     text: 'Вставьте код или опишите задачу — ассистент поможет с код-ревью, рефакторингом и поиском багов.',
   },
+  document: {
+    icon: 'FileSpreadsheet',
+    text: 'Опишите нужный документ словами — например «смета на ремонт офиса с 10 позициями» или «регламент приёма заявок». В ответ придёт готовый файл Excel или Word со ссылкой на скачивание.',
+  },
   image: {
     icon: 'Image',
     text: 'Опишите изображение текстом внизу — модель сгенерирует его за несколько секунд.',
@@ -43,6 +47,23 @@ const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
     text: 'Опишите видео текстом внизу — генерация обычно занимает несколько минут, деньги списываются сразу при запуске.',
   },
 };
+
+// Офисные документы, собранные ассистентом (backend/ai/documents.py) — им рисуем отдельную
+// карточку со скачиванием вместо обычной ссылки на файл.
+const OFFICE_TYPES: Record<string, { icon: string; label: string; color: string }> = {
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': {
+    icon: 'FileSpreadsheet', label: 'Таблица Excel', color: 'bg-emerald-600',
+  },
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': {
+    icon: 'FileText', label: 'Документ Word', color: 'bg-blue-600',
+  },
+};
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+}
 
 // Отличить блок кода от инлайнового `кода` ТОЛЬКО по className нельзя: в react-markdown v10 проп
 // `inline` убран, а у блока без указания языка (```\n...\n```) className пустой — ровно как у
@@ -178,6 +199,24 @@ function MessageAttachments({ message, onOpenImage }: { message: AiMessage; onOp
           </button>
         ) : a.contentType.startsWith('video/') ? (
           <video key={a.id} src={a.url} controls className="max-w-[320px] rounded-lg border border-border" />
+        ) : OFFICE_TYPES[a.contentType] ? (
+          // Собранные ассистентом Excel/Word показываем крупной карточкой с явной кнопкой
+          // скачивания: обычная ссылка открывала бы файл в новой вкладке, а не сохраняла его.
+          <a
+            key={a.id} href={a.url} download={a.name}
+            className="group flex items-center gap-3 px-3 py-2.5 rounded-lg border border-border bg-secondary/40 hover:bg-secondary transition-colors max-w-full"
+          >
+            <span className={`h-9 w-9 shrink-0 rounded-lg flex items-center justify-center ${OFFICE_TYPES[a.contentType].color}`}>
+              <Icon name={OFFICE_TYPES[a.contentType].icon} size={18} className="text-white" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-xs font-medium truncate">{a.name}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                {OFFICE_TYPES[a.contentType].label}{a.size ? ` · ${formatFileSize(a.size)}` : ''}
+              </span>
+            </span>
+            <Icon name="Download" size={15} className="ml-1 shrink-0 text-muted-foreground group-hover:text-foreground transition-colors" />
+          </a>
         ) : (
           <a
             key={a.id} href={a.url} target="_blank" rel="noreferrer"

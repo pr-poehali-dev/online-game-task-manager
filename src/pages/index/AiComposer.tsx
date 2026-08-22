@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import AiTemplatesPicker from './AiTemplatesPicker';
 import { useAutosizeTextarea } from './useAutosizeTextarea';
+import { DOCUMENT_FORMATS } from './AiTypes';
 import type { AiPromptTemplate } from './AiPromptTemplates';
 import type { AiUsage, AiAttachment, AiMode } from './AiTypes';
 
@@ -44,12 +45,16 @@ interface AiComposerProps {
   templates: AiPromptTemplate[];
   templatesLoading: boolean;
   onManageTemplates: () => void;
+  // Выбранный формат документа в режиме 'document' ('auto' | 'xlsx' | 'docx').
+  documentFormat?: string;
+  onDocumentFormatChange?: (format: string) => void;
 }
 
 export default function AiComposer({
   mode, value, onChange, onSend, sending, usage, limitExceeded,
   attachments, onAddFile, onRemoveAttachment, uploading, uploadProgress,
   templates, templatesLoading, onManageTemplates,
+  documentFormat = 'auto', onDocumentFormatChange,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -96,7 +101,9 @@ export default function AiComposer({
     ? value.includes('\n')
       ? 'Ctrl+Enter — отправить, Tab — отступ'
       : 'Вставьте код или опишите задачу… (Enter — отправить, Tab — отступ)'
-    : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
+    : mode === 'document'
+      ? 'Опишите документ: «смета на ремонт офиса, 10 позиций с ценами»…'
+      : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
 
   return (
     <div className="border-t border-border p-3 sm:p-4">
@@ -125,6 +132,26 @@ export default function AiComposer({
             <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${Math.round(uploadProgress * 100)}%` }} />
           </div>
           <span>Загрузка файла… {Math.round(uploadProgress * 100)}%</span>
+        </div>
+      )}
+      {mode === 'document' && (
+        <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+          <span className="text-[11px] text-muted-foreground mr-0.5">Формат:</span>
+          {DOCUMENT_FORMATS.map((f) => (
+            <button
+              key={f.value}
+              type="button"
+              onClick={() => onDocumentFormatChange?.(f.value)}
+              className={`h-7 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                documentFormat === f.value
+                  ? 'bg-primary/15 border-primary/40 text-primary'
+                  : 'border-border text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Icon name={f.icon} size={12} />
+              {f.label}
+            </button>
+          ))}
         </div>
       )}
       {attachments.length > 0 && (
@@ -161,14 +188,18 @@ export default function AiComposer({
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) onAddFile(f); e.target.value = ''; }}
         />
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          title="Прикрепить файл или картинку"
-          className="h-[42px] w-[42px] shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
-        >
-          {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
-        </button>
+        {/* В режиме документов вложения не участвуют: запрос уходит отдельным действием
+            generate_document, которое принимает только текстовое описание. */}
+        {mode !== 'document' && (
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            title="Прикрепить файл или картинку"
+            className="h-[42px] w-[42px] shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors disabled:opacity-50"
+          >
+            {uploading ? <Icon name="Loader2" size={16} className="animate-spin" /> : <Icon name="Paperclip" size={16} />}
+          </button>
+        )}
         <AiTemplatesPicker
           mode={mode}
           templates={templates}

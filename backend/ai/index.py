@@ -2,6 +2,7 @@ import json
 
 from common import _cors_headers, _schema, _db, _bad, _current_user
 import chats as chats_actions
+import documents as documents_actions
 import files as files_actions
 import generate as generate_actions
 
@@ -40,6 +41,8 @@ ACTIONS = {
     'check_video_job': generate_actions.handle_check_video_job,
     'generate_title': generate_actions.handle_generate_title,
     'regenerate': generate_actions.handle_regenerate,
+    # Сборка готовых офисных документов (Excel/Word) по текстовому запросу
+    'generate_document': documents_actions.handle_generate_document,
 }
 
 
@@ -71,6 +74,10 @@ def handler(event: dict, context) -> dict:
       статуса задачи видео, при completed скачивает MP4 в S3), generate_title (осмысленное
       название диалога дешёвой моделью, фоновый запрос фронта), regenerate (перегенерация
       последнего ответа ассистента, можно другой моделью).
+
+    - documents.py: generate_document (готовый Excel/Word по текстовому запросу — модель отдаёт
+      СТРУКТУРУ документа в JSON, а бинарный файл собирается на сервере через openpyxl/python-docx
+      и кладётся в S3; ссылка приходит вложением к ответу ассистента).
 
     Доступ ко всем действиям — только с правом ai_access (отдельное привилегированное право,
     см. db_migrations V0076). Подробное описание раздела: docs/ai-section-overview.md.'''
