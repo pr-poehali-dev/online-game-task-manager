@@ -1,0 +1,273 @@
+'''Проекты раздела "AI" (этап 1 плана AI_PROJECTS_PLAN.md) — личное рабочее пространство
+сотрудника: набор файлов плюс диалоги, которые ведутся в контексте этих файлов. Проекты строго
+приватные: любая выборка ограничена user_id из сессии, чужой проект открыть нельзя.
+
+Проекты — НАДСТРОЙКА над уже работающим разделом: файлы и диалоги без проекта (project_id IS NULL)
+продолжают работать ровно как раньше, ничего переносить принудительно не нужно.'''
+
+import os
+
+from common import (
+    _bad, _ok, _s3_client, _file_limits, _file_usage, _delete_chat_attachments, MB,
+)
+
+
+def _project_to_dict(row):
+    (pid, name, description, instructions, summary, icon, color, archived,
+     created_at, updated_at, files_count, files_size, chats_count) = row
+    return {
+        'id': pid, 'name': name, 'description': description, 'instructions': instructions,
+        'summary': summary, 'icon': icon or 'Folder', 'color': color or '',
+        'archived': bool(archived),
+        'filesCount': int(files_count or 0),
+        'filesSizeMb': round(int(files_size or 0) / MB, 1),
+        'chatsCount': int(chats_count or 0),
+        'createdAt': created_at.isoformat() if created_at else None,
+        'updatedAt': updated_at.isoformat() if updated_at else None,
+    }
+
+
+# Общая выборка проекта вместе со счётчиками файлов и диалогов — чтобы карточка проекта сразу
+# показывала, сколько в нём материалов, без отдельных запросов на каждый проект.
+def _select_projects(schema, where):
+    return (
+        f"SELECT p.id, p.name, p.description, p.instructions, p.summary, p.icon, p.color, p.archived, "
+        f"p.created_at, p.updated_at, "
+        f"(SELECT COUNT(*) FROM {schema}.ai_files f WHERE f.project_id = p.id) AS files_count, "
+        f"(SELECT COALESCE(SUM(f.size), 0) FROM {schema}.ai_files f WHERE f.project_id = p.id) AS files_size, "
+        f"(SELECT COUNT(*) FROM {schema}.ai_chats c WHERE c.project_id = p.id) AS chats_count "
+        f"FROM {schema}.ai_projects p WHERE {where}"
+    )
+
+
+def _project_limit(cur, schema, user_id):
+    cur.execute(f"SELECT ai_project_limit FROM {schema}.users WHERE id = %s", (user_id,))
+    row = cur.fetchone()
+    return int(row[0]) if row and row[0] is not None else 10
+
+
+def handle_list_projects(cur, conn, schema, me, body, qs):
+    '''Список проектов сотрудника со счётчиками и расходом лимита проектов. Архивные отдаются
+    вместе с остальными (флаг archived) — фильтрует их интерфейс, чтобы не гонять два запроса.'''
+    cur.execute(_select_projects(schema, "p.user_id = %s") + " ORDER BY p.archived ASC, p.updated_at DESC", (me['id'],))
+    projects = [_project_to_dict(r) for r in cur.fetchall()]
+    limit_ = _project_limit(cur, schema, me['id'])
+    active = sum(1 for p in projects if not p['archived'])
+    cur.close(); conn.close()
+    return _ok({'projects': projects, 'usedProjects': active, 'limitProjects': limit_})
+
+
+def handle_get_project(cur, conn, schema, me, body, qs):
+    '''Один проект вместе с его файлами и диалогами — всё, что нужно странице проекта за один
+    запрос (вкладки "Обзор" и "Файлы" открываются без дополнительной загрузки).'''
+    project_id = qs.get('projectId') or body.get('projectId')
+    if not project_id:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+    cur.execute(_select_projects(schema, "p.id = %s AND p.user_id = %s"), (project_id, me['id']))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+    project = _project_to_dict(row)
+
+    cur.execute(
+        f"SELECT id, name, url, size, content_type, kind, created_at "
+        f"FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s ORDER BY created_at DESC",
+        (me['id'], project_id)
+    )
+    files = [{
+        'id': r[0], 'name': r[1], 'url': r[2], 'size': int(r[3] or 0), 'contentType': r[4],
+        'kind': r[5], 'createdAt': r[6].isoformat() if r[6] else None,
+    } for r in cur.fetchall()]
+
+    cur.execute(
+        f"SELECT id, title, mode, model, pinned, created_at, updated_at "
+        f"FROM {schema}.ai_chats WHERE user_id = %s AND project_id = %s ORDER BY pinned DESC, updated_at DESC",
+        (me['id'], project_id)
+    )
+    chats = [{
+        'id': r[0], 'title': r[1], 'mode': r[2], 'model': r[3], 'pinned': bool(r[4]),
+        'createdAt': r[5].isoformat() if r[5] else None,
+        'updatedAt': r[6].isoformat() if r[6] else None,
+    } for r in cur.fetchall()]
+
+    cur.close(); conn.close()
+    return _ok({'project': project, 'files': files, 'chats': chats})
+
+
+def handle_create_project(cur, conn, schema, me, body, qs):
+    '''Создание проекта с проверкой личного лимита (users.ai_project_limit) — архивные проекты в
+    лимит не считаются, чтобы старые работы можно было хранить, не блокируя новые.'''
+    limit_ = _project_limit(cur, schema, me['id'])
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ai_projects WHERE user_id = %s AND archived = false",
+        (me['id'],)
+    )
+    used = int(cur.fetchone()[0])
+    if used >= limit_:
+        cur.close(); conn.close()
+        return _bad('project_limit_exceeded', 403)
+
+    name = (body.get('name') or '').strip() or 'Новый проект'
+    description = (body.get('description') or '').strip()
+    icon = (body.get('icon') or 'Folder').strip() or 'Folder'
+    cur.execute(
+        f"INSERT INTO {schema}.ai_projects (user_id, name, description, icon) VALUES (%s, %s, %s, %s) "
+        f"RETURNING id",
+        (me['id'], name[:200], description[:2000], icon)
+    )
+    project_id = cur.fetchone()[0]
+    cur.execute(_select_projects(schema, "p.id = %s AND p.user_id = %s"), (project_id, me['id']))
+    project = _project_to_dict(cur.fetchone())
+    cur.close(); conn.close()
+    return _ok({'project': project})
+
+
+# Поля, которые сотрудник может править у своего проекта. summary в список НЕ входит: он будет
+# пересобираться автоматически по содержимому (этап 4 плана), а не вводиться руками.
+EDITABLE_FIELDS = {
+    'name': 200,
+    'description': 2000,
+    'instructions': 8000,
+    'icon': 60,
+    'color': 60,
+}
+
+
+def handle_update_project(cur, conn, schema, me, body, qs):
+    project_id = body.get('projectId')
+    if not project_id:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+    cur.execute(f"SELECT id FROM {schema}.ai_projects WHERE id = %s AND user_id = %s", (project_id, me['id']))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+
+    sets, params = [], []
+    for field, max_len in EDITABLE_FIELDS.items():
+        if field in body:
+            value = str(body.get(field) or '').strip()[:max_len]
+            if field == 'name' and not value:
+                continue
+            sets.append(f"{field} = %s")
+            params.append(value)
+    if 'archived' in body:
+        sets.append("archived = %s")
+        params.append(bool(body.get('archived')))
+    if not sets:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+
+    params.extend([project_id, me['id']])
+    cur.execute(
+        f"UPDATE {schema}.ai_projects SET {', '.join(sets)}, updated_at = NOW() "
+        f"WHERE id = %s AND user_id = %s",
+        tuple(params)
+    )
+    cur.execute(_select_projects(schema, "p.id = %s AND p.user_id = %s"), (project_id, me['id']))
+    project = _project_to_dict(cur.fetchone())
+    cur.close(); conn.close()
+    return _ok({'project': project})
+
+
+def handle_delete_project(cur, conn, schema, me, body, qs):
+    '''Удаление проекта. По умолчанию файлы и диалоги НЕ пропадают — они просто выходят из проекта
+    и остаются в личном хранилище сотрудника ("Мои файлы"), это наименее разрушительное поведение.
+    Если сотрудник осознанно выбрал "удалить вместе с содержимым" (withContent), файлы убираются
+    из хранилища, а диалоги проекта стираются.'''
+    project_id = body.get('projectId')
+    with_content = bool(body.get('withContent'))
+    if not project_id:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+    cur.execute(f"SELECT id FROM {schema}.ai_projects WHERE id = %s AND user_id = %s", (project_id, me['id']))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return _bad('not_found', 404)
+
+    if with_content:
+        cur.execute(
+            f"SELECT id, file_key FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s",
+            (me['id'], project_id)
+        )
+        rows = cur.fetchall()
+        if rows:
+            bucket = os.environ.get('S3_BUCKET', 'files')
+            s3 = _s3_client()
+            for _fid, key in rows:
+                try:
+                    s3.delete_object(Bucket=bucket, Key=key)
+                except Exception:
+                    pass
+            cur.execute(
+                f"DELETE FROM {schema}.ai_files WHERE user_id = %s AND project_id = %s",
+                (me['id'], project_id)
+            )
+        cur.execute(
+            f"SELECT id FROM {schema}.ai_chats WHERE user_id = %s AND project_id = %s",
+            (me['id'], project_id)
+        )
+        for (chat_id,) in cur.fetchall():
+            _delete_chat_attachments(cur, schema, chat_id)
+            cur.execute(f"DELETE FROM {schema}.ai_messages WHERE chat_id = %s", (chat_id,))
+            cur.execute(f"DELETE FROM {schema}.ai_chats WHERE id = %s", (chat_id,))
+    else:
+        cur.execute(
+            f"UPDATE {schema}.ai_files SET project_id = NULL WHERE user_id = %s AND project_id = %s",
+            (me['id'], project_id)
+        )
+        cur.execute(
+            f"UPDATE {schema}.ai_chats SET project_id = NULL WHERE user_id = %s AND project_id = %s",
+            (me['id'], project_id)
+        )
+
+    cur.execute(f"DELETE FROM {schema}.ai_projects WHERE id = %s AND user_id = %s", (project_id, me['id']))
+    cur.close(); conn.close()
+    return _ok({'ok': True})
+
+
+def handle_attach_files(cur, conn, schema, me, body, qs):
+    '''Привязка уже загруженных файлов к проекту (перенос из "Моих файлов" или из другого проекта).
+    projectId = null убирает файлы из проекта, не удаляя их.'''
+    file_ids = body.get('fileIds') or []
+    project_id = body.get('projectId')
+    if not isinstance(file_ids, list) or not file_ids:
+        cur.close(); conn.close()
+        return _bad('bad_request')
+
+    if project_id is not None:
+        cur.execute(f"SELECT id FROM {schema}.ai_projects WHERE id = %s AND user_id = %s", (project_id, me['id']))
+        if not cur.fetchone():
+            cur.close(); conn.close()
+            return _bad('not_found', 404)
+
+    cur.execute(
+        f"UPDATE {schema}.ai_files SET project_id = %s WHERE user_id = %s AND id IN %s",
+        (project_id, me['id'], tuple(int(f) for f in file_ids))
+    )
+    moved = cur.rowcount
+    if project_id is not None:
+        cur.execute(f"UPDATE {schema}.ai_projects SET updated_at = NOW() WHERE id = %s", (project_id,))
+    cur.close(); conn.close()
+    return _ok({'ok': True, 'moved': moved})
+
+
+def handle_project_usage(cur, conn, schema, me, body, qs):
+    '''Расход всех личных лимитов сотрудника разом — вкладка "Настройки" проекта показывает, сколько
+    места и проектов у него ещё есть.'''
+    count_limit, size_limit_mb = _file_limits(cur, schema, me['id'])
+    used, used_bytes = _file_usage(cur, schema, me['id'])
+    project_limit = _project_limit(cur, schema, me['id'])
+    cur.execute(
+        f"SELECT COUNT(*) FROM {schema}.ai_projects WHERE user_id = %s AND archived = false",
+        (me['id'],)
+    )
+    used_projects = int(cur.fetchone()[0])
+    cur.close(); conn.close()
+    return _ok({
+        'usedFiles': used, 'limitFiles': count_limit,
+        'usedMb': round(used_bytes / MB, 1), 'limitMb': size_limit_mb,
+        'usedProjects': used_projects, 'limitProjects': project_limit,
+    })
