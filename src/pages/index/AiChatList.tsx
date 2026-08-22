@@ -19,6 +19,9 @@ interface AiChatListProps {
   // контейнера, поэтому убираем фиксированную ширину и правую границу, чтобы список не выглядел
   // "вложенной колонкой внутри колонки".
   bare?: boolean;
+  // onClose — показать кнопку закрытия рядом с «Новый чат». Передаётся только из мобильной
+  // панели (AiSidebar): на десктопе колонка постоянная и закрывать её не нужно.
+  onClose?: () => void;
 }
 
 export default function AiChatList({
@@ -32,6 +35,7 @@ export default function AiChatList({
   onDeleteChat,
   onSearchMessages,
   bare = false,
+  onClose,
 }: AiChatListProps) {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState('');
@@ -82,13 +86,26 @@ export default function AiChatList({
   return (
     <div className={bare ? 'flex flex-col h-full' : 'w-64 shrink-0 border-r border-border flex flex-col h-full'}>
       <div className="p-3 border-b border-border space-y-2">
-        <button
-          onClick={onNewChat}
-          className="w-full h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-        >
-          <Icon name="Plus" size={15} />
-          Новый чат
-        </button>
+        {/* Кнопка закрытия стоит В РЯД с «Новый чат», а не поверх неё: штатный крестик Sheet
+            позиционируется абсолютно и перекрывал кнопку (см. скриншот пользователя). */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onNewChat}
+            className="flex-1 h-9 px-3 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+          >
+            <Icon name="Plus" size={15} />
+            Новый чат
+          </button>
+          {onClose && (
+            <button
+              onClick={onClose}
+              title="Закрыть список"
+              className="h-9 w-9 shrink-0 rounded-lg border border-border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="X" size={16} />
+            </button>
+          )}
+        </div>
         {chats.length > 0 && (
           <div className="relative">
             <Icon name="Search" size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />

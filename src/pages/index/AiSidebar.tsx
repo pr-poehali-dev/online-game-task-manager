@@ -64,9 +64,12 @@ export default function AiSidebar({
             обрабатывает, поэтому вешаем лёгкий обработчик прямо на панель — жест должен
             работать в обе стороны, иначе открыв панель пальцем, закрывать её пришлось бы
             тапом по затемнению. */}
+        {/* [&>button]:hidden убирает штатный крестик Sheet: он позиционируется абсолютно в правом
+            верхнем углу и накладывался поверх кнопки «Новый чат» (см. скриншот). Вместо него —
+            своя кнопка закрытия в одном ряду с кнопкой нового чата (closeButton ниже). */}
         <SheetContent
           side="left"
-          className="p-0 w-72 flex flex-col"
+          className="p-0 w-72 flex flex-col [&>button]:hidden"
           onTouchStart={(e) => { swipeStart.current = e.touches[0].clientX; }}
           onTouchEnd={(e) => {
             const start = swipeStart.current;
@@ -85,6 +88,7 @@ export default function AiSidebar({
             onTogglePinned={onTogglePinned}
             onDeleteChat={onDeleteChat}
             onSearchMessages={onSearchMessages}
+            onClose={() => setChatListOpen(false)}
             bare
           />
         </SheetContent>
