@@ -30,7 +30,7 @@ export default function Ai() {
   // Отрицательные отступы компенсируют p-3 общего контейнера разделов (IndexMain).
   // На десктопе остаётся прежняя карточка со скруглением и границей.
   return (
-    <div className="flex sm:rounded-xl sm:border sm:border-border overflow-hidden sm:bg-card/20 h-[calc(100dvh-7.5rem)] sm:h-[calc(100vh-8.5rem)] -mx-3 -my-3 sm:mx-0 sm:my-0">
+    <div className="flex bg-background sm:bg-card/20 sm:rounded-xl sm:border sm:border-border overflow-hidden h-[calc(100dvh-7.5rem)] sm:h-[calc(100vh-8.5rem)] -mx-3 -my-3 sm:mx-0 sm:my-0">
       <AiSidebar
         chats={ai.chats}
         chatsLoading={ai.chatsLoading}

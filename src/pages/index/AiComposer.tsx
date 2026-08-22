@@ -126,7 +126,7 @@ export default function AiComposer({
         : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
 
   return (
-    <div className="border-t border-border p-3 sm:p-4">
+    <div className="border-t border-border p-3 sm:p-4 shrink-0">
       {usage && (
         <div className="flex items-center gap-2 mb-1.5 sm:mb-2 text-[11px] text-muted-foreground">
           <div className="flex-1 h-1 rounded-full bg-secondary overflow-hidden max-w-[200px]">

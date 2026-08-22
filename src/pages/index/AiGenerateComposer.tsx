@@ -197,7 +197,7 @@ export default function AiGenerateComposer({ mode, onGenerateImage, onGenerateVi
   }
 
   return (
-    <div className="border-t border-border p-3 sm:p-4">
+    <div className="border-t border-border p-3 sm:p-4 shrink-0">
       <AiGenerateStatusBar
         mode={mode}
         usage={usage}
