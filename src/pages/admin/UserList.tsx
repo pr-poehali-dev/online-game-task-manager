@@ -27,6 +27,11 @@ export default function UserList({
   editAiSizeLimitValue,
   setEditAiSizeLimitValue,
   saveAiSizeLimit,
+  editAiProjectLimitId,
+  setEditAiProjectLimitId,
+  editAiProjectLimitValue,
+  setEditAiProjectLimitValue,
+  saveAiProjectLimit,
   editNameId,
   setEditNameId,
   editFirstName,
@@ -83,6 +88,11 @@ export default function UserList({
   editAiSizeLimitValue: string;
   setEditAiSizeLimitValue: (v: string) => void;
   saveAiSizeLimit: (id: number) => void;
+  editAiProjectLimitId: number | null;
+  setEditAiProjectLimitId: (id: number | null) => void;
+  editAiProjectLimitValue: string;
+  setEditAiProjectLimitValue: (v: string) => void;
+  saveAiProjectLimit: (id: number) => void;
   editNameId: number | null;
   setEditNameId: (id: number | null) => void;
   editFirstName: string;
@@ -279,6 +289,35 @@ export default function UserList({
                   >
                     <Icon name="HardDrive" size={11} />
                     Объём AI: {u.ai_size_used_mb} из {u.ai_size_limit_mb} МБ
+                  </button>
+                )
+              )}
+              {/* Третий лимит — число проектов (рабочих пространств с файлами и сессиями).
+                  Архивные проекты в лимит не считаются. 0 — создание проектов запрещено. */}
+              {u.permissions.ai_access && (
+                editAiProjectLimitId === u.id ? (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Icon name="FolderKanban" size={11} className="text-muted-foreground shrink-0" />
+                    <input
+                      value={editAiProjectLimitValue}
+                      onChange={(e) => setEditAiProjectLimitValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') saveAiProjectLimit(u.id); if (e.key === 'Escape') setEditAiProjectLimitId(null); }}
+                      autoFocus
+                      inputMode="numeric"
+                      placeholder="10"
+                      className="w-16 rounded border border-border bg-secondary/60 px-2 py-0.5 text-xs focus:outline-none"
+                    />
+                    <span className="text-xs text-muted-foreground">проектов</span>
+                    <button onClick={() => saveAiProjectLimit(u.id)} className="text-xs text-primary hover:underline">OK</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setEditAiProjectLimitId(u.id); setEditAiProjectLimitValue(String(u.ai_project_limit)); }}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
+                    title="Сколько проектов сотрудник может держать в разделе «AI». Архивные не считаются. 0 — создание запрещено"
+                  >
+                    <Icon name="FolderKanban" size={11} />
+                    Проекты AI: {u.ai_projects_used} из {u.ai_project_limit}
                   </button>
                 )
               )}

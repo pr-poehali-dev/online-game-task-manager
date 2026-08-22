@@ -40,6 +40,8 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
   const [editAiFileLimitValue, setEditAiFileLimitValue] = useState('');
   const [editAiSizeLimitId, setEditAiSizeLimitId] = useState<number | null>(null);
   const [editAiSizeLimitValue, setEditAiSizeLimitValue] = useState('');
+  const [editAiProjectLimitId, setEditAiProjectLimitId] = useState<number | null>(null);
+  const [editAiProjectLimitValue, setEditAiProjectLimitValue] = useState('');
   const [editNameId, setEditNameId] = useState<number | null>(null);
   const [editFirstName, setEditFirstName] = useState('');
   const [editLastName, setEditLastName] = useState('');
@@ -116,6 +118,16 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     await authFetch({ action: 'set_ai_size_limit', user_id: id, size_limit_mb: Math.round(value) });
     setEditAiSizeLimitId(null);
     setEditAiSizeLimitValue('');
+    load();
+  }
+
+  // Лимит числа ПРОЕКТОВ сотрудника в разделе "AI" (users.ai_project_limit).
+  async function saveAiProjectLimit(id: number) {
+    const value = Number(editAiProjectLimitValue.trim());
+    if (!Number.isFinite(value) || value < 0) { setEditAiProjectLimitId(null); return; }
+    await authFetch({ action: 'set_ai_project_limit', user_id: id, project_limit: Math.round(value) });
+    setEditAiProjectLimitId(null);
+    setEditAiProjectLimitValue('');
     load();
   }
 
@@ -223,6 +235,9 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     editAiSizeLimitId, setEditAiSizeLimitId,
     editAiSizeLimitValue, setEditAiSizeLimitValue,
     saveAiSizeLimit,
+    editAiProjectLimitId, setEditAiProjectLimitId,
+    editAiProjectLimitValue, setEditAiProjectLimitValue,
+    saveAiProjectLimit,
     editNameId, setEditNameId,
     editFirstName, setEditFirstName,
     editLastName, setEditLastName,
