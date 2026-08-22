@@ -36,15 +36,17 @@ async function postJson(body: Record<string, unknown>): Promise<Record<string, u
 export async function uploadAiAttachment(
   file: File,
   onProgress?: (fraction: number) => void,
-  kind: 'upload' | 'template' = 'upload'
+  kind: 'upload' | 'template' = 'upload',
+  // projectId — если файл грузится со страницы проекта, он сразу относится к этому проекту.
+  projectId?: number | null
 ): Promise<AiAttachment> {
   if (file.size <= CHUNK_THRESHOLD) {
     const dataUrl = await blobToBase64(file);
-    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type, kind });
+    const data = await postJson({ action: 'upload_attachment', data: dataUrl, name: file.name, contentType: file.type, kind, projectId });
     return data.attachment as AiAttachment;
   }
 
-  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind, size: file.size });
+  const init = await postJson({ action: 'file_init', name: file.name, contentType: file.type, kind, size: file.size, projectId });
   const fileId = init.fileId as string;
   const totalParts = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   try {

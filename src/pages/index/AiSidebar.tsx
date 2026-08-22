@@ -4,6 +4,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import AiChatList from './AiChatList';
 import { useEdgeSwipe } from './useEdgeSwipe';
 import type { AiChatSummary, AiMessageSearchResult } from './AiTypes';
+import type { AiProjectsState } from './useAiProjects';
 
 interface AiSidebarProps {
   chats: AiChatSummary[];
@@ -18,6 +19,7 @@ interface AiSidebarProps {
   onDeleteChat: (id: number) => void;
   onSearchMessages: (query: string) => Promise<AiMessageSearchResult[]>;
   onOpenFiles: () => void;
+  projects: AiProjectsState;
   filesUsed?: number;
   filesLimit?: number;
 }
@@ -38,6 +40,7 @@ export default function AiSidebar({
   onDeleteChat,
   onSearchMessages,
   onOpenFiles,
+  projects,
   filesUsed,
   filesLimit,
 }: AiSidebarProps) {
@@ -63,6 +66,7 @@ export default function AiSidebar({
           onDeleteChat={onDeleteChat}
           onSearchMessages={onSearchMessages}
           onOpenFiles={onOpenFiles}
+          projects={projects}
           filesUsed={filesUsed}
           filesLimit={filesLimit}
         />
@@ -98,6 +102,7 @@ export default function AiSidebar({
             onDeleteChat={onDeleteChat}
             onSearchMessages={onSearchMessages}
             onOpenFiles={() => { onOpenFiles(); setChatListOpen(false); }}
+            projects={{ ...projects, openProject: (id) => { projects.openProject(id); setChatListOpen(false); } }}
             filesUsed={filesUsed}
             filesLimit={filesLimit}
             onClose={() => setChatListOpen(false)}

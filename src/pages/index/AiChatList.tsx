@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { useUndoDelete } from './useUndoDelete';
+import AiProjectList from './AiProjectList';
+import type { AiProjectsState } from './useAiProjects';
 import type { AiChatSummary, AiMessageSearchResult } from './AiTypes';
 
 interface AiChatListProps {
@@ -19,6 +21,8 @@ interface AiChatListProps {
   // onOpenFiles — открыть панель "Мои файлы" (личное хранилище сотрудника в разделе AI с
   // расходом лимита и самостоятельной очисткой, см. AiFilesPanel).
   onOpenFiles: () => void;
+  // projects — секция «Проекты» над списком диалогов (личное рабочее пространство сотрудника).
+  projects: AiProjectsState;
   // filesUsed/filesLimit — краткий расход лимита файлов прямо на кнопке, чтобы сотрудник видел
   // приближение к пределу до того, как получит отказ при загрузке.
   filesUsed?: number;
@@ -43,6 +47,7 @@ export default function AiChatList({
   onDeleteChat,
   onSearchMessages,
   onOpenFiles,
+  projects,
   filesUsed,
   filesLimit,
   bare = false,
@@ -145,6 +150,17 @@ export default function AiChatList({
           </div>
         )}
       </div>
+      <AiProjectList
+        projects={projects.projects}
+        loading={projects.loading}
+        activeProjectId={projects.activeProjectId}
+        usedProjects={projects.usedProjects}
+        limitProjects={projects.limitProjects}
+        error={projects.error}
+        onOpenProject={projects.openProject}
+        onCreateProject={projects.createProject}
+      />
+
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2 space-y-0.5">
         {chatsLoading ? (
           <div className="py-8 flex justify-center">
