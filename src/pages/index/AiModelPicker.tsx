@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -52,6 +53,7 @@ function fmtPrice(info: AiModelsMap[string]): string {
 
 export default function AiModelPicker({ models, modelsLoading, value, onChange, onOpenFaq }: AiModelPickerProps) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
   const [tab, setTab] = useState<Tab>('recommended');
 
   // costsSorted — цены ВСЕХ моделей текущей группы (chat/images/videos), нужны для относительных
@@ -121,7 +123,13 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
           <Icon name="ChevronDown" size={13} className="text-muted-foreground shrink-0" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="start">
+      {/* onOpenAutoFocus отключён на телефоне по той же причине, что и в AiTemplatesPicker.tsx:
+          автофокус на поле поиска сразу вызывает клавиатуру, которая обрезает список моделей. */}
+      <PopoverContent
+        className="w-96 p-0"
+        align="start"
+        onOpenAutoFocus={(e) => { if (isMobile) e.preventDefault(); }}
+      >
         <div className="p-2 pb-0">
           <div className="flex items-center justify-between px-1 pb-2">
             <span className="text-sm font-semibold">Нейросети</span>

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Command,
@@ -23,6 +24,7 @@ interface AiTemplatesPickerProps {
 
 export default function AiTemplatesPicker({ mode, templates, loading, onSelect, onManage, hasDraft }: AiTemplatesPickerProps) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   // Категория, соответствующая текущему режиму композера (код/остальное), поднимается наверх
   // списка — сотруднику в режиме "Код" в первую очередь актуальны шаблоны код-ревью/рефакторинга,
@@ -59,7 +61,18 @@ export default function AiTemplatesPicker({ mode, templates, loading, onSelect, 
           <Icon name="LayoutTemplate" size={16} />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-80 p-0" align="start" side="top">
+      {/* На телефоне Radix ставит фокус на первое поле внутри панели при открытии (это поле
+          поиска) — фокус сразу поднимает экранную клавиатуру, которая обрезает высоту окна уже
+          ПОСЛЕ того как список спозиционировался, и он визуально "уезжает" под клавиатуру (см.
+          скриншот пользователя). Отключаем автофокус только на телефоне: сотрудник открывает
+          панель тапом, палец уже на экране, тянуться к полю поиска сразу не нужно — он либо
+          выбирает шаблон касанием, либо сам тапает по полю, когда решит искать. */}
+      <PopoverContent
+        className="w-80 p-0"
+        align="start"
+        side="top"
+        onOpenAutoFocus={(e) => { if (isMobile) e.preventDefault(); }}
+      >
         <Command>
           {templates.length > 4 && <CommandInput placeholder="Поиск шаблона..." />}
           <CommandList>
