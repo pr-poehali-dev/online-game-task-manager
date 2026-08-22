@@ -56,16 +56,10 @@ export default function AiGeneratePromptInput({
           <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={14} />
         </button>
       </div>
-      {/* Нижний ряд капсулы (только телефон) — как в AiComposer */}
+      {/* Нижний ряд капсулы (только телефон). Кнопки «увеличить поле» здесь нет: поле растёт
+          само по мере набора промпта, а лишняя иконка занимала место. В отличие от AiComposer,
+          принудительного разворота по вставке тут не бывает — сворачивать нечего. */}
       <div className="flex items-center gap-1 sm:hidden">
-        <button
-          type="button"
-          onClick={() => setExpanded((v) => !v)}
-          title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
-          className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-        >
-          <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={16} />
-        </button>
         <button
           onClick={onSubmit}
           disabled={generating || limitExceeded || !prompt.trim()}

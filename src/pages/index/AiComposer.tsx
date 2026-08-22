@@ -331,14 +331,20 @@ export default function AiComposer({
             onManage={onManageTemplates}
             hasDraft={!!value.trim()}
           />
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            title={expanded ? 'Свернуть поле' : 'Увеличить поле'}
-            className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-          >
-            <Icon name={expanded ? 'Minimize2' : 'Maximize2'} size={16} />
-          </button>
+          {/* Кнопки «увеличить» на телефоне нет: поле и так растёт по мере набора текста, а
+              лишняя иконка занимала место в ряду. Показываем только «свернуть» и только когда
+              поле уже раскрыто вставкой длинного текста (см. handlePaste) — иначе развёрнутое
+              поле нечем было бы вернуть к обычному размеру. */}
+          {expanded && (
+            <button
+              type="button"
+              onClick={() => setExpanded(false)}
+              title="Свернуть поле"
+              className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+            >
+              <Icon name="Minimize2" size={16} />
+            </button>
+          )}
           <button
             onClick={onSend}
             disabled={sending || limitExceeded || !value.trim()}
