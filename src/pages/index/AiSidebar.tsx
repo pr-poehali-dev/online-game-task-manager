@@ -1,5 +1,8 @@
+import { useCallback, useRef } from 'react';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
+import { useIsMobile } from '@/hooks/use-mobile';
 import AiChatList from './AiChatList';
+import { useEdgeSwipe } from './useEdgeSwipe';
 import type { AiChatSummary, AiMessageSearchResult } from './AiTypes';
 
 interface AiSidebarProps {
@@ -32,6 +35,14 @@ export default function AiSidebar({
   onDeleteChat,
   onSearchMessages,
 }: AiSidebarProps) {
+  const isMobile = useIsMobile();
+  // Координата начала касания на самой панели — для закрытия обратным свайпом.
+  const swipeStart = useRef<number | null>(null);
+  const openPanel = useCallback(() => setChatListOpen(true), [setChatListOpen]);
+  // Свайп от левого края открывает список диалогов — только на телефоне и только когда панель
+  // ещё закрыта (закрывается она свайпом обратно средствами самого Sheet).
+  useEdgeSwipe(isMobile && !chatListOpen, openPanel);
+
   return (
     <>
       <div className="hidden lg:flex">
@@ -49,7 +60,21 @@ export default function AiSidebar({
       </div>
 
       <Sheet open={chatListOpen} onOpenChange={setChatListOpen}>
-        <SheetContent side="left" className="p-0 w-72 flex flex-col">
+        {/* Закрытие обратным свайпом влево: Sheet построен на Radix Dialog и сам жесты не
+            обрабатывает, поэтому вешаем лёгкий обработчик прямо на панель — жест должен
+            работать в обе стороны, иначе открыв панель пальцем, закрывать её пришлось бы
+            тапом по затемнению. */}
+        <SheetContent
+          side="left"
+          className="p-0 w-72 flex flex-col"
+          onTouchStart={(e) => { swipeStart.current = e.touches[0].clientX; }}
+          onTouchEnd={(e) => {
+            const start = swipeStart.current;
+            if (start == null) return;
+            swipeStart.current = null;
+            if (start - e.changedTouches[0].clientX > 60) setChatListOpen(false);
+          }}
+        >
           <AiChatList
             chats={chats}
             chatsLoading={chatsLoading}
