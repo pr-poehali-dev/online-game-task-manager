@@ -62,15 +62,40 @@ export default function AiComposer({
   useAutosizeTextarea(textareaRef, value, maxHeight, expanded);
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // В режиме кода Tab должен добавлять отступ, а не уводить фокус с поля: сотрудник правит
+    // отступы прямо в поле, и прыжок фокуса ломал набор.
+    if (e.key === 'Tab' && mode === 'code') {
+      e.preventDefault();
+      const el = e.currentTarget;
+      const { selectionStart: start, selectionEnd: end } = el;
+      const next = `${value.slice(0, start)}  ${value.slice(end)}`;
+      onChange(next);
+      requestAnimationFrame(() => { el.selectionStart = el.selectionEnd = start + 2; });
+      return;
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
+      // Многострочный код удобнее отправлять явно (Ctrl/Cmd+Enter): при вставке кода Enter в конце
+      // строки слишком легко нажать случайно и отправить незаконченный фрагмент.
+      if (mode === 'code' && value.includes('\n') && !e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       if (!sending && !limitExceeded && value.trim()) onSend();
     }
   }
 
+  // Вставка большого фрагмента (кода, лога) сразу раскрывает поле на всю доступную высоту —
+  // иначе он схлопывался в узкую полоску и его нельзя было просмотреть перед отправкой.
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const pasted = e.clipboardData.getData('text');
+    if (!expanded && (pasted.match(/\n/g)?.length ?? 0) >= 4) setExpanded(true);
+  }
+
   const usagePercent = usage && usage.limitRub > 0 ? Math.min(100, (usage.spentRub / usage.limitRub) * 100) : 0;
+  // В режиме кода подсказка зависит от того, набран ли уже многострочный фрагмент: для него
+  // Enter больше не отправляет сообщение (см. handleKeyDown), и об этом надо сказать прямо.
   const placeholder = mode === 'code'
-    ? 'Вставьте код или опишите задачу… (Enter — отправить, Shift+Enter — новая строка)'
+    ? value.includes('\n')
+      ? 'Ctrl+Enter — отправить, Tab — отступ'
+      : 'Вставьте код или опишите задачу… (Enter — отправить, Tab — отступ)'
     : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
 
   return (
@@ -158,7 +183,9 @@ export default function AiComposer({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             disabled={sending || limitExceeded}
+            spellCheck={mode !== 'code'}
             placeholder={placeholder}
             rows={1}
             className="w-full resize-none rounded-lg border border-border bg-background pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-60 overflow-y-auto scrollbar-thin transition-[height]"

@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { atomDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import Icon from '@/components/ui/icon';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import AiCodeBlock from './AiCodeBlock';
 import { exportPinnedMessages } from './aiExportPinned';
 import AiImageLightbox from './AiImageLightbox';
 import type { AiMessage, AiMode } from './AiTypes';
@@ -43,40 +42,38 @@ const EMPTY_STATE: Record<AiMode, { icon: string; text: string }> = {
   },
 };
 
-function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
-  const match = /language-(\w+)/.exec(className || '');
+// Отличить блок кода от инлайнового `кода` ТОЛЬКО по className нельзя: в react-markdown v10 проп
+// `inline` убран, а у блока без указания языка (```\n...\n```) className пустой — ровно как у
+// инлайна. Из-за этого многострочные блоки без языка рендерились как крохотный инлайн-код и
+// теряли переносы строк, хотя модели пишут так постоянно. Правильный признак — родительский узел:
+// у настоящего блока это <pre>. Дополнительно считаем блоком всё многострочное.
+function CodeRenderer({ className, children }: { className?: string; children: React.ReactNode }) {
+  const match = /language-([\w+#-]+)/.exec(className || '');
   const code = String(children).replace(/\n$/, '');
-  if (!match) {
-    return <code className="px-1 py-0.5 rounded bg-secondary/80 text-[13px] font-mono">{code}</code>;
+  const isBlock = !!match || code.includes('\n');
+  if (!isBlock) {
+    return <code className="px-1 py-0.5 rounded bg-secondary/80 text-[13px] font-mono break-words">{code}</code>;
   }
-  return (
-    <div className="relative group my-2 rounded-lg overflow-hidden border border-border">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-secondary/60 text-[11px] text-muted-foreground">
-        <span className="font-mono">{match[1]}</span>
-        <button
-          onClick={() => navigator.clipboard.writeText(code)}
-          className="flex items-center gap-1 hover:text-foreground transition-colors"
-        >
-          <Icon name="Copy" size={11} />
-          Копировать
-        </button>
-      </div>
-      <SyntaxHighlighter language={match[1]} style={atomDark} customStyle={{ margin: 0, fontSize: '13px' }}>
-        {code}
-      </SyntaxHighlighter>
-    </div>
-  );
+  return <AiCodeBlock language={match ? match[1] : null} code={code} />;
 }
 
 function MessageContent({ content }: { content: string }) {
   return (
-    <div className="prose prose-sm prose-invert max-w-none prose-p:my-1.5 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0">
+    <div className="prose prose-sm dark:prose-invert max-w-none prose-p:my-1.5 prose-pre:my-0 prose-pre:bg-transparent prose-pre:p-0 prose-headings:mt-3 prose-headings:mb-1.5 break-words">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          code: ({ className, children }) => <CodeBlock className={className}>{children}</CodeBlock>,
+          code: ({ className, children }) => <CodeRenderer className={className}>{children}</CodeRenderer>,
+          // <pre> отдаём как есть: собственную рамку и фон рисует AiCodeBlock внутри.
+          pre: ({ children }) => <>{children}</>,
           a: ({ href, children }) => (
             <a href={href} target="_blank" rel="noreferrer" className="text-primary hover:underline">{children}</a>
+          ),
+          // Таблицы из markdown (remark-gfm) без обёртки со скроллом ломали ширину сообщения.
+          table: ({ children }) => (
+            <div className="overflow-x-auto scrollbar-thin my-2">
+              <table className="text-xs">{children}</table>
+            </div>
           ),
         }}
       >
