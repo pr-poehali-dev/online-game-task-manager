@@ -22,6 +22,9 @@ interface AiModelPickerProps {
   modelsLoading: boolean;
   value: string;
   onChange: (model: string) => void;
+  // onOpenFaq — открыть справку «как выбрать модель». На телефоне отдельной кнопки в шапке нет
+  // (не хватает места в одном ряду), поэтому вход в справку живёт здесь, рядом с выбором модели.
+  onOpenFaq?: () => void;
 }
 
 type Tab = 'recommended' | 'advanced' | 'cheap';
@@ -47,7 +50,7 @@ function fmtPrice(info: AiModelsMap[string]): string {
   return '';
 }
 
-export default function AiModelPicker({ models, modelsLoading, value, onChange }: AiModelPickerProps) {
+export default function AiModelPicker({ models, modelsLoading, value, onChange, onOpenFaq }: AiModelPickerProps) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('recommended');
 
@@ -104,17 +107,34 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange }
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
+        {/* На телефоне кнопка компактная: «Авто» вместо «Авто (подбор ИИ)» и жёсткий лимит
+            ширины — иначе длинное имя модели вытесняет вкладки режимов из общего ряда. */}
         <button
-          className="h-9 px-3 rounded-lg border border-border bg-secondary/60 flex items-center gap-2 text-sm hover:bg-secondary transition-colors max-w-[220px]"
+          title={value === 'auto' ? 'Авто (подбор ИИ)' : value}
+          className="h-9 px-2 sm:px-3 rounded-lg border border-border bg-secondary/60 flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm hover:bg-secondary transition-colors max-w-[104px] sm:max-w-[220px]"
         >
           <Icon name="Sparkles" size={14} className="text-primary shrink-0" />
-          <span className="truncate">{value === 'auto' ? 'Авто (подбор ИИ)' : value || 'Выбрать модель'}</span>
-          <Icon name="ChevronDown" size={14} className="text-muted-foreground shrink-0" />
+          <span className="truncate">
+            <span className="sm:hidden">{value === 'auto' ? 'Авто' : value || 'Модель'}</span>
+            <span className="hidden sm:inline">{value === 'auto' ? 'Авто (подбор ИИ)' : value || 'Выбрать модель'}</span>
+          </span>
+          <Icon name="ChevronDown" size={13} className="text-muted-foreground shrink-0" />
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-96 p-0" align="start">
         <div className="p-2 pb-0">
-          <div className="text-sm font-semibold px-1 pb-2">Нейросети</div>
+          <div className="flex items-center justify-between px-1 pb-2">
+            <span className="text-sm font-semibold">Нейросети</span>
+            {onOpenFaq && (
+              <button
+                onClick={() => { setOpen(false); onOpenFaq(); }}
+                className="sm:hidden flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Icon name="HelpCircle" size={13} />
+                Как выбрать
+              </button>
+            )}
+          </div>
           <div className="flex gap-1.5 pb-2 overflow-x-auto scrollbar-thin">
             {TABS.map((t) => (
               <button

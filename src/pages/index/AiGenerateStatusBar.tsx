@@ -20,7 +20,7 @@ export default function AiGenerateStatusBar({
   return (
     <>
       {usage && (
-        <div className="flex items-center gap-2 mb-2 text-[11px] text-muted-foreground">
+        <div className="hidden sm:flex items-center gap-2 mb-2 text-[11px] text-muted-foreground">
           <div className="flex-1 h-1 rounded-full bg-secondary overflow-hidden max-w-[200px]">
             <div
               className={`h-full rounded-full transition-all ${usagePercent >= 100 ? 'bg-destructive' : 'bg-primary'}`}
