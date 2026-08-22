@@ -444,7 +444,14 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
         ))}
         {sending && (
           <div className="flex justify-start">
-            <div className="bg-card border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm text-muted-foreground">Думаю…</div>
+            {/* Три точки моргают по очереди слева направо — привычный индикатор "печатает…" из
+                мессенджеров, вместо статичного текста "Думаю…". Анимация — .typing-dot в
+                index.css (общий keyframes + nth-child задержки на каждую точку). */}
+            <div className="bg-card border border-border rounded-xl px-3.5 py-3 flex items-center gap-1">
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            </div>
           </div>
         )}
         {error && (

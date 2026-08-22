@@ -322,6 +322,31 @@
   overflow: hidden;
 }
 
+/* "Думаю…" в ленте AI-чата (AiMessageList) — три точки, моргающие по очереди слева направо,
+   как индикатор набора текста в мессенджерах. Точки — три span с одинаковой анимацией и
+   разной задержкой (см. .typing-dot:nth-child), а не три отдельных keyframes. */
+@keyframes typing-dot-bounce {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-2px);
+  }
+}
+.typing-dot {
+  animation: typing-dot-bounce 1.2s ease-in-out infinite;
+}
+.typing-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing-dot:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
 @layer utilities {
   .font-display {
     font-family: "Oswald", sans-serif;
