@@ -444,10 +444,7 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
         ))}
         {sending && (
           <div className="flex justify-start">
-            <div className="bg-card border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm text-muted-foreground">
-              <Icon name="Loader2" size={14} className="animate-spin" />
-              Модель думает…
-            </div>
+            <div className="bg-card border border-border rounded-xl px-3.5 py-2.5 flex items-center gap-2 text-sm text-muted-foreground">Думаю…</div>
           </div>
         )}
         {error && (
