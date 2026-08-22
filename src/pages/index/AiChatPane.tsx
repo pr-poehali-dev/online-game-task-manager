@@ -41,6 +41,9 @@ interface AiChatPaneProps {
   documentFormat: string;
   onDocumentFormatChange: (format: string) => void;
   onPickDocumentHint: (text: string) => void;
+  documentTemplate: AiAttachment | null;
+  onDocumentTemplateChange: (attachment: AiAttachment | null) => void;
+  onUploadTemplate: (file: File) => void;
   onGenerateImage: (params: ImageGenerateParams) => void;
   onGenerateVideo: (params: VideoGenerateParams) => void;
 }
@@ -81,6 +84,9 @@ export default function AiChatPane({
   documentFormat,
   onDocumentFormatChange,
   onPickDocumentHint,
+  documentTemplate,
+  onDocumentTemplateChange,
+  onUploadTemplate,
   onGenerateImage,
   onGenerateVideo,
 }: AiChatPaneProps) {
@@ -169,6 +175,9 @@ export default function AiChatPane({
           documentFormat={documentFormat}
           onDocumentFormatChange={onDocumentFormatChange}
           hasDocument={messages.some((m) => m.hasDocSpec)}
+          documentTemplate={documentTemplate}
+          onDocumentTemplateChange={onDocumentTemplateChange}
+          onUploadTemplate={onUploadTemplate}
         />
       )}
     </div>

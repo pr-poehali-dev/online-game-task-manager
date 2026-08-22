@@ -26,6 +26,10 @@ from common import (
     _aitunnel_request, _bad, _cors_headers, _current_month, _get_or_create_usage, _ok,
     _service_key, _upload_bytes,
 )
+from templates import (
+    FILL_SYSTEM_PROMPT, MAX_TEMPLATE_BYTES,
+    extract_docx_fields, extract_xlsx_fields, fill_docx, fill_xlsx,
+)
 
 XLSX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
 DOCX_CONTENT_TYPE = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -246,6 +250,139 @@ def _build_docx(spec: dict) -> bytes:
     return buffer.getvalue()
 
 
+def _fill_template_flow(cur, conn, schema, me, api_key, model, prompt,
+                        template_url, template_name, chat_id,
+                        user_msg_id, user_created_at, spent, limit_):
+    '''Заполняет бланк сотрудника данными от модели, сохраняя оформление исходного файла.
+
+    Порядок: скачиваем бланк из S3 → достаём список плейсхолдеров {{Поле}} → просим модель
+    подобрать значения → подставляем их в ИСХОДНЫЙ файл (openpyxl/python-docx открывают его как
+    есть, поэтому шрифты, логотип, колонтитулы и формулы остаются нетронутыми) → кладём результат
+    в S3 и отдаём ссылку.
+    '''
+    kind = 'docx' if template_name.lower().endswith('.docx') else 'xlsx' if template_name.lower().endswith('.xlsx') else ''
+    if not kind:
+        kind = 'docx' if template_url.lower().endswith('.docx') else 'xlsx'
+
+    try:
+        with urllib.request.urlopen(template_url, timeout=25) as resp:
+            raw_template = resp.read(MAX_TEMPLATE_BYTES + 1)
+    except Exception as e:
+        print(f'[ai/documents] template download error: {e}')
+        cur.close(); conn.close()
+        return _bad_message('template_download_failed', 'Не удалось прочитать загруженный бланк — попробуйте загрузить файл заново', chat_id, user_msg_id)
+
+    if len(raw_template) > MAX_TEMPLATE_BYTES:
+        cur.close(); conn.close()
+        return _bad_message('template_too_large', 'Бланк слишком большой — максимум 8 МБ', chat_id, user_msg_id)
+
+    try:
+        fields = extract_docx_fields(raw_template) if kind == 'docx' else extract_xlsx_fields(raw_template)
+    except Exception as e:
+        print(f'[ai/documents] template parse error: {e}')
+        cur.close(); conn.close()
+        return _bad_message('template_broken', 'Не удалось открыть бланк — убедитесь, что это файл Word (.docx) или Excel (.xlsx)', chat_id, user_msg_id)
+
+    if not fields:
+        cur.close(); conn.close()
+        return _bad_message(
+            'template_no_fields',
+            'В бланке не найдено ни одного поля. Отметьте места для заполнения двойными фигурными скобками, например {{Заказчик}} или {{Сумма}}',
+            chat_id, user_msg_id,
+        )
+
+    data, err = _aitunnel_request('/chat/completions', api_key, {
+        'model': model,
+        'messages': [
+            {'role': 'system', 'content': FILL_SYSTEM_PROMPT},
+            {'role': 'user', 'content': (
+                f'Поля бланка: {json.dumps(fields, ensure_ascii=False)}\n\n'
+                f'Задание: {prompt}'
+            )},
+        ],
+        'response_format': {'type': 'json_object'},
+    }, timeout=90)
+    if err:
+        cur.close(); conn.close()
+        status, payload_err = err
+        payload_err['userMessageId'] = user_msg_id
+        payload_err['chatId'] = chat_id
+        return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
+
+    choices = data.get('choices') or [{}]
+    raw_answer = (choices[0].get('message') or {}).get('content') or ''
+    used_model = data.get('model') or model
+    cost_rub = (data.get('usage') or {}).get('cost_rub') or 0
+
+    try:
+        parsed = json.loads(_strip_json(raw_answer))
+        values = parsed.get('values') if isinstance(parsed, dict) else None
+        if not isinstance(values, dict):
+            raise ValueError('no values')
+    except Exception:
+        cur.execute(
+            f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+            (cost_rub, me['id'], _current_month())
+        )
+        conn.commit(); cur.close(); conn.close()
+        return _bad_message('document_parse_failed', 'Модель вернула данные в неожиданном виде — попробуйте переформулировать запрос', chat_id, user_msg_id, status=502)
+
+    values = {str(k): ('' if v is None else v) for k, v in values.items()}
+    try:
+        filled = fill_docx(raw_template, values) if kind == 'docx' else fill_xlsx(raw_template, values)
+    except Exception as e:
+        print(f'[ai/documents] template fill error: {e}')
+        cur.close(); conn.close()
+        return _bad_message('template_fill_failed', 'Не удалось заполнить бланк — попробуйте ещё раз', chat_id, user_msg_id, status=502)
+
+    content_type = DOCX_CONTENT_TYPE if kind == 'docx' else XLSX_CONTENT_TYPE
+    base_name = re.sub(r'\.(docx|xlsx)$', '', template_name, flags=re.I) or 'Документ'
+    filename = _safe_filename(f'{base_name} (заполнено)', kind)
+    url = _upload_bytes(filled, kind, content_type, 'documents')
+
+    attachment = {
+        'id': f'doc-{user_msg_id}', 'name': filename, 'url': url,
+        'size': len(filled), 'contentType': content_type,
+    }
+    filled_count = sum(1 for f in fields if f in values)
+    missing = [f for f in fields if f not in values]
+    summary = f'Заполнил ваш бланк «{base_name}» — {filled_count} из {len(fields)} полей.'
+    if missing:
+        summary += ' Не удалось подобрать: ' + ', '.join(missing[:5]) + ('…' if len(missing) > 5 else '')
+
+    cur.execute(
+        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, attachments, model, cost_rub) "
+        f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
+        (chat_id, summary, json.dumps([attachment]), used_model, cost_rub)
+    )
+    assistant_msg_id, assistant_created_at = cur.fetchone()
+    cur.execute(f"UPDATE {schema}.ai_chats SET updated_at = NOW() WHERE id = %s", (chat_id,))
+    cur.execute(
+        f"UPDATE {schema}.ai_usage SET spent_rub = spent_rub + %s WHERE user_id = %s AND month = %s",
+        (cost_rub, me['id'], _current_month())
+    )
+    conn.commit(); cur.close(); conn.close()
+
+    return _ok({
+        'chatId': chat_id,
+        'userMessage': {'id': user_msg_id, 'role': 'user', 'content': prompt, 'createdAt': user_created_at.isoformat()},
+        'assistantMessage': {
+            'id': assistant_msg_id, 'role': 'assistant', 'content': summary,
+            'attachments': [attachment], 'model': used_model, 'costRub': float(cost_rub),
+            'createdAt': assistant_created_at.isoformat(),
+        },
+        'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
+    })
+
+
+def _bad_message(code, message, chat_id, user_msg_id, status=400):
+    '''Ошибка заполнения бланка с понятным текстом для сотрудника — сообщение пользователя уже
+    записано в диалог, поэтому возвращаем его id, чтобы фронт корректно снял «отправку».'''
+    return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({
+        'error': code, 'message': message, 'chatId': chat_id, 'userMessageId': user_msg_id,
+    })}
+
+
 def handle_generate_document(cur, conn, schema, me, body, qs):
     '''Собирает готовый Excel/Word по текстовому запросу сотрудника и возвращает ссылку на файл.
 
@@ -262,6 +399,11 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
     # файла). Если не передан, но в диалоге уже есть документ — правим последний, т.к. уточнение
     # вида «добавь ещё три позиции» почти всегда относится к только что полученному файлу.
     base_message_id = body.get('baseMessageId')
+    # templateUrl — бланк сотрудника (его собственный .docx/.xlsx, загруженный через
+    # upload_attachment). Если он передан, документ НЕ собирается с нуля: в готовый файл
+    # подставляются значения в плейсхолдеры {{Поле}}, чтобы полностью сохранить оформление.
+    template_url = (body.get('templateUrl') or '').strip()
+    template_name = (body.get('templateName') or '').strip()
     if not prompt:
         cur.close(); conn.close()
         return _bad('bad_request')
@@ -318,6 +460,16 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
         (chat_id, prompt)
     )
     user_msg_id, user_created_at = cur.fetchone()
+
+    # Ветка заполнения бланка — полностью отдельный путь: файл сотрудника правится точечно,
+    # структура документа не строится и в doc_spec не пишется (дорабатывать бланк уточнениями
+    # нельзя — нужно заново заполнить исходный бланк).
+    if template_url:
+        return _fill_template_flow(
+            cur, conn, schema, me, api_key, model, prompt,
+            template_url, template_name, chat_id,
+            user_msg_id, user_created_at, spent, limit_,
+        )
 
     if base_spec is not None:
         # Режим доработки: модель получает предыдущую структуру и возвращает её целиком с учётом

@@ -30,6 +30,9 @@ export function useAiSection() {
   const [input, setInput] = useState('');
   // Формат документа в режиме 'document': 'auto' (решает модель) | 'xlsx' | 'docx'.
   const [documentFormat, setDocumentFormat] = useState('auto');
+  // documentTemplate — загруженный бланк сотрудника. Пока он выбран, ассистент заполняет ИМЕННО
+  // этот файл (сохраняя оформление), а не собирает документ с нуля.
+  const [documentTemplate, setDocumentTemplate] = useState<AiAttachment | null>(null);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   // retryAction — что именно повторить по кнопке "Повторить" рядом с текстом ошибки. Храним
@@ -169,6 +172,25 @@ export function useAiSection() {
     setPendingAttachments([]);
   }
 
+  // Бланк грузится тем же способом, что обычные вложения, но кладётся в отдельное состояние:
+  // в сообщение он не прикрепляется, а передаётся серверу как templateUrl.
+  async function handleUploadTemplate(file: File) {
+    setUploading(true);
+    setUploadProgress(null);
+    setSendError('');
+    try {
+      const attachment = await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction));
+      setDocumentTemplate(attachment);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      const message = (err as { message?: string })?.message;
+      setSendError(code ? errorText(code, message) : 'Не удалось загрузить бланк — проверьте соединение');
+    } finally {
+      setUploading(false);
+      setUploadProgress(null);
+    }
+  }
+
   async function handleAddFile(file: File) {
     setUploading(true);
     setUploadProgress(null);
@@ -235,7 +257,11 @@ export function useAiSection() {
         // Режим 'document' идёт отдельным действием: модель отдаёт структуру документа, а
         // .xlsx/.docx собирается на сервере и возвращается вложением (backend/ai/documents.py).
         body: JSON.stringify(mode === 'document'
-          ? { action: 'generate_document', chatId: activeChatId, model, prompt: content, format: documentFormat }
+          ? {
+              action: 'generate_document', chatId: activeChatId, model, prompt: content,
+              format: documentFormat,
+              ...(documentTemplate ? { templateUrl: documentTemplate.url, templateName: documentTemplate.name } : {}),
+            }
           : { action: 'send_message', chatId: activeChatId, model, content, mode, attachments: attachmentsToSend }),
       }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
@@ -464,6 +490,7 @@ export function useAiSection() {
     models, modelsLoading, model, setModel,
     input, setInput, sending, sendError, retryAction, usage, forbidden,
     documentFormat, setDocumentFormat,
+    documentTemplate, setDocumentTemplate, handleUploadTemplate,
     pendingAttachments, uploading, uploadProgress,
     chatListOpen, setChatListOpen,
     modelFaqOpen, setModelFaqOpen,

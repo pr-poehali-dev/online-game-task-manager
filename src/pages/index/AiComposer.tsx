@@ -50,6 +50,11 @@ interface AiComposerProps {
   onDocumentFormatChange?: (format: string) => void;
   // hasDocument — в диалоге уже есть собранный документ: следующий запрос будет доработкой.
   hasDocument?: boolean;
+  // documentTemplate — загруженный бланк сотрудника: ассистент заполнит именно его, сохранив
+  // оформление, вместо сборки документа с нуля.
+  documentTemplate?: AiAttachment | null;
+  onDocumentTemplateChange?: (attachment: AiAttachment | null) => void;
+  onUploadTemplate?: (file: File) => void;
 }
 
 export default function AiComposer({
@@ -57,8 +62,10 @@ export default function AiComposer({
   attachments, onAddFile, onRemoveAttachment, uploading, uploadProgress,
   templates, templatesLoading, onManageTemplates,
   documentFormat = 'auto', onDocumentFormatChange, hasDocument = false,
+  documentTemplate = null, onDocumentTemplateChange, onUploadTemplate,
 }: AiComposerProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const templateInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // expanded — ручное увеличение поля кнопкой (см. скриншот пользователя: маленькое поле ввода
   // неудобно для длинных промптов/кода) — растягивает максимум почти на всю высоту чата.
@@ -104,10 +111,12 @@ export default function AiComposer({
       ? 'Ctrl+Enter — отправить, Tab — отступ'
       : 'Вставьте код или опишите задачу… (Enter — отправить, Tab — отступ)'
     : mode === 'document'
-      ? hasDocument
-        // Документ в диалоге уже есть — следующее сообщение будет доработкой, а не новым файлом.
-        ? 'Что поправить в документе? «добавь три позиции», «пересчитай с НДС 20%»…'
-        : 'Опишите документ: «смета на ремонт офиса, 10 позиций с ценами»…'
+      ? documentTemplate
+        ? 'Какими данными заполнить бланк? «договор с ООО Ромашка на 250 000 ₽»…'
+        : hasDocument
+          // Документ в диалоге уже есть — следующее сообщение будет доработкой, а не новым файлом.
+          ? 'Что поправить в документе? «добавь три позиции», «пересчитай с НДС 20%»…'
+          : 'Опишите документ: «смета на ремонт офиса, 10 позиций с ценами»…'
       : 'Напишите сообщение… (Enter — отправить, Shift+Enter — новая строка)';
 
   return (
@@ -139,32 +148,78 @@ export default function AiComposer({
           <span>Загрузка файла… {Math.round(uploadProgress * 100)}%</span>
         </div>
       )}
-      {mode === 'document' && hasDocument && (
+      {/* Подсказка про доработку не нужна, когда выбран бланк: с ним каждое сообщение заполняет
+          бланк заново, а не правит предыдущий результат. */}
+      {mode === 'document' && hasDocument && !documentTemplate && (
         <div className="mb-2 text-[11px] text-muted-foreground flex items-center gap-1.5">
           <Icon name="Info" size={12} className="shrink-0" />
           Следующее сообщение доработает уже созданный документ. Чтобы сделать новый — начните новый диалог.
         </div>
       )}
-      {/* Формат выбирается только для НОВОГО документа: при доработке он наследуется от исходного
-          файла, иначе таблица могла бы неожиданно превратиться в текстовый документ. */}
-      {mode === 'document' && !hasDocument && (
+      {/* Загруженный бланк: пока он выбран, документ не собирается с нуля — ассистент заполняет
+          именно этот файл, сохраняя его оформление. */}
+      {mode === 'document' && documentTemplate && (
+        <div className="mb-2 flex items-center gap-2 px-2.5 py-2 rounded-lg border border-primary/40 bg-primary/10">
+          <Icon name="FileCheck2" size={14} className="text-primary shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium truncate">{documentTemplate.name}</div>
+            <div className="text-[11px] text-muted-foreground">
+              Заполню этот бланк, сохранив оформление
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onDocumentTemplateChange?.(null)}
+            title="Убрать бланк"
+            className="shrink-0 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+          >
+            <Icon name="X" size={13} />
+          </button>
+        </div>
+      )}
+      {/* Кнопка загрузки бланка доступна всегда в режиме документов — даже если в диалоге уже
+          есть собранный файл: сотрудник может в любой момент переключиться на свой бланк.
+          Выбор формата показываем только для НОВОГО документа с нуля: при доработке он
+          наследуется от исходного файла, а при заполнении бланка берётся из самого бланка. */}
+      {mode === 'document' && !documentTemplate && (
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          <span className="text-[11px] text-muted-foreground mr-0.5">Формат:</span>
-          {DOCUMENT_FORMATS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => onDocumentFormatChange?.(f.value)}
-              className={`h-7 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
-                documentFormat === f.value
-                  ? 'bg-primary/15 border-primary/40 text-primary'
-                  : 'border-border text-muted-foreground hover:text-foreground'
-              }`}
-            >
-              <Icon name={f.icon} size={12} />
-              {f.label}
-            </button>
-          ))}
+          {!hasDocument && (
+            <>
+              <span className="text-[11px] text-muted-foreground mr-0.5">Формат:</span>
+              {DOCUMENT_FORMATS.map((f) => (
+                <button
+                  key={f.value}
+                  type="button"
+                  onClick={() => onDocumentFormatChange?.(f.value)}
+                  className={`h-7 px-2.5 rounded-lg border text-xs font-medium transition-colors flex items-center gap-1.5 ${
+                    documentFormat === f.value
+                      ? 'bg-primary/15 border-primary/40 text-primary'
+                      : 'border-border text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Icon name={f.icon} size={12} />
+                  {f.label}
+                </button>
+              ))}
+            </>
+          )}
+          <input
+            ref={templateInputRef}
+            type="file"
+            accept=".docx,.xlsx"
+            className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) onUploadTemplate?.(f); e.target.value = ''; }}
+          />
+          <button
+            type="button"
+            onClick={() => templateInputRef.current?.click()}
+            disabled={uploading}
+            title="Загрузить свой бланк Word или Excel — ассистент заполнит его, сохранив оформление"
+            className="h-7 px-2.5 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {uploading ? <Icon name="Loader2" size={12} className="animate-spin" /> : <Icon name="Upload" size={12} />}
+            Свой бланк
+          </button>
         </div>
       )}
       {attachments.length > 0 && (

@@ -74,6 +74,9 @@ export default function Ai() {
         documentFormat={ai.documentFormat}
         onDocumentFormatChange={ai.setDocumentFormat}
         onPickDocumentHint={ai.setInput}
+        documentTemplate={ai.documentTemplate}
+        onDocumentTemplateChange={ai.setDocumentTemplate}
+        onUploadTemplate={ai.handleUploadTemplate}
         onGenerateImage={ai.handleGenerateImage}
         onGenerateVideo={ai.handleGenerateVideo}
       />
