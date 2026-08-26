@@ -1,6 +1,8 @@
 import json
 
-from common import _cors_headers, _schema, _db, _bad, _current_user
+import traceback
+
+from common import _cors_headers, _schema, _db, _bad, _current_user, _log_ai_error
 import agent as agent_actions
 import chats as chats_actions
 import documents as documents_actions
@@ -19,6 +21,9 @@ import userfiles as userfiles_actions
 ACTIONS = {
     # Каталог моделей, лимиты, диалоги, поиск, шаблоны промптов
     'list_models': chats_actions.handle_list_models,
+    # Журнал ошибок AI — диагностика на боевом сервере, где логи функции недоступны
+    'ai_errors': chats_actions.handle_ai_errors,
+    'clear_ai_errors': chats_actions.handle_clear_ai_errors,
     'usage': chats_actions.handle_usage,
     'balance': chats_actions.handle_balance,
     'list_chats': chats_actions.handle_list_chats,
@@ -156,7 +161,37 @@ def handler(event: dict, context) -> dict:
 
     handle = ACTIONS.get(action)
     if handle:
-        return handle(cur, conn, schema, me, body, qs)
+        # ЕДИНАЯ точка записи неудач в журнал ошибок AI (ai_error_log). Ловим здесь, а не в
+        # каждом обработчике: так в журнал попадает ЛЮБАЯ ошибка любого действия, включая
+        # неожиданные исключения, — на боевом сервере логи облачной функции недоступны.
+        try:
+            result = handle(cur, conn, schema, me, body, qs)
+        except Exception as e:
+            _log_ai_error(schema, me['id'], action, 'exception', 500,
+                          f'{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}',
+                          model=body.get('model'), chat_id=body.get('chatId'),
+                          project_id=body.get('projectId'))
+            try:
+                cur.close(); conn.close()
+            except Exception:
+                pass
+            return _bad('server_error', 500)
+
+        status = result.get('statusCode', 200)
+        if status >= 400:
+            payload = {}
+            try:
+                payload = json.loads(result.get('body') or '{}')
+            except Exception:
+                pass
+            _log_ai_error(
+                schema, me['id'], action,
+                payload.get('error') or f'http_{status}', status,
+                payload.get('message'), model=body.get('model'),
+                chat_id=body.get('chatId') or payload.get('chatId'),
+                project_id=body.get('projectId'),
+            )
+        return result
 
     cur.close(); conn.close()
     return _bad('unknown_action')

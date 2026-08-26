@@ -286,3 +286,39 @@ def handle_delete_template(cur, conn, schema, me, body, qs):
     found = cur.rowcount > 0
     cur.close(); conn.close()
     return _ok({'ok': True}) if found else _bad('not_found', 404)
+
+def handle_ai_errors(cur, conn, schema, me, body, qs):
+    '''Журнал ошибок раздела AI — что именно ответил AI Tunnel, по какой модели и действию.
+    Нужен потому, что на боевом сервере логи облачной функции недоступны, и причина ошибки
+    «Не удалось выполнить запрос» иначе не видна.
+
+    Обычный сотрудник видит ТОЛЬКО свои ошибки, администратор (team_manage) — по всей команде.'''
+    limit = min(int(qs.get('limit') or body.get('limit') or 100), 500)
+    where = '' if me['can_manage_team'] else 'WHERE e.user_id = %s'
+    params = () if me['can_manage_team'] else (me['id'],)
+    cur.execute(
+        f"SELECT e.id, e.action, e.model, e.error_code, e.status_code, e.message, "
+        f"e.chat_id, e.project_id, e.created_at, u.first_name, u.last_name "
+        f"FROM {schema}.ai_error_log e "
+        f"LEFT JOIN {schema}.users u ON u.id = e.user_id "
+        f"{where} ORDER BY e.id DESC LIMIT {limit}",
+        params
+    )
+    entries = [{
+        'id': r[0], 'action': r[1], 'model': r[2], 'errorCode': r[3], 'statusCode': r[4],
+        'message': r[5], 'chatId': r[6], 'projectId': r[7],
+        'createdAt': r[8].isoformat() if r[8] else None,
+        'userName': ' '.join(x for x in [r[9], r[10]] if x) or '—',
+    } for r in cur.fetchall()]
+    cur.close(); conn.close()
+    return _ok({'entries': entries, 'canSeeAll': me['can_manage_team']})
+
+
+def handle_clear_ai_errors(cur, conn, schema, me, body, qs):
+    '''Очистка журнала ошибок AI. Только для администратора: журнал общий для команды.'''
+    if not me['can_manage_team']:
+        cur.close(); conn.close()
+        return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+    cur.execute(f"DELETE FROM {schema}.ai_error_log")
+    cur.close(); conn.close()
+    return _ok({'ok': True})

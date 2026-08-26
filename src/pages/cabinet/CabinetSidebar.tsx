@@ -1,6 +1,6 @@
 import Icon from '@/components/ui/icon';
 
-export type CabinetSection = 'profile' | 'project' | 'team' | 'activity' | 'storage' | 'stats' | 'faq';
+export type CabinetSection = 'profile' | 'project' | 'team' | 'activity' | 'aierrors' | 'storage' | 'stats' | 'faq';
 
 interface NavItem {
   key: CabinetSection;
@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { key: 'project', label: 'Управление проектом', icon: 'Settings' },
   { key: 'team', label: 'Команда', icon: 'Users' },
   { key: 'activity', label: 'Журнал', icon: 'History' },
+  { key: 'aierrors', label: 'Ошибки AI', icon: 'TriangleAlert' },
   { key: 'storage', label: 'Хранилище', icon: 'HardDrive' },
   { key: 'stats', label: 'Статистика', icon: 'BarChart3' },
   { key: 'faq', label: 'FAQ', icon: 'HelpCircle' },
@@ -22,7 +23,7 @@ const NAV_ITEMS: NavItem[] = [
 // см. backend/admin/index.py has_team_access) ИЛИ настоящая роль admin. "Управление проектом" пока
 // пустышка (наполнение — отдельный этап), тоже доступно только с team_manage/admin — по смыслу это
 // тоже административная настройка проекта, не должна быть доступна рядовому участнику.
-const TEAM_ONLY_SECTIONS = new Set<CabinetSection>(['project', 'team', 'activity', 'storage']);
+const TEAM_ONLY_SECTIONS = new Set<CabinetSection>(['project', 'team', 'activity', 'aierrors', 'storage']);
 
 export function SidebarContent({
   active,

@@ -509,3 +509,27 @@ def _message_to_dict(row):
     if len(row) > 12:
         result['agentSteps'] = row[12]
     return result
+
+def _log_ai_error(schema, user_id, action, error_code, status_code=None,
+                  message=None, model=None, chat_id=None, project_id=None):
+    '''Записывает неудачу раздела AI в ai_error_log. Логи облачной функции доступны только на
+    платформе, поэтому на боевом сервере причину ошибки «Не удалось выполнить запрос» иначе не
+    увидеть — храним её в базе вместе с ДОСЛОВНЫМ ответом AI Tunnel.
+
+    Открывает СВОЁ соединение: вызывается в том числе после того, как обработчик уже закрыл
+    основное. Любой сбой самой записи молча игнорируется — журнал не должен ломать ответ
+    пользователю.'''
+    try:
+        conn = _db()
+        cur = conn.cursor()
+        cur.execute(
+            f"INSERT INTO {schema}.ai_error_log "
+            f"(user_id, action, model, error_code, status_code, message, chat_id, project_id) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            (user_id, (action or '')[:100], (model or None), (error_code or '')[:100],
+             status_code, (message or None) and str(message)[:2000],
+             chat_id or None, project_id or None)
+        )
+        cur.close(); conn.close()
+    except Exception:
+        pass

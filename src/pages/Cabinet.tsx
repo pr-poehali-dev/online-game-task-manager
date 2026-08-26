@@ -11,6 +11,7 @@ import SessionsModal from './admin/SessionsModal';
 import StatsModal from './admin/StatsModal';
 import FilesList from './admin/FilesList';
 import ActivityLogList from './admin/ActivityLogList';
+import AiErrorLog from './admin/AiErrorLog';
 import CabinetSidebar, { SidebarContent, cabinetSectionLabel } from './cabinet/CabinetSidebar';
 import type { CabinetSection } from './cabinet/CabinetSidebar';
 import CabinetProfile from './cabinet/CabinetProfile';
@@ -208,6 +209,12 @@ export default function Cabinet() {
                 range={filesAndActivity.activityRange}
                 setRange={filesAndActivity.setActivityRangeAndReload}
               />
+            </div>
+          )}
+
+          {visited.has('aierrors') && team.hasTeamAccess && (
+            <div className={section === 'aierrors' ? 'max-w-3xl' : 'hidden'}>
+              <AiErrorLog />
             </div>
           )}
 
