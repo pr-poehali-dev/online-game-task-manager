@@ -12,6 +12,7 @@ import StatsModal from './admin/StatsModal';
 import FilesList from './admin/FilesList';
 import ActivityLogList from './admin/ActivityLogList';
 import AiErrorLog from './admin/AiErrorLog';
+import AiStorageSummary from './cabinet/AiStorageSummary';
 import CabinetSidebar, { SidebarContent, cabinetSectionLabel } from './cabinet/CabinetSidebar';
 import type { CabinetSection } from './cabinet/CabinetSidebar';
 import CabinetProfile from './cabinet/CabinetProfile';
@@ -216,7 +217,10 @@ export default function Cabinet() {
           {visited.has('storage') && team.hasTeamAccess && (
             <div className={section === 'storage' ? 'max-w-3xl' : 'hidden'}>
               <h1 className="text-xl font-semibold mb-1">Хранилище</h1>
-              <p className="text-sm text-muted-foreground mb-6">Все файлы, залитые в базу знаний, идеи и задачи.</p>
+              <p className="text-sm text-muted-foreground mb-6">Занятое место и все файлы, залитые в базу знаний, идеи и задачи.</p>
+              <AiStorageSummary />
+              <h2 className="text-base font-semibold mb-1">Файлы разделов</h2>
+              <p className="text-sm text-muted-foreground mb-4">База знаний, идеи и задачи.</p>
               <FilesList loading={filesAndActivity.filesLoading} files={filesAndActivity.files} onDelete={filesAndActivity.deleteFile} />
             </div>
           )}
