@@ -159,8 +159,9 @@ export default function Archive({
       )}
 
       {/* Фильтр по серверу: выбран конкретный — в списке остаются только его задачи.
-          Показываем, только если в архиве есть задачи больше чем с одного сервера. */}
-      {tab === 'tasks' && serversInArchive.length > 1 && (
+          Показываем всегда, когда в архиве есть хотя бы один сервер: ряд фильтров должен быть
+          на виду, иначе непонятно, что выбор серверов вообще существует. */}
+      {tab === 'tasks' && serversInArchive.length > 0 && (
         <div className="flex flex-wrap items-center gap-2 mb-5">
           <button
             onClick={() => setServerFilter('all')}
