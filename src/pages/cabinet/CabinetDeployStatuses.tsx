@@ -44,7 +44,7 @@ function StatusForm({ initial, saving, error, lockColumn, onCancel, onSave }: {
   const [form, setForm] = useState<StatusFormState>(initial);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+    <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4">
       <div>
         <label className="block text-xs text-muted-foreground mb-1.5">Название статуса</label>
         <input
@@ -271,7 +271,7 @@ export default function CabinetDeployStatuses() {
                 />
               </div>
             ) : (
-              <div key={d.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+              <div key={d.id} className="flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4">
                 <div
                   className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
                   style={{ background: `hsl(${d.color} / 0.15)`, color: `hsl(${d.color})` }}

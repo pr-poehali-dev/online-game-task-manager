@@ -38,7 +38,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
       <div className="space-y-2">
         <button
           onClick={() => setSub('servers')}
-          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4 hover:border-primary/50 transition-colors text-left"
         >
           <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
             <Icon name="Server" size={17} className="text-primary" />
@@ -52,7 +52,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
 
         <button
           onClick={() => setSub('categories')}
-          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4 hover:border-primary/50 transition-colors text-left"
         >
           <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
             <Icon name="Tag" size={17} className="text-primary" />
@@ -66,7 +66,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
 
         <button
           onClick={() => setSub('deploy')}
-          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4 hover:border-primary/50 transition-colors text-left"
         >
           <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
             <Icon name="Rocket" size={17} className="text-primary" />
@@ -80,7 +80,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
 
         <button
           onClick={() => setSub('storage')}
-          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4 hover:border-primary/50 transition-colors text-left"
         >
           <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
             <Icon name="Cloud" size={17} className="text-primary" />
@@ -101,7 +101,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
 
         <button
           onClick={() => setSub('keys')}
-          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4 hover:border-primary/50 transition-colors text-left"
         >
           <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
             <Icon name="KeyRound" size={17} className="text-primary" />

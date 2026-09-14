@@ -24,13 +24,21 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4 relative">
+    <div className="min-h-screen flex items-center justify-center bg-background grid-bg px-4 relative">
       <div className="absolute top-4 right-4">
         <ThemeToggle />
       </div>
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center gap-2 mb-4">
+          {/* Знак + название вместо голого текста: фирменный блок собирает страницу и даёт
+              точку входа для взгляда. Тот же знак, что в боковом меню, — узнаваемость. */}
+          <div className="inline-flex items-center gap-3 mb-4">
+            <div
+              className="h-11 w-11 rounded-lg flex items-center justify-center shrink-0 shadow-accent"
+              style={{ background: 'linear-gradient(135deg, hsl(35 85% 42%), hsl(45 92% 58%))' }}
+            >
+              <Icon name="Swords" size={22} className="text-black/80" />
+            </div>
             <span className="font-display tracking-widest text-2xl" style={{ letterSpacing: '0.14em', color: 'hsl(35 85% 60%)' }}>ЭРА</span>
           </div>
           <h1 className="text-xl font-semibold mb-2">Вход для команды</h1>
@@ -39,7 +47,9 @@ export default function Login() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-border bg-card p-6 flex flex-col items-center gap-4">
+        {/* Карточка входа поднята над фоном тенью и светлой верхней гранью — это первое, что
+            видит человек, и плоская панель здесь сразу задаёт «бюджетное» впечатление. */}
+        <div className="rounded-2xl border border-border/70 bg-card p-6 flex flex-col items-center gap-4 shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.05),0_12px_32px_-8px_hsl(222_30%_2%/0.5)]">
           <BotLoginButton onSuccess={handleSuccess} onError={setError} />
 
           {error && (

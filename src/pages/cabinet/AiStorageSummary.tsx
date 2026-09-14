@@ -81,7 +81,7 @@ export default function AiStorageSummary() {
         Сколько занимают файлы сотрудников и кто занимает больше всех.
       </p>
 
-      <div className="rounded-xl border border-border bg-card p-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4">
         {loading ? (
           <div className="py-8 flex justify-center">
             <Icon name="Loader2" size={18} className="animate-spin text-primary" />

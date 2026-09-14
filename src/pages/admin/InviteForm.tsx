@@ -20,7 +20,7 @@ export default function InviteForm({
   onInvite: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4 mb-6">
+    <div className="rounded-xl border border-border bg-card panel-raised p-4 mb-6">
       <label className="block text-xs text-muted-foreground mb-2">Пригласить участника: роль, список задач и Telegram @username</label>
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="flex items-center sm:w-52 rounded-lg border border-border bg-secondary/60 px-3">

@@ -34,7 +34,7 @@ function CategoryForm({ initial, saving, error, onCancel, onSave }: {
   const [form, setForm] = useState<CategoryFormState>(initial);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+    <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4">
       <div>
         <label className="block text-xs text-muted-foreground mb-1.5">Название категории</label>
         <input
@@ -199,7 +199,7 @@ export default function CabinetCategories() {
                 />
               </div>
             ) : (
-              <div key={c.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+              <div key={c.id} className="flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4">
                 <div
                   className="h-9 w-9 rounded-lg flex items-center justify-center shrink-0"
                   style={{ background: `hsl(${c.color} / 0.15)`, color: `hsl(${c.color})` }}

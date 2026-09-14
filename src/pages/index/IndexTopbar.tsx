@@ -126,11 +126,13 @@ export default function IndexTopbar({
             <button
               key={t.k}
               onClick={() => setView(t.k as typeof view)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                view === t.k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ease-premium ${
+                view === t.k
+                  ? 'bg-gradient-to-b from-[hsl(38_90%_60%)] to-[hsl(38_85%_50%)] text-primary-foreground shadow-accent'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
               }`}
             >
-              <Icon name={t.icon} size={15} />
+              <Icon name={t.icon} size={16} />
               {t.label}
               {t.k === 'restart' && restartCount > 0 && (
                 <span

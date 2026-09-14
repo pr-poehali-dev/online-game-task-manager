@@ -29,7 +29,7 @@ export default function UserPermissionsPanel({
   toggleShowTgContact: (u: TeamUser) => void;
 }) {
   return (
-    <div className="mt-1.5 rounded-xl border border-border bg-card/60 p-4 space-y-4">
+    <div className="mt-1.5 rounded-xl border border-border bg-card panel-raised/60 p-4 space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           Индивидуальные права — приоритетнее роли «{u.role === 'admin' ? 'Администратор' : 'Участник'}».

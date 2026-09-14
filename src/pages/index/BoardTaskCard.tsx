@@ -34,8 +34,10 @@ export function TaskCard({
       ref={setNodeRef}
       {...(canDrag ? { ...attributes, ...listeners } : {})}
       onClick={() => !isDragging && onCardClick(t)}
-      className={`group relative rounded-lg border border-border/70 bg-card p-4 shadow-raised hover:border-primary/40 hover:shadow-md hover:-translate-y-px transition-all duration-200 cursor-pointer animate-scale-in ${isDragging ? 'opacity-30' : ''} ${canDrag ? 'touch-none' : ''}`}
-      style={{ animationDelay: `${i * 60}ms` }}
+      className={`group relative rounded-lg border border-border/70 bg-card p-4 shadow-raised hover:border-primary/40 hover:shadow-md hover:-translate-y-px transition-all duration-200 ease-premium cursor-pointer animate-scale-in ${isDragging ? 'opacity-30' : ''} ${canDrag ? 'touch-none' : ''}`}
+      /* Каскад появления ограничен шестью шагами: при 30 задачах прежние i*60ms растягивали
+         выход последней карточки почти на 2 секунды — доска казалась медленной. */
+      style={{ animationDelay: `${Math.min(i, 6) * 40}ms` }}
     >
       {canArchive && (
         <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
@@ -44,7 +46,7 @@ export function TaskCard({
             title="Отправить в архив"
             className={`h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-all ${menuFor === t.id ? 'opacity-100 text-primary bg-primary/10' : 'opacity-0 group-hover:opacity-100'}`}
           >
-            <Icon name="Archive" size={13} />
+            <Icon name="Archive" size={14} />
           </button>
           {menuFor === t.id && (
             <div className="absolute right-0 top-7 w-44 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
@@ -69,7 +71,7 @@ export function TaskCard({
           className="absolute top-2 left-2 h-6 w-6 rounded-md flex items-center justify-center text-muted-foreground/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
           title="Перетащите, чтобы сменить статус"
         >
-          <Icon name="GripVertical" size={13} />
+          <Icon name="GripVertical" size={14} />
         </div>
       )}
       <div className="flex items-center justify-between mb-2 pr-7">
@@ -89,19 +91,19 @@ export function TaskCard({
         {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
         {t.commentCount != null && t.commentCount > 0 && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Icon name="MessageSquare" size={11} />
+            <Icon name="MessageSquare" size={12} />
             {t.commentCount}
           </span>
         )}
         {t.kbArticleIds && t.kbArticleIds.length > 0 && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground" title="Есть связанные статьи">
-            <Icon name="BookOpen" size={11} />
+            <Icon name="BookOpen" size={12} />
             {t.kbArticleIds.length}
           </span>
         )}
         {t.createdAt && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground ml-auto" title="Время жизни задачи">
-            <Icon name="Clock" size={11} />
+            <Icon name="Clock" size={12} />
             {taskAge(t.createdAt)}
           </span>
         )}

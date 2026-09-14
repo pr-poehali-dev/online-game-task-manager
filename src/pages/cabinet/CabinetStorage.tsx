@@ -99,7 +99,7 @@ export default function CabinetStorage() {
       <div className="max-w-2xl">
         <h1 className="text-xl font-semibold mb-1">Хранилище (MinIO)</h1>
         <p className="text-sm text-muted-foreground mb-6">Адреса и ключи для файлового хранилища.</p>
-        <div className="rounded-xl border border-border bg-card p-5 flex items-start gap-3">
+        <div className="rounded-xl border border-border bg-card panel-raised p-5 flex items-start gap-3">
           <Icon name="Lock" size={18} className="text-muted-foreground shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground">
             Эта настройка доступна только владельцу проекта.
@@ -115,7 +115,7 @@ export default function CabinetStorage() {
         <h1 className="text-xl font-semibold mb-1">Хранилище</h1>
         <p className="text-sm text-muted-foreground mb-6">Занятое место и настройки файлового хранилища.</p>
         <AiStorageSummary />
-        <div className="rounded-xl border border-border bg-card p-5 flex items-start gap-3">
+        <div className="rounded-xl border border-border bg-card panel-raised p-5 flex items-start gap-3">
           <Icon name="Info" size={18} className="text-muted-foreground shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground">
             Эта настройка доступна только на вашем собственном сервере (после переноса проекта по
@@ -142,7 +142,7 @@ export default function CabinetStorage() {
         нескольких секунд.
       </p>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4">
         {FIELDS.map((f) => (
           <div key={f.key}>
             <label className="block text-xs text-muted-foreground mb-1.5">{f.label}</label>

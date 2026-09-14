@@ -194,7 +194,7 @@ export default function CabinetProfile({ user }: { user: AuthUser }) {
       )}
 
       {user.tg_username && (
-        <div className="mt-4 rounded-xl border border-border bg-card p-4 flex items-center gap-3">
+        <div className="mt-4 rounded-xl border border-border bg-card panel-raised p-4 flex items-center gap-3">
           <Icon name="Send" size={16} className="text-primary shrink-0" />
           <div className="min-w-0">
             <div className="text-xs text-muted-foreground">Telegram</div>

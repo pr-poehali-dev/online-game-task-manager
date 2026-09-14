@@ -45,8 +45,10 @@ export function SidebarContent({
       {showLogo && (
         <div className="px-5 pt-5 pb-4 border-b border-border">
           <button onClick={() => setView('board')} className="flex items-center gap-3 text-left hover:opacity-80 transition-opacity">
-            <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: 'linear-gradient(135deg, hsl(35 85% 40%), hsl(45 90% 55%))' }}>
+            {/* Знак: градиент + светлая грань сверху внутри + тёплое свечение наружу. Плоский
+                градиентный квадрат без этих двух слоёв читается как заглушка. */}
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center shrink-0 shadow-accent"
+              style={{ background: 'linear-gradient(135deg, hsl(35 85% 42%), hsl(45 92% 58%))' }}>
               <Icon name="Swords" size={20} className="text-black/80" />
             </div>
             <div>
@@ -63,11 +65,11 @@ export function SidebarContent({
         <div className="space-y-0.5">
           <button
             onClick={() => setCategory('all')}
-            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors ${category === 'all' ? 'bg-primary/15 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+            className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm surface-interactive ${category === 'all' ? 'bg-primary/15 text-primary font-medium shadow-[inset_0_1px_0_0_hsl(45_100%_80%/0.08)]' : 'text-muted-foreground hover:text-foreground'}`}
           >
-            <Icon name="LayoutGrid" size={14} />
+            <Icon name="LayoutGrid" size={16} />
             {view === 'knowledge' ? 'Все статьи' : 'Все задачи'}
-            <span className="ml-auto text-xs font-mono opacity-60">{view === 'knowledge' ? kbArticles.length : tasks.length}</span>
+            <span className="ml-auto text-xs num opacity-60">{view === 'knowledge' ? kbArticles.length : tasks.length}</span>
           </button>
           {categories.map((cat) => {
             const count = view === 'knowledge'
@@ -77,16 +79,16 @@ export function SidebarContent({
               <button
                 key={cat.id}
                 onClick={() => setCategory(cat.id)}
-                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm transition-colors"
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-sm surface-interactive"
                 style={{
                   background: category === cat.id ? `hsl(${cat.color} / 0.12)` : 'transparent',
                   color: category === cat.id ? `hsl(${cat.color})` : 'hsl(var(--muted-foreground))',
                   fontWeight: category === cat.id ? 500 : 400,
                 }}
               >
-                <Icon name={cat.icon} size={14} />
+                <Icon name={cat.icon} size={16} />
                 {cat.label}
-                <span className="ml-auto text-xs font-mono opacity-60">{count}</span>
+                <span className="ml-auto text-xs num opacity-60">{count}</span>
               </button>
             );
           })}
@@ -96,7 +98,7 @@ export function SidebarContent({
       <div className="px-4 pt-3 pb-2 shrink-0 border-t border-border">
         <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground/70 mb-2.5 px-1 flex items-center gap-1.5">
           Команда
-          <span className="text-[10px] font-mono opacity-60">
+          <span className="text-[11px] num opacity-60">
             {team.filter((m) => m.online).length}/{team.length} онлайн
           </span>
         </div>
@@ -115,7 +117,7 @@ export function SidebarContent({
                 key={m.id}
                 onClick={() => { setAssigneeFilter(filterActive ? 'all' : m.id); setView('board'); }}
                 title={filterActive ? 'Показать все задачи' : `Показать задачи: ${displayName}`}
-                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg transition-colors group cursor-pointer ${filterActive ? 'bg-primary/15 ring-1 ring-primary/40' : 'hover:bg-secondary/50'}`}
+                className={`flex items-center gap-2.5 px-2 py-1.5 rounded-lg surface-interactive group cursor-pointer ${filterActive ? 'bg-primary/15 ring-1 ring-primary/40' : ''}`}
               >
                 <div className="relative shrink-0">
                   {m.photo_url ? (
@@ -135,14 +137,16 @@ export function SidebarContent({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="text-xs font-medium truncate">{displayName}</div>
-                  <div className="text-xs text-muted-foreground truncate" style={{ fontSize: '10px' }}>
+                  {/* 11px с лёгким трекингом вместо 10px впритык: мелкий текст должен «дышать»,
+                      иначе строка выглядит сжатой и дешёвой. */}
+                  <div className="text-[11px] tracking-[0.01em] text-muted-foreground/80 truncate">
                     {m.specialization || (m.role === 'admin' ? 'Администратор' : 'Участник')}
                   </div>
                 </div>
                 {openTasks > 0 && (
                   <span
                     title={`Открытых задач: ${openTasks}`}
-                    className="shrink-0 min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center group-hover:opacity-0 transition-opacity"
+                    className="shrink-0 min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[11px] num font-semibold flex items-center justify-center group-hover:opacity-0 transition-opacity"
                   >
                     {openTasks}
                   </span>

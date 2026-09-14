@@ -91,7 +91,20 @@ export default {
 				'2xl': '0 32px 72px -20px hsl(222 30% 2% / 0.70)',
 				// Для карточек: тончайшая светлая грань сверху — имитация падающего света.
 				raised: '0 1px 0 0 hsl(210 40% 100% / 0.04) inset, 0 2px 8px -2px hsl(222 30% 2% / 0.35)',
+				// Акцентные элементы (активная вкладка, главная кнопка): светлая грань сверху внутри
+				// + мягкое ЦВЕТНОЕ свечение наружу. Именно свечение читается как «дорогая» подсветка,
+				// а не плоская заливка — цвет при этом остаётся тем же, меняется только подача.
+				accent: '0 1px 0 0 hsl(45 100% 80% / 0.35) inset, 0 0 0 1px hsl(38 85% 50% / 0.25), 0 6px 20px -8px hsl(38 85% 50% / 0.45)',
+				'accent-hover': '0 1px 0 0 hsl(45 100% 80% / 0.45) inset, 0 0 0 1px hsl(38 85% 52% / 0.35), 0 10px 28px -8px hsl(38 85% 50% / 0.55)',
 				none: 'none'
+			},
+			// Единая кривая движения для всего интерфейса. Дефолтный ease в браузере линеен на
+			// выходе и читается «дёшево»; эта кривая тормозит мягко, как физическая инерция.
+			transitionTimingFunction: {
+				premium: 'cubic-bezier(.32,.72,0,1)'
+			},
+			transitionDuration: {
+				premium: '200ms'
 			},
 			keyframes: {
 				'accordion-down': {
@@ -121,14 +134,27 @@ export default {
 				'pulse-dot': {
 					'0%, 100%': { opacity: '1' },
 					'50%': { opacity: '0.4' }
+				},
+				// Очень медленный дрейф фоновых засветок. Период 60 c и амплитуда в единицы процентов:
+				// заметить движение нельзя, но сцена перестаёт быть «мёртвой картинкой».
+				'ambient-drift': {
+					'0%, 100%': { transform: 'translate3d(0, 0, 0) scale(1)' },
+					'50%': { transform: 'translate3d(-2%, 1.5%, 0) scale(1.06)' }
+				},
+				// Пробег блика по скелетону — вместо бесконечной крутилки.
+				shimmer: {
+					'100%': { transform: 'translateX(100%)' }
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
 				'accordion-up': 'accordion-up 0.2s ease-out',
-				'fade-in': 'fade-in 0.4s ease-out both',
-				'scale-in': 'scale-in 0.3s ease-out both',
-				'pulse-dot': 'pulse-dot 2s ease-in-out infinite'
+				// Появление — по общей премиальной кривой, а не дефолтным ease-out.
+				'fade-in': 'fade-in 0.4s cubic-bezier(.32,.72,0,1) both',
+				'scale-in': 'scale-in 0.26s cubic-bezier(.32,.72,0,1) both',
+				'pulse-dot': 'pulse-dot 2s ease-in-out infinite',
+				'ambient-drift': 'ambient-drift 60s ease-in-out infinite',
+				shimmer: 'shimmer 1.6s cubic-bezier(.32,.72,0,1) infinite'
 			}
 		}
 	},

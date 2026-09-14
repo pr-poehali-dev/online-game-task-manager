@@ -14,6 +14,7 @@ import { columns, CategoryBadge, PriorityBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 import { useCatalog } from '@/lib/catalog';
 import type { DeployStatusItem } from '@/lib/catalog';
+import { BoardColumnSkeleton } from '@/components/ui/skeleton';
 import { TaskCard, Column } from './BoardTaskCard';
 import { HoldSection } from './BoardHoldSection';
 import { SORT_OPTIONS, sortTasks, canDragTask } from './boardSort';
@@ -87,9 +88,22 @@ export default function Board({
   }
 
   if (loading) {
+    // Скелетон вместо крутилки: заглушка повторяет реальную сетку колонок и геометрию карточек,
+    // поэтому при загрузке данных макет не «прыгает», а проявляется — интерфейс субъективно
+    // кажется заметно быстрее, хотя время запроса не меняется.
     return (
-      <div className="flex justify-center py-16">
-        <Icon name="Loader2" size={26} className="animate-spin text-primary" />
+      <div className="animate-fade-in">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {columns.map((col, ci) => (
+            <div key={col.id} className="flex flex-col">
+              <div className="flex items-center gap-2 mb-4 px-1">
+                <Icon name={col.icon} size={16} className="text-muted-foreground/40" />
+                <h2 className="font-display tracking-wide text-sm uppercase text-muted-foreground/40">{col.title}</h2>
+              </div>
+              <BoardColumnSkeleton count={ci === 1 ? 2 : 3} />
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -106,9 +120,9 @@ export default function Board({
               sortMode !== 'smart' ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
             }`}
           >
-            <Icon name={activeSort.icon} size={13} />
+            <Icon name={activeSort.icon} size={14} />
             {activeSort.label}
-            <Icon name="ChevronDown" size={12} />
+            <Icon name="ChevronDown" size={14} />
           </button>
           {sortOpen && (
             <div className="absolute right-0 top-9 z-20 w-48 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
@@ -149,9 +163,9 @@ export default function Board({
               return (
                 <div key={col.id} className="flex flex-col">
                   <div className="flex items-center gap-2 mb-4 px-1">
-                    <Icon name={col.icon} size={17} className="text-muted-foreground" />
+                    <Icon name={col.icon} size={16} className="text-muted-foreground" />
                     <h2 className="font-display tracking-wide text-sm uppercase">{col.title}</h2>
-                    <span className="ml-auto text-xs font-mono text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">
+                    <span className="ml-auto text-xs num text-muted-foreground bg-secondary/60 px-2 py-0.5 rounded-md">
                       {colTasks.length}
                     </span>
                   </div>
@@ -174,9 +188,9 @@ export default function Board({
                     {can('task_create') && (
                       <button
                         onClick={() => onAddClick(col.id)}
-                        className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors flex items-center justify-center gap-2"
+                        className="w-full rounded-xl border border-dashed border-border py-2.5 text-sm text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-secondary/30 transition-all duration-200 ease-premium flex items-center justify-center gap-2"
                       >
-                        <Icon name="Plus" size={15} />
+                        <Icon name="Plus" size={16} />
                         Добавить
                       </button>
                     )}

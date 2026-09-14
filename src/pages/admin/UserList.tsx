@@ -114,7 +114,7 @@ export default function UserList({
         const pending = u.telegram_id <= 0;
         return (
           <div key={u.id}>
-          <div className="flex items-center gap-3 rounded-xl border border-border bg-card p-3">
+          <div className="flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-3">
             <UserCardInfo
               u={u}
               pending={pending}

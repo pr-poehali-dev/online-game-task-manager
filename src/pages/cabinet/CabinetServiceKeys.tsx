@@ -122,7 +122,7 @@ export default function CabinetServiceKeys() {
       <div className="max-w-2xl">
         <h1 className="text-xl font-semibold mb-1">Служебные ключи</h1>
         <p className="text-sm text-muted-foreground mb-6">Прочая служебная информация для работы проекта.</p>
-        <div className="rounded-xl border border-border bg-card p-5 flex items-start gap-3">
+        <div className="rounded-xl border border-border bg-card panel-raised p-5 flex items-start gap-3">
           <Icon name="Lock" size={18} className="text-muted-foreground shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground">Эта настройка доступна только владельцу проекта.</div>
         </div>
@@ -137,7 +137,7 @@ export default function CabinetServiceKeys() {
         Прочая служебная информация для работы проекта.
       </p>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Icon name="Server" size={13} />
           SSH-доступ к VPS лаунчера
@@ -165,7 +165,7 @@ export default function CabinetServiceKeys() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4 mt-4">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Icon name="FileText" size={13} />
           SFTP-доступ к логам
@@ -193,7 +193,7 @@ export default function CabinetServiceKeys() {
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4 mt-4">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Icon name="Database" size={13} />
           База логов (ускоренный поиск)
@@ -226,7 +226,7 @@ export default function CabinetServiceKeys() {
 
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 space-y-4 mt-4">
+      <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4 mt-4">
         <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <Icon name="Sparkles" size={13} />
           Доступ к AI Tunnel

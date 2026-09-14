@@ -42,7 +42,7 @@ function ServerForm({ initial, saving, error, onCancel, onSave }: {
   const [form, setForm] = useState<ServerFormState>(initial);
 
   return (
-    <div className="rounded-xl border border-border bg-card p-4 space-y-4">
+    <div className="rounded-xl border border-border bg-card panel-raised p-4 space-y-4">
       <div>
         <label className="block text-xs text-muted-foreground mb-1.5">Название сервера</label>
         <input
@@ -307,7 +307,7 @@ export default function CabinetServers() {
                 />
               </div>
             ) : (
-              <div key={s.id} className="flex items-center gap-3 rounded-xl border border-border bg-card p-4">
+              <div key={s.id} className="flex items-center gap-3 rounded-xl border border-border bg-card panel-raised p-4">
                 <span className="h-3 w-3 rounded-full shrink-0" style={{ background: `hsl(${s.color})` }} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
