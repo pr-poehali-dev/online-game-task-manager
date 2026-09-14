@@ -19,11 +19,6 @@ export default function UserList({
   editAiLimitValue,
   setEditAiLimitValue,
   saveAiLimit,
-  editAiFileLimitId,
-  setEditAiFileLimitId,
-  editAiFileLimitValue,
-  setEditAiFileLimitValue,
-  saveAiFileLimit,
   editAiSizeLimitId,
   setEditAiSizeLimitId,
   editAiSizeLimitValue,
@@ -75,11 +70,6 @@ export default function UserList({
   editAiLimitValue: string;
   setEditAiLimitValue: (v: string) => void;
   saveAiLimit: (id: number) => void;
-  editAiFileLimitId: number | null;
-  setEditAiFileLimitId: (id: number | null) => void;
-  editAiFileLimitValue: string;
-  setEditAiFileLimitValue: (v: string) => void;
-  saveAiFileLimit: (id: number) => void;
   editAiSizeLimitId: number | null;
   setEditAiSizeLimitId: (id: number | null) => void;
   editAiSizeLimitValue: string;
@@ -145,11 +135,6 @@ export default function UserList({
               editAiLimitValue={editAiLimitValue}
               setEditAiLimitValue={setEditAiLimitValue}
               saveAiLimit={saveAiLimit}
-              editAiFileLimitId={editAiFileLimitId}
-              setEditAiFileLimitId={setEditAiFileLimitId}
-              editAiFileLimitValue={editAiFileLimitValue}
-              setEditAiFileLimitValue={setEditAiFileLimitValue}
-              saveAiFileLimit={saveAiFileLimit}
               editAiSizeLimitId={editAiSizeLimitId}
               setEditAiSizeLimitId={setEditAiSizeLimitId}
               editAiSizeLimitValue={editAiSizeLimitValue}

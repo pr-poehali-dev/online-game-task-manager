@@ -5,13 +5,11 @@ import { ADMIN_URL, TOKEN_KEY } from '../admin/adminShared';
 interface StorageRow {
   userId: number;
   name: string;
-  fileLimit: number;
   sizeLimitMb: number;
   usedFiles: number;
   usedMb: number;
   generatedFiles: number;
   generatedMb: number;
-  totalMb: number;
   usedPercent: number;
 }
 
@@ -65,7 +63,7 @@ export default function AiStorageSummary() {
 
   if (forbidden) return null;
 
-  const withFiles = items.filter((i) => i.totalMb > 0 || i.usedFiles > 0);
+  const withFiles = items.filter((i) => i.usedFiles > 0);
 
   return (
     <div className="mb-8">
@@ -114,7 +112,7 @@ export default function AiStorageSummary() {
                     <div className="flex items-center gap-2 text-sm mb-1">
                       <span className="flex-1 truncate">{u.name}</span>
                       <span className="text-muted-foreground text-xs shrink-0">
-                        {fmtMb(u.usedMb)} из {fmtMb(u.sizeLimitMb)} · {u.usedFiles} из {u.fileLimit} файлов
+                        {fmtMb(u.usedMb)} из {fmtMb(u.sizeLimitMb)} · {u.usedFiles} файлов
                       </span>
                     </div>
                     <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
@@ -125,7 +123,7 @@ export default function AiStorageSummary() {
                     </div>
                     {u.generatedMb > 0 && (
                       <div className="text-[11px] text-muted-foreground mt-1">
-                        плюс {fmtMb(u.generatedMb)} сгенерированных ({u.generatedFiles}) — в лимит не входят
+                        из них {fmtMb(u.generatedMb)} сгенерировано моделью ({u.generatedFiles})
                       </div>
                     )}
                   </div>
@@ -134,8 +132,8 @@ export default function AiStorageSummary() {
             )}
 
             <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
-              Лимиты каждому сотруднику меняются в разделе «Команда». Сгенерированные картинки и
-              видео занимают место, но в личный лимит не засчитываются.
+              Лимит объёма каждому сотруднику меняется в разделе «Команда». В него входят все
+              файлы: и загруженные, и сгенерированные моделью.
             </p>
           </>
         )}

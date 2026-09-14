@@ -24,7 +24,7 @@ from docx.shared import Pt
 
 from common import (
     _aitunnel_request, _bad, _cors_headers, _current_month, _get_or_create_usage, _ok,
-    _service_key, _upload_bytes, _register_file,
+    _service_key, _upload_bytes, _register_file, _check_file_limit,
 )
 from templates import (
     FILL_SYSTEM_PROMPT, MAX_TEMPLATE_BYTES,
@@ -413,6 +413,13 @@ def handle_generate_document(cur, conn, schema, me, body, qs):
     if spent >= limit_:
         cur.close(); conn.close()
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+    # Собранный документ тоже занимает место и расходует личный лимит объёма — проверяем ДО
+    # обращения к модели, чтобы не списать деньги за документ, который негде сохранить.
+    _used_bytes, _limit_mb, denied = _check_file_limit(cur, schema, me['id'])
+    if denied:
+        cur.close(); conn.close()
+        return denied
 
     api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
     if not api_key:

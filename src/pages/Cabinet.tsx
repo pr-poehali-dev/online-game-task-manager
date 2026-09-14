@@ -150,11 +150,6 @@ export default function Cabinet() {
                 editAiLimitValue={team.editAiLimitValue}
                 setEditAiLimitValue={team.setEditAiLimitValue}
                 saveAiLimit={team.saveAiLimit}
-                editAiFileLimitId={team.editAiFileLimitId}
-                setEditAiFileLimitId={team.setEditAiFileLimitId}
-                editAiFileLimitValue={team.editAiFileLimitValue}
-                setEditAiFileLimitValue={team.setEditAiFileLimitValue}
-                saveAiFileLimit={team.saveAiFileLimit}
                 editAiSizeLimitId={team.editAiSizeLimitId}
                 setEditAiSizeLimitId={team.setEditAiSizeLimitId}
                 editAiSizeLimitValue={team.editAiSizeLimitValue}

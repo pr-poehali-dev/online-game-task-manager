@@ -36,8 +36,6 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
   const [editSpecValue, setEditSpecValue] = useState('');
   const [editAiLimitId, setEditAiLimitId] = useState<number | null>(null);
   const [editAiLimitValue, setEditAiLimitValue] = useState('');
-  const [editAiFileLimitId, setEditAiFileLimitId] = useState<number | null>(null);
-  const [editAiFileLimitValue, setEditAiFileLimitValue] = useState('');
   const [editAiSizeLimitId, setEditAiSizeLimitId] = useState<number | null>(null);
   const [editAiSizeLimitValue, setEditAiSizeLimitValue] = useState('');
   const [editNameId, setEditNameId] = useState<number | null>(null);
@@ -98,18 +96,6 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     load();
   }
 
-  // Лимит КОЛИЧЕСТВА файлов сотрудника в разделе "AI" (users.ai_file_limit) — 0 полностью
-  // запрещает загрузку файлов, поэтому пустое/отрицательное значение просто отменяет правку.
-  async function saveAiFileLimit(id: number) {
-    const value = Number(editAiFileLimitValue.trim());
-    if (!Number.isFinite(value) || value < 0) { setEditAiFileLimitId(null); return; }
-    await authFetch({ action: 'set_ai_file_limit', user_id: id, file_limit: Math.round(value) });
-    setEditAiFileLimitId(null);
-    setEditAiFileLimitValue('');
-    load();
-  }
-
-  // Лимит суммарного ОБЪЁМА файлов сотрудника в разделе "AI", МБ (users.ai_size_limit_mb).
   async function saveAiSizeLimit(id: number) {
     const value = Number(editAiSizeLimitValue.trim());
     if (!Number.isFinite(value) || value < 0) { setEditAiSizeLimitId(null); return; }
@@ -217,9 +203,6 @@ export function useTeamManagement(user: AuthUser | null, navigate: NavigateFunct
     editAiLimitId, setEditAiLimitId,
     editAiLimitValue, setEditAiLimitValue,
     saveAiLimit,
-    editAiFileLimitId, setEditAiFileLimitId,
-    editAiFileLimitValue, setEditAiFileLimitValue,
-    saveAiFileLimit,
     editAiSizeLimitId, setEditAiSizeLimitId,
     editAiSizeLimitValue, setEditAiSizeLimitValue,
     saveAiSizeLimit,

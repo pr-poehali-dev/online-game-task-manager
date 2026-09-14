@@ -383,73 +383,52 @@ def _get_or_create_usage(cur, schema, user_id):
     return float(spent), float(limit_)
 
 
-# --- Реестр файлов сотрудника (ai_files) и лимит на их количество -----------------------------
+# --- Реестр файлов сотрудника (ai_files) и лимит на их общий объём -----------------------------
 # Файлы раздела "AI" физически лежат в S3, а раньше их единственным следом в БД было поле
 # attachments у сообщения (JSONB). Из-за этого нельзя было ни посчитать файлы сотрудника, ни
 # показать ему их общим списком, ни убрать один файл, не трогая переписку. Теперь КАЖДАЯ загрузка
 # и каждый сгенерированный файл регистрируются строкой в ai_files (см. db_migrations V0082) —
 # это источник истины и для лимита, и для раздела "Мои файлы" в интерфейсе.
 #
-# В лимит считаются ТОЛЬКО файлы, которые сотрудник загрузил сам (kind in upload/template):
-# сгенерированные моделью изображения/видео/документы уже ограничены месячным лимитом трат
-# (ai_usage), второй раз ограничивать их количеством смысла нет.
-COUNTED_FILE_KINDS = ('upload', 'template')
-
-
+# В лимит объёма считаются ВСЕ файлы сотрудника без исключения: и загруженные им самим, и
+# сгенерированные моделью (картинки, видео, собранные документы). Раньше генерации не считались —
+# но именно они весят больше всего (одно видео тяжелее сотни документов), и лимит не защищал от
+# того, что засоряет хранилище сильнее всего.
 MB = 1024 * 1024
 
 
-def _file_limits(cur, schema, user_id):
-    '''Два личных лимита сотрудника на файлы раздела "AI" (оба настраиваются администратором в
-    разделе "Команда"): количество файлов (users.ai_file_limit) и суммарный объём в мегабайтах
-    (users.ai_size_limit_mb, см. db_migrations V0083). Второй нужен потому, что количество плохо
-    отражает нагрузку на хранилище: десяток видео весит больше сотен документов. Любой из лимитов,
-    равный 0, полностью запрещает загрузку.'''
-    cur.execute(f"SELECT ai_file_limit, ai_size_limit_mb FROM {schema}.users WHERE id = %s", (user_id,))
+def _size_limit_mb(cur, schema, user_id):
+    '''Личный лимит сотрудника на ОБЩИЙ объём его файлов в разделе "AI" в мегабайтах
+    (users.ai_size_limit_mb, задаёт администратор в разделе "Команда"). Лимит на количество
+    файлов убран: объём точнее отражает нагрузку на хранилище, а два лимита сразу только путали.
+    Лимит, равный 0, полностью запрещает сотруднику загрузку и генерацию.'''
+    cur.execute(f"SELECT ai_size_limit_mb FROM {schema}.users WHERE id = %s", (user_id,))
     row = cur.fetchone()
-    if not row:
-        return 50, 1024
-    count_limit = int(row[0]) if row[0] is not None else 50
-    size_limit_mb = int(row[1]) if row[1] is not None else 1024
-    return count_limit, size_limit_mb
-
-
-def _file_limit(cur, schema, user_id):
-    return _file_limits(cur, schema, user_id)[0]
+    if not row or row[0] is None:
+        return 1024
+    return int(row[0])
 
 
 def _file_usage(cur, schema, user_id):
-    '''Сколько файлов и байт сотрудник занимает СЕЙЧАС — считаются только те типы, что расходуют
-    лимит (загрузки и бланки, см. COUNTED_FILE_KINDS).'''
+    '''Сколько файлов и байт сотрудник занимает СЕЙЧАС — считаются ВСЕ его файлы.'''
     cur.execute(
-        f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {schema}.ai_files WHERE user_id = %s AND kind IN %s",
-        (user_id, COUNTED_FILE_KINDS)
+        f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {schema}.ai_files WHERE user_id = %s",
+        (user_id,)
     )
     count, total = cur.fetchone()
     return int(count), int(total or 0)
 
 
-def _file_count(cur, schema, user_id):
-    return _file_usage(cur, schema, user_id)[0]
-
-
 def _check_file_limit(cur, schema, user_id, incoming_size=0):
-    '''Проверяет ОБА лимита перед загрузкой. Возвращает (used, limit, None), если место есть, либо
-    готовый ответ 403 с понятным кодом (file_limit_exceeded — исчерпано количество,
-    size_limit_exceeded — исчерпан объём); фронт покажет предложение очистить "Мои файлы".
-    incoming_size — размер загружаемого файла в байтах, если он уже известен: тогда отказ приходит
-    ДО того, как файл окажется в хранилище, а не после.'''
-    count_limit, size_limit_mb = _file_limits(cur, schema, user_id)
-    used, used_bytes = _file_usage(cur, schema, user_id)
-    size_limit_bytes = size_limit_mb * MB
-    if used >= count_limit:
-        return used, count_limit, {
-            'statusCode': 403,
-            'headers': _cors_headers(),
-            'body': json.dumps({'error': 'file_limit_exceeded', 'usedFiles': used, 'limitFiles': count_limit}),
-        }
-    if used_bytes + max(0, int(incoming_size or 0)) > size_limit_bytes:
-        return used, count_limit, {
+    '''Проверяет лимит объёма перед загрузкой файла ИЛИ перед генерацией. Возвращает
+    (used_bytes, limit_mb, None), если место есть, либо готовый ответ 403 с кодом
+    size_limit_exceeded — фронт покажет предложение очистить "Мои файлы".
+    incoming_size — размер файла в байтах, если он уже известен: тогда отказ приходит ДО того,
+    как файл окажется в хранилище, а не после.'''
+    size_limit_mb = _size_limit_mb(cur, schema, user_id)
+    _used, used_bytes = _file_usage(cur, schema, user_id)
+    if used_bytes + max(0, int(incoming_size or 0)) > size_limit_mb * MB:
+        return used_bytes, size_limit_mb, {
             'statusCode': 403,
             'headers': _cors_headers(),
             'body': json.dumps({
@@ -458,7 +437,7 @@ def _check_file_limit(cur, schema, user_id, incoming_size=0):
                 'limitMb': size_limit_mb,
             }),
         }
-    return used, count_limit, None
+    return used_bytes, size_limit_mb, None
 
 
 def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None, rel_path=''):

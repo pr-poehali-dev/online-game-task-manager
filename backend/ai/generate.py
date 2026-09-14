@@ -10,6 +10,7 @@ import uuid
 from common import (
     _cors_headers, _bad, _ok, _service_key, _get_or_create_usage, _current_month,
     _history_row_to_message, _aitunnel_request, _aitunnel_get, _upload_bytes, _register_file,
+    _check_file_limit,
     AITUNNEL_BASE, MAX_HISTORY_MESSAGES, CODE_SYSTEM_PROMPT, TITLE_MODEL, TITLE_SYSTEM_PROMPT,
 )
 
@@ -129,6 +130,14 @@ def handle_generate_image(cur, conn, schema, me, body, qs):
         cur.close(); conn.close()
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
 
+    # Место в хранилище проверяем ДО обращения к модели: сгенерированные файлы тоже расходуют
+    # личный лимит объёма, а деньги за генерацию списываются сразу — нельзя допустить, чтобы
+    # сотрудник заплатил за картинку, которую некуда положить.
+    _used_bytes, _limit_mb, denied = _check_file_limit(cur, schema, me['id'])
+    if denied:
+        cur.close(); conn.close()
+        return denied
+
     api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
     if not api_key:
         cur.close(); conn.close()
@@ -197,9 +206,8 @@ def handle_generate_image(cur, conn, schema, me, body, qs):
         url = _upload_bytes(raw, ext, media_type, 'images')
         image_attachment = {'id': uuid.uuid4().hex, 'name': f'image.{ext}', 'url': url, 'size': len(raw), 'contentType': media_type}
         attachments.append(image_attachment)
-        # Сгенерированные файлы тоже попадают в персональный реестр "Мои файлы" — сотрудник должен
-        # видеть и уметь очищать ВСЁ, что занимает место в хранилище от его имени. В лимит на
-        # количество загрузок они не считаются (см. COUNTED_FILE_KINDS в common.py).
+        # Сгенерированные файлы попадают в персональный реестр "Мои файлы" и расходуют личный
+        # лимит объёма наравне с загрузками — место в хранилище они занимают точно так же.
         _register_file(cur, schema, me['id'], image_attachment, 'image', chat_id)
 
     cur.execute(
@@ -252,6 +260,13 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
     if spent >= limit_:
         cur.close(); conn.close()
         return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'limit_exceeded', 'spentRub': spent, 'limitRub': limit_})}
+
+    # Видео — самый тяжёлый файл в разделе, поэтому место проверяем ДО запуска задачи: деньги за
+    # видео списываются провайдером сразу при старте и вернуть их нельзя.
+    _used_bytes, _limit_mb, denied = _check_file_limit(cur, schema, me['id'])
+    if denied:
+        cur.close(); conn.close()
+        return denied
 
     api_key = _service_key(cur, schema, 'AITUNNEL_API_KEY')
     if not api_key:

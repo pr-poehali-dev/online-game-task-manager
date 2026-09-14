@@ -18,7 +18,6 @@ export interface AiFilesState {
   files: AiUserFile[];
   totalSize: number;
   usedFiles: number;
-  limitFiles: number;
   // Второй лимит — суммарный объём файлов сотрудника, МБ (задаётся администратором там же).
   usedMb: number;
   limitMb: number;
@@ -32,12 +31,11 @@ export interface AiFilesState {
 
 // useAiFiles — состояние раздела "Мои файлы": список файлов сотрудника, расход личного лимита и
 // самостоятельная очистка (по одному файлу или целой группой). Лимит на количество файлов задаёт
-// администратор в разделе "Команда" (users.ai_file_limit).
+// администратор в разделе "Команда" (users.ai_size_limit_mb) — лимит на ОБЪЁМ всех файлов.
 export function useAiFiles(enabled: boolean): AiFilesState {
   const [files, setFiles] = useState<AiUserFile[]>([]);
   const [totalSize, setTotalSize] = useState(0);
   const [usedFiles, setUsedFiles] = useState(0);
-  const [limitFiles, setLimitFiles] = useState(0);
   const [usedMb, setUsedMb] = useState(0);
   const [limitMb, setLimitMb] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -53,7 +51,6 @@ export function useAiFiles(enabled: boolean): AiFilesState {
         setFiles(data.files || []);
         setTotalSize(data.totalSize || 0);
         setUsedFiles(data.usedFiles || 0);
-        setLimitFiles(data.limitFiles || 0);
         setUsedMb(data.usedMb || 0);
         setLimitMb(data.limitMb || 0);
       }
@@ -80,7 +77,6 @@ export function useAiFiles(enabled: boolean): AiFilesState {
       if (res.ok) {
         setFiles((prev) => prev.filter((f) => f.id !== id));
         setUsedFiles(data.usedFiles ?? 0);
-        setLimitFiles(data.limitFiles ?? 0);
         setUsedMb(data.usedMb ?? 0);
         setLimitMb(data.limitMb ?? 0);
       }
@@ -107,5 +103,5 @@ export function useAiFiles(enabled: boolean): AiFilesState {
     }
   }, [load]);
 
-  return { files, totalSize, usedFiles, limitFiles, usedMb, limitMb, loading, busyId, clearing, load, deleteFile, clearFiles };
+  return { files, totalSize, usedFiles, usedMb, limitMb, loading, busyId, clearing, load, deleteFile, clearFiles };
 }

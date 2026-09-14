@@ -190,7 +190,7 @@ ADMIN_ONLY_ACTIONS = {'impersonate', 'set_permissions', 'set_role'}
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit), лимит количества файлов сотрудника в разделе "AI" (action=set_ai_file_limit — users.ai_file_limit, см. db_migrations V0082) и лимит суммарного объёма его файлов в МБ (action=set_ai_size_limit — users.ai_size_limit_mb, см. db_migrations V0083); список GET отдаёт оба лимита вместе с текущим расходом (ai_files_used, ai_size_used_mb), сводка занятого места всей командой (action=ai_storage_summary — кто сколько занимает в хранилище AI) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit) и ЕДИНСТВЕННЫЙ лимит на файлы — суммарный объём в МБ (action=set_ai_size_limit — users.ai_size_limit_mb, см. db_migrations V0083), считается по ВСЕМ файлам сотрудника, включая сгенерированные; список GET отдаёт лимит вместе с текущим расходом (ai_files_used, ai_size_used_mb), сводка занятого места всей командой (action=ai_storage_summary — кто сколько занимает в хранилище AI) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -239,9 +239,9 @@ def handler(event: dict, context) -> dict:
             f"(SELECT COUNT(*) FROM {schema}.sessions s WHERE s.user_id = u.id AND s.expires_at > NOW()) AS active_sessions, "
             f"u.show_in_team, u.tg_notify_muted, u.show_tg_contact, u.nickname, u.avatar_url, "
             f"(SELECT limit_rub FROM {schema}.ai_usage a WHERE a.user_id = u.id AND a.month = %s) AS ai_limit_rub, "
-            f"u.ai_file_limit, u.ai_size_limit_mb, "
-            f"(SELECT COUNT(*) FROM {schema}.ai_files f WHERE f.user_id = u.id AND f.kind IN ('upload','template')) AS ai_files_used, "
-            f"(SELECT COALESCE(SUM(f.size), 0) FROM {schema}.ai_files f WHERE f.user_id = u.id AND f.kind IN ('upload','template')) AS ai_size_used "
+            f"u.ai_size_limit_mb, "
+            f"(SELECT COUNT(*) FROM {schema}.ai_files f WHERE f.user_id = u.id) AS ai_files_used, "
+            f"(SELECT COALESCE(SUM(f.size), 0) FROM {schema}.ai_files f WHERE f.user_id = u.id) AS ai_size_used "
             f"FROM {schema}.users u WHERE u.is_hidden = false ORDER BY u.created_at ASC",
             (month,)
         )
@@ -264,10 +264,9 @@ def handler(event: dict, context) -> dict:
                 'nickname': nickname, 'avatar_url': avatar_url,
                 'tg_first_name': r[3], 'tg_last_name': r[4], 'tg_photo_url': r[5],
                 'ai_limit_rub': float(r[20]) if r[20] is not None else 300.0,
-                'ai_file_limit': int(r[21]) if r[21] is not None else 50,
-                'ai_size_limit_mb': int(r[22]) if r[22] is not None else 1024,
-                'ai_files_used': int(r[23] or 0),
-                'ai_size_used_mb': round(int(r[24] or 0) / (1024 * 1024), 1),
+                'ai_size_limit_mb': int(r[21]) if r[21] is not None else 1024,
+                'ai_files_used': int(r[22] or 0),
+                'ai_size_used_mb': round(int(r[23] or 0) / (1024 * 1024), 1),
             })
         cur.close(); conn.close()
         # isOwner — единый источник истины для фронта (показывать ли UI редактирования владельческих
@@ -482,46 +481,41 @@ def handler(event: dict, context) -> dict:
 
     if action == 'ai_storage_summary':
         # Сводка хранилища раздела "AI": сколько места занимает КАЖДЫЙ сотрудник и вся команда
-        # вместе. Персональные лимиты не дают одному человеку забить диск, но ОБЩЕГО потолка нет —
-        # эта сводка и есть ответ на вопрос "кто занял всё место". Считаем по тем же типам файлов,
-        # что расходуют лимит (upload/template, см. COUNTED_FILE_KINDS в backend/ai/common.py),
-        # плюс отдельно показываем сгенерированные файлы: место на диске они занимают, а в лимит
-        # не попадают — без этой строки сумма по людям не сходилась бы с реальным объёмом.
+        # вместе. Персональный лимит объёма не даёт одному человеку забить диск, но ОБЩЕГО потолка
+        # нет — эта сводка и есть ответ на вопрос "кто занял всё место". Считаем по ВСЕМ файлам
+        # (и загруженным, и сгенерированным) — ровно так же, как считается лимит.
         cur.execute(
-            f"SELECT u.id, u.first_name, u.last_name, u.nickname, u.ai_file_limit, u.ai_size_limit_mb, "
-            f"COALESCE(SUM(CASE WHEN f.kind IN ('upload','template') THEN f.size END), 0) AS counted_bytes, "
-            f"COUNT(CASE WHEN f.kind IN ('upload','template') THEN 1 END) AS counted_files, "
+            f"SELECT u.id, u.first_name, u.last_name, u.nickname, u.ai_size_limit_mb, "
+            f"COALESCE(SUM(f.size), 0) AS used_bytes, COUNT(f.id) AS used_files, "
             f"COALESCE(SUM(CASE WHEN f.kind NOT IN ('upload','template') THEN f.size END), 0) AS generated_bytes, "
             f"COUNT(CASE WHEN f.kind NOT IN ('upload','template') THEN 1 END) AS generated_files "
             f"FROM {schema}.users u LEFT JOIN {schema}.ai_files f ON f.user_id = u.id "
             f"WHERE u.is_hidden = false "
-            f"GROUP BY u.id, u.first_name, u.last_name, u.nickname, u.ai_file_limit, u.ai_size_limit_mb "
-            f"ORDER BY (COALESCE(SUM(f.size), 0)) DESC, u.first_name ASC"
+            f"GROUP BY u.id, u.first_name, u.last_name, u.nickname, u.ai_size_limit_mb "
+            f"ORDER BY COALESCE(SUM(f.size), 0) DESC, u.first_name ASC"
         )
         mb = 1024 * 1024
         items = []
         for r in cur.fetchall():
             nickname = r[3]
-            counted_bytes, generated_bytes = int(r[6] or 0), int(r[8] or 0)
-            limit_mb = int(r[5]) if r[5] is not None else 1024
+            limit_mb = int(r[4]) if r[4] is not None else 1024
+            used_bytes = int(r[5] or 0)
             items.append({
                 'userId': r[0],
                 'name': nickname or f"{r[1]}{(' ' + r[2]) if r[2] else ''}",
-                'fileLimit': int(r[4]) if r[4] is not None else 50,
                 'sizeLimitMb': limit_mb,
-                'usedFiles': int(r[7] or 0),
-                'usedMb': round(counted_bytes / mb, 2),
-                'generatedFiles': int(r[9] or 0),
-                'generatedMb': round(generated_bytes / mb, 2),
-                'totalMb': round((counted_bytes + generated_bytes) / mb, 2),
+                'usedFiles': int(r[6] or 0),
+                'usedMb': round(used_bytes / mb, 2),
+                # Сколько из занятого места приходится на сгенерированное моделью — видно, кто
+                # расходует лимит картинками и видео, а кто своими загрузками.
+                'generatedFiles': int(r[8] or 0),
+                'generatedMb': round(int(r[7] or 0) / mb, 2),
                 # Доля личного лимита: по ней интерфейс подсвечивает тех, кто близок к потолку.
-                'usedPercent': round(counted_bytes / (limit_mb * mb) * 100) if limit_mb > 0 else 0,
+                'usedPercent': round(used_bytes / (limit_mb * mb) * 100) if limit_mb > 0 else 0,
             })
-        cur.execute(
-            f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {schema}.ai_files"
-        )
+        cur.execute(f"SELECT COUNT(*), COALESCE(SUM(size), 0) FROM {schema}.ai_files")
         total_files, total_bytes = cur.fetchone()
-        # Сумма ЛИЧНЫХ лимитов — это потолок, до которого команда теоретически может разрастись.
+        # Сумма ЛИЧНЫХ лимитов — потолок, до которого команда теоретически может разрастись.
         cur.execute(
             f"SELECT COALESCE(SUM(COALESCE(ai_size_limit_mb, 1024)), 0) FROM {schema}.users WHERE is_hidden = false"
         )
@@ -717,24 +711,10 @@ def handler(event: dict, context) -> dict:
             (user_id, month, limit_rub)
         )
         _log_activity(cur, schema, admin_id, 'user_set_ai_limit', 'user', user_id, _target_name, f'{limit_rub:.0f} ₽/мес')
-    elif action == 'set_ai_file_limit':
-        # Лимит на КОЛИЧЕСТВО файлов, которые сотрудник может одновременно хранить в разделе "AI"
-        # (users.ai_file_limit, см. db_migrations V0082). В отличие от лимита трат он не привязан к
-        # месяцу: это ограничение занимаемого места, а не расходов. 0 — загрузка файлов запрещена.
-        try:
-            file_limit = int(body.get('file_limit'))
-        except (TypeError, ValueError):
-            cur.close(); conn.close()
-            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
-        if file_limit < 0:
-            cur.close(); conn.close()
-            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_limit'})}
-        cur.execute(f"UPDATE {schema}.users SET ai_file_limit = %s, updated_at = NOW() WHERE id = %s", (file_limit, user_id))
-        _log_activity(cur, schema, admin_id, 'user_set_ai_file_limit', 'user', user_id, _target_name, f'{file_limit} файлов')
     elif action == 'set_ai_size_limit':
-        # Лимит на СУММАРНЫЙ ОБЪЁМ файлов сотрудника в разделе "AI", МБ (users.ai_size_limit_mb,
-        # см. db_migrations V0083) — второй лимит рядом с лимитом количества: десяток видео весит
-        # больше сотен документов, поэтому одного счётчика файлов недостаточно. 0 — запрет загрузки.
+        # ЕДИНСТВЕННЫЙ лимит сотрудника на файлы раздела "AI": суммарный объём в МБ
+        # (users.ai_size_limit_mb, см. db_migrations V0083). Считается по ВСЕМ его файлам —
+        # и загруженным, и сгенерированным моделью. 0 — загрузка и генерация запрещены.
         try:
             size_limit_mb = int(body.get('size_limit_mb'))
         except (TypeError, ValueError):

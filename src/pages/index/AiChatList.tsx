@@ -19,10 +19,10 @@ interface AiChatListProps {
   // onOpenFiles — открыть панель "Мои файлы" (личное хранилище сотрудника в разделе AI с
   // расходом лимита и самостоятельной очисткой, см. AiFilesPanel).
   onOpenFiles: () => void;
-  // filesUsed/filesLimit — краткий расход лимита файлов прямо на кнопке, чтобы сотрудник видел
+  // filesUsedMb/filesLimitMb — краткий расход лимита ОБЪЁМА прямо на кнопке, чтобы сотрудник видел
   // приближение к пределу до того, как получит отказ при загрузке.
-  filesUsed?: number;
-  filesLimit?: number;
+  filesUsedMb?: number;
+  filesLimitMb?: number;
   // bare — используется внутри мобильного Sheet (Ai.tsx): там уже задана своя ширина/фон
   // контейнера, поэтому убираем фиксированную ширину и правую границу, чтобы список не выглядел
   // "вложенной колонкой внутри колонки".
@@ -43,8 +43,8 @@ export default function AiChatList({
   onDeleteChat,
   onSearchMessages,
   onOpenFiles,
-  filesUsed,
-  filesLimit,
+  filesUsedMb,
+  filesLimitMb,
   bare = false,
   onClose,
 }: AiChatListProps) {
@@ -283,9 +283,9 @@ export default function AiChatList({
         >
           <Icon name="FolderCog" size={14} className="shrink-0" />
           <span className="flex-1 text-left">Мои файлы</span>
-          {filesLimit != null && filesLimit > 0 && (
-            <span className={`shrink-0 text-[10px] ${filesUsed != null && filesUsed >= filesLimit ? 'text-destructive' : ''}`}>
-              {filesUsed ?? 0}/{filesLimit}
+          {filesLimitMb != null && filesLimitMb > 0 && (
+            <span className={`shrink-0 text-[10px] ${filesUsedMb != null && filesUsedMb >= filesLimitMb ? 'text-destructive' : ''}`}>
+              {filesUsedMb ?? 0}/{filesLimitMb} МБ
             </span>
           )}
         </button>

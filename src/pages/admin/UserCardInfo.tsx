@@ -24,11 +24,6 @@ export default function UserCardInfo({
   editAiLimitValue,
   setEditAiLimitValue,
   saveAiLimit,
-  editAiFileLimitId,
-  setEditAiFileLimitId,
-  editAiFileLimitValue,
-  setEditAiFileLimitValue,
-  saveAiFileLimit,
   editAiSizeLimitId,
   setEditAiSizeLimitId,
   editAiSizeLimitValue,
@@ -54,11 +49,6 @@ export default function UserCardInfo({
   editAiLimitValue: string;
   setEditAiLimitValue: (v: string) => void;
   saveAiLimit: (id: number) => void;
-  editAiFileLimitId: number | null;
-  setEditAiFileLimitId: (id: number | null) => void;
-  editAiFileLimitValue: string;
-  setEditAiFileLimitValue: (v: string) => void;
-  saveAiFileLimit: (id: number) => void;
   editAiSizeLimitId: number | null;
   setEditAiSizeLimitId: (id: number | null) => void;
   editAiSizeLimitValue: string;
@@ -167,38 +157,9 @@ export default function UserCardInfo({
             </button>
           )
         )}
-        {/* Лимит на КОЛИЧЕСТВО файлов в разделе "AI" — отдельно от лимита трат: он не
-            сбрасывается ежемесячно и ограничивает занимаемое место, а не расходы.
-            0 — загрузка файлов сотруднику полностью запрещена. */}
-        {u.permissions.ai_access && (
-          editAiFileLimitId === u.id ? (
-            <div className="flex items-center gap-1 mt-1">
-              <Icon name="FolderCog" size={11} className="text-muted-foreground shrink-0" />
-              <input
-                value={editAiFileLimitValue}
-                onChange={(e) => setEditAiFileLimitValue(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') saveAiFileLimit(u.id); if (e.key === 'Escape') setEditAiFileLimitId(null); }}
-                autoFocus
-                inputMode="numeric"
-                placeholder="50"
-                className="w-16 rounded border border-border bg-secondary/60 px-2 py-0.5 text-xs focus:outline-none"
-              />
-              <span className="text-xs text-muted-foreground">файлов</span>
-              <button onClick={() => saveAiFileLimit(u.id)} className="text-xs text-primary hover:underline">OK</button>
-            </div>
-          ) : (
-            <button
-              onClick={() => { setEditAiFileLimitId(u.id); setEditAiFileLimitValue(String(u.ai_file_limit)); }}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
-              title="Сколько файлов сотрудник может одновременно хранить в разделе «AI». 0 — загрузка запрещена"
-            >
-              <Icon name="FolderCog" size={11} />
-              Файлы AI: {u.ai_files_used} из {u.ai_file_limit}
-            </button>
-          )
-        )}
-        {/* Второй лимит — на суммарный ОБЪЁМ файлов: количество плохо отражает нагрузку на
-            хранилище (десяток видео весит больше сотен документов). 0 — запрет загрузки. */}
+        {/* ЕДИНСТВЕННЫЙ лимит на файлы — суммарный ОБЪЁМ: он точно отражает нагрузку на
+            хранилище и считается по ВСЕМ файлам сотрудника, включая сгенерированные моделью
+            картинки, видео и документы. 0 — загрузка и генерация запрещены. */}
         {u.permissions.ai_access && (
           editAiSizeLimitId === u.id ? (
             <div className="flex items-center gap-1 mt-1">
@@ -219,10 +180,10 @@ export default function UserCardInfo({
             <button
               onClick={() => { setEditAiSizeLimitId(u.id); setEditAiSizeLimitValue(String(u.ai_size_limit_mb)); }}
               className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-0.5"
-              title="Суммарный объём файлов, который сотрудник может хранить в разделе «AI». 0 — загрузка запрещена"
+              title="Суммарный объём всех файлов сотрудника в разделе «AI», включая сгенерированные. 0 — загрузка и генерация запрещены"
             >
               <Icon name="HardDrive" size={11} />
-              Объём AI: {u.ai_size_used_mb} из {u.ai_size_limit_mb} МБ
+              Объём AI: {u.ai_size_used_mb} из {u.ai_size_limit_mb} МБ · {u.ai_files_used} файлов
             </button>
           )
         )}

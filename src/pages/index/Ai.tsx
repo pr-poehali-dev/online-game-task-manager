@@ -52,8 +52,8 @@ export default function Ai() {
         onDeleteChat={ai.handleDeleteChat}
         onSearchMessages={ai.handleSearchMessages}
         onOpenFiles={() => ai.setFilesPanelOpen(true)}
-        filesUsed={ai.files.usedFiles}
-        filesLimit={ai.files.limitFiles}
+        filesUsedMb={ai.files.usedMb}
+        filesLimitMb={ai.files.limitMb}
       />
 
       <AiChatPane
