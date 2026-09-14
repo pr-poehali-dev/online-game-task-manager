@@ -7,6 +7,7 @@ import type { PatchFile, DroppedFile, LauncherUploadsMap, RootLabelsMap } from '
 import { postJson, uploadFileInChunks } from './patchesApi';
 import type { UploadQueueItem } from './patchesApi';
 import { useDdfFileDescriptions } from './useDdfFileDescriptions';
+import { taskServerIds } from './shared';
 
 export function usePatches({
   tasks,
@@ -114,7 +115,7 @@ export function usePatches({
   const customRootNames = useMemo(() => new Set(customRoots), [customRoots]);
   const totalSize = useMemo(() => files.reduce((s, f) => s + (f.size || 0), 0), [files]);
   const activeSrv = servers.find((s) => s.id === active) ?? servers[0] ?? { id: active, label: 'Сервер', color: '215 15% 55%' };
-  const tasksForServer = useMemo(() => tasks.filter((t) => t.server === active), [tasks, active]);
+  const tasksForServer = useMemo(() => tasks.filter((t) => taskServerIds(t).includes(active)), [tasks, active]);
 
   // При смене сервера сбрасываем выбранную задачу, если она относится к другому серверу
   useEffect(() => {

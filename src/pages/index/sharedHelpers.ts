@@ -35,6 +35,13 @@ export function taskAssigneeIds(task: { assigneeId: number | null; assigneeIds?:
   return task.assigneeId != null ? [task.assigneeId] : [];
 }
 
+// Серверы задачи: новый список servers, а для задач, созданных до его появления, — одиночный
+// server. Единая точка, чтобы старые задачи везде отображались корректно.
+export function taskServerIds(task: { server?: string | null; servers?: string[] }): string[] {
+  if (task.servers && task.servers.length > 0) return task.servers;
+  return task.server ? [task.server] : [];
+}
+
 export function resolveAssignee(team: TeamMember[], id: number | null): AssigneeView {
   const m = id != null ? team.find((t) => t.id === id) : undefined;
   if (!m) {

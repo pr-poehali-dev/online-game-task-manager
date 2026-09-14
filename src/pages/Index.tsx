@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import {
   taskAssigneeIds,
+  taskServerIds,
 } from './index/shared';
 import type {
   Task,
@@ -101,13 +102,13 @@ export default function Index() {
   const archivedTasks = tasks.filter((t) => t.archived);
   const archivedSprints = sprints.filter((s) => s.status === 'done');
   const filteredTasks = activeTasks
-    .filter((t) => server === 'all' || t.server === server)
+    .filter((t) => server === 'all' || taskServerIds(t).includes(server))
     .filter((t) => category === 'all' || t.category === category)
     .filter((t) => sprintFilter === 'all' || (sprintFilter === 'none' ? !t.sprintId : t.sprintId === sprintFilter))
     .filter((t) => assigneeFilter === 'all' || taskAssigneeIds(t).includes(assigneeFilter));
   const filteredArchive = archivedTasks
     .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)
-    .filter((t) => server === 'all' || t.server === server)
+    .filter((t) => server === 'all' || taskServerIds(t).includes(server))
     .filter((t) => category === 'all' || t.category === category);
   const myOpenCount = user
     ? activeTasks.filter((t) => t.column !== 'done' && t.column !== 'restart' && taskAssigneeIds(t).includes(user.id)).length

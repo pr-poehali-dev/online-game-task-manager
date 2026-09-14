@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, TaskOutcome } from './shared';
-import { taskAssigneeIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, needsLauncherUpload, LauncherBadge } from './shared';
+import { taskAssigneeIds, taskServerIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, AssigneeStack, ServerBadge, needsLauncherUpload, LauncherBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 export default function Restart({
@@ -120,7 +120,7 @@ export default function Restart({
             const groups = [
               ...servers,
               ...extraIds.map((id) => serverMeta(id)),
-            ].map((srv) => ({ srv, tasksForServer: restartTasks.filter((t) => t.server === srv.id) }))
+            ].map((srv) => ({ srv, tasksForServer: restartTasks.filter((t) => taskServerIds(t).includes(srv.id)) }))
               .filter(({ tasksForServer }) => tasksForServer.length > 0);
             return groups;
           })()
@@ -206,7 +206,7 @@ function RestartTaskCard({
       ) : null}
       <div className="flex items-center gap-2 mb-3">
         <AssigneeStack ids={assignees} team={team} size={24} />
-        <ServerBadge id={t.server} />
+        {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
       </div>
       {isAdmin && (
         <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>

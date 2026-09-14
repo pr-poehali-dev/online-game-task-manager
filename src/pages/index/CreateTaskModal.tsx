@@ -6,7 +6,7 @@ import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
 import { deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
-import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
+import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
   column: ColumnId;
@@ -27,7 +27,10 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     assigneeIds: [] as number[],
     kbArticleIds: [] as number[],
     priority: (preset?.priority ?? 'medium') as Priority,
+    // Задача может относиться сразу к нескольким серверам; server хранит первый из списка
+    // ради совместимости со старыми экранами.
     server: (preset?.server ?? servers[0]?.id ?? '') as ServerId,
+    servers: [(preset?.server ?? servers[0]?.id ?? '')].filter(Boolean) as ServerId[],
     category: (preset?.category ?? 'other') as CategoryId,
     sprintId: '',
     description: '',
@@ -39,6 +42,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   const set = (k: string, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+  const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids as ServerId[], server: (ids[0] ?? '') as ServerId }));
 
   async function uploadImage(file: File): Promise<string> {
     const dataUrl: string = await new Promise((resolve) => {
@@ -146,9 +150,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             { value: 'medium', label: 'Средний' },
             { value: 'low', label: 'Низкий' },
           ]} />
-          <Select label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
-            servers.map((s) => ({ value: s.id, label: s.label }))
-          } />
+          <ServerMultiSelect value={form.servers} onChange={setServers} />
           <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
             categories.map((c) => ({ value: c.id, label: c.label }))
           } />

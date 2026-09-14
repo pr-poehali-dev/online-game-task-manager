@@ -2,8 +2,8 @@ import Icon from '@/components/ui/icon';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Sprint } from './shared';
-import { taskAssigneeIds, resolveAssignee, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
-import { AssigneeMultiSelect, KbMultiSelect } from './TaskModalShared';
+import { taskAssigneeIds, taskServerIds, resolveAssignee, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
+import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
 
 export default function TaskModalMeta({
   task,
@@ -18,6 +18,7 @@ export default function TaskModalMeta({
   canEditDeploy,
   setAssignees,
   setKbIds,
+  setServers,
   deadlineLocal,
   setDeadlineLocal,
 }: {
@@ -33,10 +34,11 @@ export default function TaskModalMeta({
   canEditDeploy: boolean;
   setAssignees: (ids: number[]) => void;
   setKbIds: (ids: number[]) => void;
+  setServers: (ids: string[]) => void;
   deadlineLocal: string;
   setDeadlineLocal: (v: string) => void;
 }) {
-  const { servers, categories } = useCatalog();
+  const { categories } = useCatalog();
   return (
     <>
       {/* Title */}
@@ -86,9 +88,7 @@ export default function TaskModalMeta({
               { value: 'medium', label: 'Средний' },
               { value: 'low', label: 'Низкий' },
             ]} />
-            <Select compact label="Сервер" value={form.server} onChange={(v) => set('server', v)} options={
-              servers.map((s) => ({ value: s.id, label: s.label }))
-            } />
+            <ServerMultiSelect compact value={taskServerIds(form)} onChange={setServers} />
             <Select compact label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
               categories.map((c) => ({ value: c.id, label: c.label }))
             } />

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import type { Sprint, Task } from './shared';
-import { ModalOverlay, Select, inputCls, CategoryBadge, PriorityBadge } from './shared';
+import { ModalOverlay, Select, inputCls, CategoryBadge, PriorityBadge, taskServerIds } from './shared';
 
 function TaskMultiSelect({ tasks, value, onChange }: {
   tasks: Task[];
@@ -140,7 +140,7 @@ export function CreateSprintModal({ onClose, onCreate, availableTasks }: {
   const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
 
   const filteredTasks = form.server
-    ? availableTasks.filter((t) => t.server === form.server)
+    ? availableTasks.filter((t) => taskServerIds(t).includes(form.server as string))
     : availableTasks;
 
   return (

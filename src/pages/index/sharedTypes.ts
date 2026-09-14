@@ -73,6 +73,8 @@ export interface Task {
   priority: Priority;
   version?: string;
   server: ServerId;
+  // Полный список серверов задачи. server оставлен для совместимости и равен первому элементу.
+  servers?: ServerId[];
   description?: string;
   links?: { url: string; label: string }[];
   category: CategoryId;

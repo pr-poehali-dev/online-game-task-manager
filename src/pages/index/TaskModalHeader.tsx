@@ -1,6 +1,6 @@
 import Icon from '@/components/ui/icon';
 import type { Task, TaskOutcome } from './shared';
-import { outcomes, outcomeMeta, columnMeta, PriorityBadge, ServerBadge } from './shared';
+import { taskServerIds, outcomes, outcomeMeta, columnMeta, PriorityBadge, ServerBadge } from './shared';
 
 export default function TaskModalHeader({
   task,
@@ -35,7 +35,7 @@ export default function TaskModalHeader({
     <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
       <div className="flex items-center gap-3">
         <PriorityBadge p={form.priority} />
-        <ServerBadge id={form.server} />
+        {taskServerIds(form).map((sid) => <ServerBadge key={sid} id={sid} />)}
         {(canFullEdit || canEditDeploy) && (
           <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
             <Icon name={columnMeta(form.column).icon} size={12} />

@@ -1,7 +1,7 @@
 import { useDraggable, useDroppable } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome } from './shared';
-import { taskAssigneeIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, needsLauncherUpload, LauncherBadge } from './shared';
+import { taskAssigneeIds, taskServerIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, needsLauncherUpload, LauncherBadge } from './shared';
 
 export function TaskCard({
   task: t,
@@ -86,7 +86,7 @@ export function TaskCard({
       ) : null}
       <div className="flex items-center gap-2">
         <AssigneeStack ids={assignees} team={team} size={24} />
-        <ServerBadge id={t.server} />
+        {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
         {t.commentCount != null && t.commentCount > 0 && (
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             <Icon name="MessageSquare" size={11} />

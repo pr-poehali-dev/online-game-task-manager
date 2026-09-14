@@ -290,6 +290,7 @@ def _row_to_task(r):
         'priority': r[4],
         'version': r[5],
         'server': r[6],
+        'servers': r[22] if r[22] is not None else ([r[6]] if r[6] else []),
         'category': r[7],
         'sprintId': r[8],
         'deployStatus': r[9],
@@ -310,7 +311,7 @@ def _row_to_task(r):
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded, servers"
 )
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -426,6 +427,27 @@ def _task_assignee_ids(d):
     return [d['assigneeId']] if d.get('assigneeId') is not None else []
 
 
+def _norm_servers(body, fallback=None):
+    '''Приводит выбор серверов к списку строк без повторов. Задача может относиться сразу к
+    нескольким серверам (одна правка выкатывается на все), поэтому фронт присылает servers —
+    массив. Поле server оставлено для совместимости: если пришло только оно, считаем его списком
+    из одного элемента. fallback — текущее значение задачи, когда в теле запроса серверов нет.'''
+    raw = body.get('servers')
+    if raw is None:
+        single = body.get('server')
+        if single is None:
+            return list(fallback or [])
+        raw = [single] if single else []
+    result = []
+    for v in raw:
+        if not v:
+            continue
+        v = str(v)
+        if v not in result:
+            result.append(v)
+    return result
+
+
 def _forbidden():
     return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
 
@@ -503,7 +525,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. При появлении у задачи бейджа «Требуется залить в лаунчер» (смена статуса деплоя/колонки, снятие отметки «Загружено») уведомляются (в приложении и Telegram) все пользователи с правом launcher_notify. Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. При появлении у задачи бейджа «Требуется залить в лаунчер» (смена статуса деплоя/колонки, снятие отметки «Загружено») уведомляются (в приложении и Telegram) все пользователи с правом launcher_notify. Задача может относиться сразу к НЕСКОЛЬКИМ серверам (поле servers, jsonb, см. db_migrations V0093): поле server сохранено для совместимости и хранит первый сервер списка, а при закрытии задачи из раздела «К рестарту» запись в патчноуты создаётся для каждого выбранного сервера. Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -593,10 +615,11 @@ def handler(event: dict, context) -> dict:
         links = json.dumps(body.get('links') or [])
         kb_ids = json.dumps(_norm_kb(body))
         attachments = json.dumps(body.get('attachments') or [])
+        servers = _norm_servers(body)
         cur.execute(
             f"INSERT INTO {schema}.tasks "
-            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments, deadline) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            f"(title, column_id, assignee_id, assignee_ids, priority, version, server, servers, category, sprint_id, deploy_status, description, links, kb_article_ids, created_by, attachments, deadline) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
             f"RETURNING {TASK_COLUMNS}",
             (
                 title,
@@ -605,7 +628,10 @@ def handler(event: dict, context) -> dict:
                 json.dumps(assignee_ids),
                 body.get('priority') or 'medium',
                 body.get('version'),
-                body.get('server'),
+                # server хранит ПЕРВЫЙ сервер списка — на него опираются патчноуты и старые
+                # экраны, пока servers хранит полный выбор.
+                servers[0] if servers else None,
+                json.dumps(servers),
                 body.get('category') or 'other',
                 body.get('sprintId'),
                 body.get('deployStatus') or 'none',
@@ -700,13 +726,14 @@ def handler(event: dict, context) -> dict:
         attachments = json.dumps(body.get('attachments')) if 'attachments' in body else json.dumps(existing['attachments'] or [])
         prev_ids = existing['assigneeIds'] or []
         new_deploy_status_val = body.get('deployStatus', existing['deployStatus']) or 'none'
+        upd_servers = _norm_servers(body, existing.get('servers'))
         deploy_changed_full = new_deploy_status_val != own_row[4]
         # Смена статуса деплоя означает новую сборку — сбрасываем отметку «Загружено в лаунчер»
         launcher_uploaded = False if deploy_changed_full else bool(existing['launcherUploaded'])
         cur.execute(
             f"UPDATE {schema}.tasks SET "
             f"title = %s, column_id = %s, assignee_id = %s, assignee_ids = %s, priority = %s, version = %s, "
-            f"server = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, launcher_uploaded = %s, updated_at = NOW() "
+            f"server = %s, servers = %s, category = %s, sprint_id = %s, deploy_status = %s, description = %s, links = %s, kb_article_ids = %s, restart_done = %s, attachments = %s, deadline = %s, launcher_uploaded = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (
                 (body.get('title') if 'title' in body else existing['title'] or '').strip(),
@@ -715,7 +742,8 @@ def handler(event: dict, context) -> dict:
                 json.dumps(assignee_ids),
                 body.get('priority', existing['priority']) or 'medium',
                 body.get('version', existing['version']),
-                body.get('server', existing['server']),
+                upd_servers[0] if upd_servers else None,
+                json.dumps(upd_servers),
                 body.get('category', existing['category']) or 'other',
                 body.get('sprintId', existing['sprintId']),
                 new_deploy_status_val,
@@ -922,12 +950,15 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         task = _row_to_task(row)
         _log_activity(cur, schema, me['id'], 'task_archive', 'task', task_id, task['title'], outcome)
-        # Автозапись в журнал патчноутов сервера — только для задач, выполненных из раздела «К рестарту»
-        if task['column'] == 'restart' and outcome == 'done' and task.get('server'):
-            cur.execute(
-                f"INSERT INTO {schema}.patchnotes (server, task_id, task_title) VALUES (%s, %s, %s)",
-                (task['server'], int(task_id), task['title'])
-            )
+        # Автозапись в журнал патчноутов — только для задач, выполненных из раздела «К рестарту».
+        # Задача может относиться сразу к нескольким серверам: тогда запись появляется в журнале
+        # КАЖДОГО из них, иначе правка потерялась бы в истории всех серверов кроме первого.
+        if task['column'] == 'restart' and outcome == 'done':
+            for srv in (task.get('servers') or ([task['server']] if task.get('server') else [])):
+                cur.execute(
+                    f"INSERT INTO {schema}.patchnotes (server, task_id, task_title) VALUES (%s, %s, %s)",
+                    (srv, int(task_id), task['title'])
+                )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': task})}
 

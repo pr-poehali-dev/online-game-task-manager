@@ -46,6 +46,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const set = (k: keyof Task, v: string) => setForm((p) => ({ ...p, [k]: v }));
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
+  const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids as Task['servers'], server: (ids[0] ?? '') as Task['server'] }));
   const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(task.id);
 
   function addLink() {
@@ -141,6 +142,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           canEditDeploy={canEditDeploy}
           setAssignees={setAssignees}
           setKbIds={setKbIds}
+          setServers={setServers}
           deadlineLocal={deadlineLocal}
           setDeadlineLocal={setDeadlineLocal}
         />

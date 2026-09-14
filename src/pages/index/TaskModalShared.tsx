@@ -4,6 +4,7 @@ import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Attachment } from '@/components/AttachmentsField';
 import type { TeamMember } from './shared';
 import { resolveAssignee, AssigneeAvatar } from './shared';
+import { useCatalog } from '@/lib/catalog';
 import type { PrivateNote } from './usePrivateNotes';
 
 export interface TaskComment {
@@ -98,6 +99,75 @@ export function AssigneeMultiSelect({ team, value, onChange, compact }: {
                 </span>
                 <AssigneeAvatar a={resolveAssignee(team, m.id)} size={20} />
                 <span className="truncate">{name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Выбор СЕРВЕРОВ задачи. Одна правка часто выкатывается сразу на несколько серверов, поэтому
+// выбор множественный (по образцу AssigneeMultiSelect). Пустой список допустим — задача может быть
+// не привязана к серверу.
+export function ServerMultiSelect({ value, onChange, compact }: {
+  value: string[];
+  onChange: (ids: string[]) => void;
+  compact?: boolean;
+}) {
+  const { servers, serverMeta } = useCatalog();
+  const [open, setOpen] = useState(false);
+  const toggle = (id: string) => {
+    onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  };
+
+  return (
+    <div>
+      <label className={`block text-muted-foreground ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>Серверы</label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
+      >
+        {value.length === 0 && <span className="text-muted-foreground">Не выбран</span>}
+        {value.map((id) => {
+          const m = serverMeta(id);
+          return (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium"
+              style={{ background: `hsl(${m.color} / 0.15)`, color: `hsl(${m.color})` }}
+            >
+              {m.label}
+              <span
+                onClick={(e) => { e.stopPropagation(); toggle(id); }}
+                className="hover:opacity-70 cursor-pointer"
+              >
+                <Icon name="X" size={11} />
+              </span>
+            </span>
+          );
+        })}
+        <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+          {servers.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">Серверов пока нет</div>}
+          {servers.map((srv) => {
+            const active = value.includes(srv.id);
+            return (
+              <button
+                key={srv.id}
+                type="button"
+                onClick={() => toggle(srv.id)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+              >
+                <span className={`h-4 w-4 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
+                  {active && <Icon name="Check" size={11} />}
+                </span>
+                <span className="h-2 w-2 rounded-full shrink-0" style={{ background: `hsl(${srv.color})` }} />
+                <span className="truncate">{srv.label}</span>
               </button>
             );
           })}
