@@ -85,7 +85,7 @@ export default function Restart({
                 <Icon name="ChevronDown" size={13} />
               </button>
               {pickerOpen && (
-                <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-card shadow-lg p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
+                <div className="absolute left-0 top-11 z-20 w-80 rounded-lg border border-border bg-popover shadow-xl p-1 max-h-80 overflow-auto scrollbar-thin animate-scale-in">
                   <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1.5">Готовы к заливке / из «Готово»</div>
                   {candidates.length === 0 && (
                     <div className="text-xs text-muted-foreground px-2 py-3">Нет подходящих задач</div>
@@ -234,7 +234,7 @@ function RestartTaskCard({
                   <Icon name="ChevronDown" size={12} />
                 </button>
                 {archiveMenu === t.id && (
-                  <div className="absolute right-0 top-9 z-30 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+                  <div className="absolute right-0 top-9 z-30 w-44 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
                     <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
                     {outcomes.map((o) => (
                       <button

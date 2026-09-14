@@ -59,7 +59,7 @@ export function SidebarContent({
 
       {/* Categories nav */}
       <div className="px-4 pt-4 pb-2 flex-1 min-h-0 overflow-y-auto scrollbar-thin">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Категории</div>
+        <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground/70 mb-2.5 px-1">Категории</div>
         <div className="space-y-0.5">
           <button
             onClick={() => setCategory('all')}
@@ -94,7 +94,7 @@ export function SidebarContent({
       </div>
 
       <div className="px-4 pt-3 pb-2 shrink-0 border-t border-border">
-        <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1 flex items-center gap-1.5">
+        <div className="text-[10px] uppercase tracking-[0.18em] font-semibold text-muted-foreground/70 mb-2.5 px-1 flex items-center gap-1.5">
           Команда
           <span className="text-[10px] font-mono opacity-60">
             {team.filter((m) => m.online).length}/{team.length} онлайн
@@ -174,7 +174,7 @@ export default function IndexSidebar(props: SidebarContentProps) {
   // Скрываем её целиком, чтобы освободить место переписке (у AI своя навигация внутри).
   if (props.view === 'ai') return null;
   return (
-    <aside className="w-72 shrink-0 border-r border-border bg-card/60 backdrop-blur-sm hidden lg:flex flex-col">
+    <aside className="w-72 shrink-0 border-r border-border/60 bg-card/40 backdrop-blur-xl hidden lg:flex flex-col">
       <SidebarContent {...props} />
     </aside>
   );

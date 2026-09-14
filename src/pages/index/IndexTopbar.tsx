@@ -89,8 +89,10 @@ export default function IndexTopbar({
   return (
     <>
       {/* Topbar */}
-      <header className="relative z-30 h-14 border-b border-border flex items-center gap-2 sm:gap-4 px-3 sm:px-6 bg-card/40 backdrop-blur-sm"
-        style={{ borderBottom: '1px solid hsl(var(--border))', boxShadow: '0 1px 0 hsl(35 85% 45% / 0.08)' }}>
+      <header className="relative z-30 h-14 border-b border-border/60 flex items-center gap-2 sm:gap-4 px-3 sm:px-6 bg-background/80 backdrop-blur-xl supports-[backdrop-filter]:bg-background/60"
+        /* Тончайшая тёплая грань под шапкой вместо жирной рамки: отделяет её от контента,
+           но не режет макет пополам. */
+        style={{ boxShadow: '0 1px 0 hsl(38 85% 52% / 0.06), 0 8px 24px -16px hsl(222 30% 2% / 0.6)' }}>
         <button
           onClick={() => setMenuOpen(true)}
           className="lg:hidden h-9 w-9 shrink-0 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
@@ -119,7 +121,7 @@ export default function IndexTopbar({
             {view === 'ai' && 'AI'}
           </span>
         </div>
-        <nav className="ml-4 hidden md:flex gap-1 bg-secondary/60 p-1 rounded-lg">
+        <nav className="ml-4 hidden md:flex gap-1 bg-secondary/40 p-1 rounded-lg border border-border/40">
           {NAV_ITEMS.filter((t) => (t.k !== 'logs' || can('logs_view')) && (t.k !== 'ai' || can('ai_access'))).map((t) => (
             <button
               key={t.k}

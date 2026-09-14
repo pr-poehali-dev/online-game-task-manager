@@ -84,7 +84,7 @@ export default function TaskModalHeader({
               <Icon name="ChevronDown" size={12} />
             </button>
             {archiveMenu && (
-              <div className="absolute right-0 top-9 z-10 w-48 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+              <div className="absolute right-0 top-9 z-10 w-48 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
                 <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
                 {outcomes.map((o) => (
                   <button

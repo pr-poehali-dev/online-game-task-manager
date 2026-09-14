@@ -9,10 +9,16 @@ export function PriorityBadge({ p }: { p: Priority }) {
   const meta = priorityMap[p];
   return (
     <span
-      className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md"
-      style={{ background: `hsl(${meta.bg})`, color: `hsl(${meta.color})` }}
+      className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md border"
+      style={{
+        // Заливка почти прозрачная, цвет держат точка и тонкая рамка — плашка перестаёт
+        // «светиться» пятном на карточке, но приоритет по-прежнему считывается мгновенно.
+        background: `hsl(${meta.color} / 0.07)`,
+        borderColor: `hsl(${meta.color} / 0.22)`,
+        color: `hsl(${meta.color})`,
+      }}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${meta.color})` }} />
+      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: `hsl(${meta.color})` }} />
       {meta.label}
     </span>
   );
@@ -65,12 +71,11 @@ export function LauncherBadge({ uploaded }: { uploaded: boolean }) {
 export function CategoryBadge({ id }: { id: CategoryId }) {
   const { categoryMeta } = useCatalog();
   const c = categoryMeta(id);
+  // Категория — справочная подпись, а не акцент: раньше цветная заливка спорила с приоритетом и
+  // статусом на той же карточке. Теперь цвет остаётся только в иконке, сам текст приглушён.
   return (
-    <span
-      className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-md"
-      style={{ background: `hsl(${c.color} / 0.12)`, color: `hsl(${c.color})` }}
-    >
-      <Icon name={c.icon} size={10} />
+    <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+      <Icon name={c.icon} size={10} style={{ color: `hsl(${c.color} / 0.75)` }} />
       {c.label}
     </span>
   );
@@ -144,10 +149,15 @@ export function ServerBadge({ id }: { id: ServerId }) {
   const s = serverMeta(id);
   return (
     <span
-      className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md shrink-0"
-      style={{ background: `hsl(${s.color} / 0.15)`, color: `hsl(${s.color})` }}
+      className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md shrink-0 border"
+      style={{
+        // Та же логика, что у приоритета: цвет сервера держат точка и тонкая рамка, а не заливка.
+        background: `hsl(${s.color} / 0.07)`,
+        borderColor: `hsl(${s.color} / 0.22)`,
+        color: `hsl(${s.color})`,
+      }}
     >
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: `hsl(${s.color})` }} />
+      <span className="h-1.5 w-1.5 rounded-full shrink-0" style={{ background: `hsl(${s.color})` }} />
       {s.label}
     </span>
   );

@@ -111,7 +111,7 @@ export default function Board({
             <Icon name="ChevronDown" size={12} />
           </button>
           {sortOpen && (
-            <div className="absolute right-0 top-9 z-20 w-48 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+            <div className="absolute right-0 top-9 z-20 w-48 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
               {SORT_OPTIONS.map((o) => (
                 <button
                   key={o.id}

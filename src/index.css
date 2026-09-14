@@ -55,33 +55,40 @@
   }
 
   .dark {
-    --background: 220 18% 8%;
-    --foreground: 210 20% 92%;
+    /* Премиальная тёмная палитра. Ключевое отличие от прежней — РАЗНИЦА ПЛОТНОСТИ между слоями:
+       фон заметно глубже карточки, карточка глубже всплывающих окон. Раньше фон и карточка почти
+       совпадали (8% против 11%), поэтому интерфейс читался плоским и держался только на рамках.
+       Насыщенность по синему слегка снижена: чистый графит выглядит дороже «синеватого» серого. */
+    --background: 222 16% 6%;
+    --foreground: 210 16% 94%;
 
-    --card: 220 16% 11%;
-    --card-foreground: 210 20% 92%;
+    --card: 220 14% 10%;
+    --card-foreground: 210 16% 94%;
 
-    --popover: 220 16% 11%;
-    --popover-foreground: 210 20% 92%;
+    /* Всплывающие окна светлее карточек — так они честно «поднимаются» над плоскостью. */
+    --popover: 220 13% 13%;
+    --popover-foreground: 210 16% 94%;
 
-    --primary: 38 85% 52%;
-    --primary-foreground: 220 18% 8%;
+    --primary: 38 88% 56%;
+    --primary-foreground: 222 16% 6%;
 
-    --secondary: 220 14% 16%;
-    --secondary-foreground: 210 20% 92%;
+    --secondary: 220 12% 15%;
+    --secondary-foreground: 210 16% 94%;
 
-    --muted: 220 14% 15%;
-    --muted-foreground: 215 12% 55%;
+    --muted: 220 12% 13%;
+    /* Приглушённый текст сделан чуть светлее: на более глубоком фоне прежние 55% читались тяжело. */
+    --muted-foreground: 215 10% 60%;
 
     --accent: 38 80% 48%;
-    --accent-foreground: 220 18% 8%;
+    --accent-foreground: 222 16% 6%;
 
-    --destructive: 0 72% 55%;
+    --destructive: 0 65% 58%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 220 14% 18%;
-    --input: 220 14% 18%;
-    --ring: 38 85% 52%;
+    /* Граница почти не видна как линия — она задаёт край, а не рисует сетку. */
+    --border: 220 12% 17%;
+    --input: 220 12% 17%;
+    --ring: 38 88% 56%;
 
     --sidebar-background: 240 5.9% 10%;
     --sidebar-foreground: 240 4.8% 95.9%;
@@ -102,6 +109,27 @@
   body {
     @apply bg-background text-foreground;
     font-family: "Golos Text", sans-serif;
+    /* Сглаживание шрифта на тёмном фоне: без него светлый текст на глубоком фоне выглядит
+       «жирным» и грязным — буквы расплываются. Это самая заметная разница между дешёвым и
+       дорогим тёмным интерфейсом. */
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    /* Чуть плотнее межбуквенное расстояние — строки собираются, а не рассыпаются. */
+    letter-spacing: -0.006em;
+  }
+
+  /* Заголовки: плотнее по трекингу и с уменьшенным интерлиньяжем — крупный текст в дефолтном
+     наборе всегда выглядит разреженным. */
+  h1, h2, h3, h4 {
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+  }
+
+  /* Цифры в интерфейсе (счётчики, даты, суммы) — моноширинными знаками, чтобы колонки чисел
+     не «прыгали» при обновлении. */
+  .tabular-nums, table {
+    font-variant-numeric: tabular-nums;
   }
 }
 
@@ -353,6 +381,9 @@
 @layer utilities {
   .font-display {
     font-family: "Oswald", sans-serif;
+    /* Oswald — узкая гротескная гарнитура: в ней разрядка читается лучше плотного набора,
+       поэтому здесь трекинг положительный, в отличие от основного текста. */
+    letter-spacing: 0.04em;
   }
   .font-mono {
     font-family: "JetBrains Mono", monospace;
@@ -363,7 +394,10 @@
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
     background: hsl(var(--border));
-    border-radius: 8px;
+    border-radius: 9999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
   }
   /* Прокрутка без видимой полосы — для горизонтальных лент на телефоне (вкладки режимов):
      полоса под пальцем не нужна, а на узком экране она съедает высоту. */
@@ -374,16 +408,24 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+  /* Фон рабочей области. Сетка из точек убрана: мелкий повторяющийся узор спорит с карточками
+     и удешевляет вид. Вместо неё — две едва заметные мягкие засветки: тёплая сверху (под цвет
+     акцента) и холодная у нижнего края. Они дают ощущение объёмной сцены, но не читаются как
+     рисунок и не мешают содержимому. */
   .grid-bg {
     background-image:
-      radial-gradient(hsl(var(--border)) 1px, transparent 1px),
       radial-gradient(
-        ellipse 80% 60% at 50% 0%,
-        hsl(38 60% 20% / 0.06) 0%,
-        transparent 60%
+        ellipse 90% 55% at 50% -10%,
+        hsl(38 55% 22% / 0.10) 0%,
+        transparent 70%
+      ),
+      radial-gradient(
+        ellipse 70% 50% at 15% 100%,
+        hsl(215 45% 20% / 0.08) 0%,
+        transparent 65%
       );
-    background-size:
-      28px 28px,
-      100% 100%;
+    background-size: 100% 100%, 100% 100%;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
   }
 }

@@ -34,7 +34,7 @@ export function TaskCard({
       ref={setNodeRef}
       {...(canDrag ? { ...attributes, ...listeners } : {})}
       onClick={() => !isDragging && onCardClick(t)}
-      className={`group relative rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in ${isDragging ? 'opacity-30' : ''} ${canDrag ? 'touch-none' : ''}`}
+      className={`group relative rounded-lg border border-border/70 bg-card p-4 shadow-raised hover:border-primary/40 hover:shadow-md hover:-translate-y-px transition-all duration-200 cursor-pointer animate-scale-in ${isDragging ? 'opacity-30' : ''} ${canDrag ? 'touch-none' : ''}`}
       style={{ animationDelay: `${i * 60}ms` }}
     >
       {canArchive && (
@@ -47,7 +47,7 @@ export function TaskCard({
             <Icon name="Archive" size={13} />
           </button>
           {menuFor === t.id && (
-            <div className="absolute right-0 top-7 w-44 rounded-lg border border-border bg-card shadow-lg p-1 animate-scale-in">
+            <div className="absolute right-0 top-7 w-44 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">В архив как</div>
               {outcomes.map((o) => (
                 <button
@@ -76,7 +76,7 @@ export function TaskCard({
         <CategoryBadge id={t.category} />
         <PriorityBadge p={t.priority} />
       </div>
-      <p className="text-sm font-medium leading-snug mb-2">{t.title}</p>
+      <p className="text-sm font-semibold leading-snug mb-2.5 tracking-[-0.01em]">{t.title}</p>
       {(t.deployStatus && t.deployStatus !== 'none') || t.deadline || showLauncherBadge ? (
         <div className="flex items-center flex-wrap gap-1.5 mb-2">
           {t.deployStatus && t.deployStatus !== 'none' && <DeployBadge status={t.deployStatus} />}
