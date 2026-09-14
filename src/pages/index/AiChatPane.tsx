@@ -16,7 +16,6 @@ interface AiChatPaneProps {
   model: string;
   onModelChange: (model: string) => void;
   activeChatTitle?: string;
-  // Название проекта, если это сессия проекта — ассистент в ней сам ищет по его документам.
   onOpenChatList: () => void;
   onOpenModelFaq: () => void;
   messages: AiMessage[];

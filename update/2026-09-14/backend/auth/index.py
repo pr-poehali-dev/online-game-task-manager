@@ -79,7 +79,7 @@ except TypeError:
 def _s3_client():
     return boto3.client(
         's3',
-        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
         config=_S3_CONFIG,
@@ -90,7 +90,12 @@ def _public_url(key: str) -> str:
     base_url = (os.environ.get('S3_PUBLIC_URL') or os.environ.get('CDN_BASE_URL', '')).rstrip('/')
     if base_url:
         return f"{base_url}/{key}"
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+    # если ни одна переменная не задана — собираем адрес из настроек своего хранилища
+    # (например http://127.0.0.1:9000/files/<key>); на боевом сервере задан S3_PUBLIC_URL:
+    # https://forge.la2era.com/files/<key>
+    endpoint = os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000').rstrip('/')
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    return f"{endpoint}/{bucket}/{key}"
 
 
 def _decode_b64(data_b64):

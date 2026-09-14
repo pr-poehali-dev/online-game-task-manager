@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS ai_error_log (
     -- Дословный текст от AI Tunnel — главная подсказка о настоящей причине.
     message     TEXT,
     chat_id     INTEGER,
-    project_id  INTEGER,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
