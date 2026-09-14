@@ -51,7 +51,7 @@ export function SidebarContent({
             </div>
             <div>
               <div className="font-display text-xl leading-none tracking-widest text-foreground" style={{ letterSpacing: '0.18em' }}>ЭРА</div>
-              <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Task Command</div>
+              <div className="text-xs text-muted-foreground mt-0.5 tracking-wide">Рабочее пространство</div>
             </div>
           </button>
         </div>
