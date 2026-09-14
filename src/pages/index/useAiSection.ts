@@ -3,7 +3,6 @@ import { AI_URL, authHeaders } from './shared';
 import type { ImageGenerateParams, VideoGenerateParams } from './AiGenerateComposer';
 import { useAiPromptTemplates } from './useAiPromptTemplates';
 import { useAiFiles } from './useAiFiles';
-import { useAiProjects } from './useAiProjects';
 import { uploadAiAttachment } from './aiUploadApi';
 import { AI_ACTIVE_CHAT_KEY, MODE_TABS } from './AiTypes';
 import type { AiChatSummary, AiMessage, AiModelsMap, AiUsage, AiAttachment, AiMode, AiMessageSearchResult } from './AiTypes';
@@ -50,9 +49,6 @@ export function useAiSection() {
   // uploadProgress — доля загруженного файла (0..1), обновляется только при кусочной загрузке
   // больших файлов (см. aiUploadApi.ts); для маленьких файлов остаётся null — грузятся мгновенно.
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
-  // uploadQueue — прогресс загрузки ПАЧКИ файлов (папка целиком): сколько уже готово из скольких
-  // и какой файл идёт сейчас. null — пачечной загрузки нет.
-  const [uploadQueue, setUploadQueue] = useState<{ done: number; total: number; name: string } | null>(null);
 
   // Список чатов на мобильных экранах (< lg) скрыт за кнопкой-гамбургером и открывается поверх
   // переписки в Sheet — тот же паттерн, что мобильное меню разделов в IndexTopbar.tsx/Cabinet.tsx.
@@ -65,14 +61,6 @@ export function useAiSection() {
   // актуальным даже с закрытой панелью.
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
   const files = useAiFiles(filesPanelOpen);
-  // Проекты — личное рабочее пространство сотрудника (файлы + сессии). Пока открыт проект,
-  // основная область показывает его страницу вместо ленты переписки.
-  const projects = useAiProjects();
-  // sessionProjectId — проект, в котором нажали "Начать сессию". Диалог ещё не создан (он
-  // создаётся при первой отправке), поэтому проект держим здесь и передаём с первым сообщением.
-  const [sessionProjectId, setSessionProjectId] = useState<number | null>(null);
-  // Проект уже существующего открытого диалога (приходит в ответе get_chat).
-  const [chatProjectId, setChatProjectId] = useState<number | null>(null);
 
   useEffect(() => { localStorage.setItem(AI_MODEL_KEY_PREFIX + modelGroup, model); }, [model, modelGroup]);
   useEffect(() => {
@@ -138,7 +126,6 @@ export function useAiSection() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setMessages(data.messages || []);
-        setChatProjectId(data.chat?.projectId ?? null);
         if (data.chat?.mode) setMode(data.chat.mode);
         if (data.chat?.model) setModel(data.chat.model);
       } else {
@@ -184,73 +171,7 @@ export function useAiSection() {
     return () => clearInterval(timer);
   }, [messages, loadUsage]);
 
-  // Файл, загруженный со страницы проекта, сразу попадает в этот проект.
-  // Загрузка ПАЧКОЙ: сотрудник может перетащить целую папку с исходниками, поэтому файлы идут
-  // очередью по одному (параллельно нельзя — упрёмся в лимиты и таймауты), а прогресс считается
-  // по всей пачке: "3 из 40". Путь внутри папки берётся из webkitRelativePath и сохраняется,
-  // чтобы структура не превратилась в кучу одинаковых index.ts.
-  async function handleUploadProjectFiles(fileList: File[]) {
-    const projectId = projects.activeProjectId;
-    if (projectId == null || fileList.length === 0) return;
-    setUploading(true);
-    setUploadQueue({ done: 0, total: fileList.length, name: '' });
-    setSendError('');
-    const failed: string[] = [];
-    for (let i = 0; i < fileList.length; i += 1) {
-      const file = fileList[i];
-      const relPath = (file as File & { webkitRelativePath?: string }).webkitRelativePath || '';
-      setUploadQueue({ done: i, total: fileList.length, name: relPath || file.name });
-      setUploadProgress(null);
-      try {
-        await uploadAiAttachment(file, (fraction) => setUploadProgress(fraction), 'upload', projectId, relPath);
-      } catch (err) {
-        const code = (err as { code?: string })?.code;
-        // Лимит исчерпан — продолжать бессмысленно, остальные файлы тоже не влезут.
-        if (code === 'file_limit_exceeded' || code === 'size_limit_exceeded') {
-          const message = (err as { message?: string })?.message;
-          setSendError(errorText(code, message));
-          break;
-        }
-        failed.push(file.name);
-      }
-    }
-    if (failed.length) {
-      setSendError(failed.length === 1
-        ? `Не удалось загрузить файл: ${failed[0]}`
-        : `Не удалось загрузить файлов: ${failed.length}`);
-    }
-    await projects.loadProject(projectId);
-    files.load();
-    setUploading(false);
-    setUploadProgress(null);
-    setUploadQueue(null);
-  }
-
-  // Совместимость с прежним вызовом по одному файлу.
-  function handleUploadProjectFile(file: File) {
-    return handleUploadProjectFiles([file]);
-  }
-
-  // Открыть сессию проекта в обычной ленте переписки.
-  function handleOpenProjectChat(chatId: number) {
-    setSessionProjectId(null);
-    projects.openProject(null);
-    setActiveChatId(chatId);
-  }
-
-  // "Начать сессию" — новый пустой диалог, который привяжется к проекту при первой отправке.
-  function handleStartProjectSession() {
-    setSessionProjectId(projects.activeProjectId);
-    setActiveChatId(null);
-    setMessages([]);
-    setSendError('');
-    setPendingAttachments([]);
-    projects.openProject(null);
-  }
-
   function handleNewChat() {
-    setSessionProjectId(null);
-    setChatProjectId(null);
     setActiveChatId(null);
     setMessages([]);
     setSendError('');
@@ -330,9 +251,6 @@ export function useAiSection() {
   // — сотрудник мог уже начать печатать следующий вопрос.
   async function sendMessage(content: string, attachmentsToSend: AiAttachment[]) {
     if (sending) return;
-    // Проект текущей переписки: либо сессия только что начата из проекта (sessionProjectId), либо
-    // открыт уже существующий диалог проекта (chatProjectId приходит с историей сообщений).
-    const activeProjectId = sessionProjectId ?? chatProjectId;
     setSending(true);
     setSendError('');
     setRetryAction(null);
@@ -346,17 +264,13 @@ export function useAiSection() {
         headers: authHeaders(),
         // Режим 'document' идёт отдельным действием: модель отдаёт структуру документа, а
         // .xlsx/.docx собирается на сервере и возвращается вложением (backend/ai/documents.py).
-        // Сессия ПРОЕКТА идёт отдельным действием: там ассистент сам ищет по документам проекта
-        // (инструменты search_project_files/read_file) и возвращает источники — backend/ai/agent.py.
-        body: JSON.stringify(activeProjectId != null && mode === 'chat'
-          ? { action: 'project_message', chatId: activeChatId, projectId: activeProjectId, model, content }
-          : mode === 'document'
+        body: JSON.stringify(mode === 'document'
           ? {
-              action: 'generate_document', chatId: activeChatId, projectId: sessionProjectId, model, prompt: content,
+              action: 'generate_document', chatId: activeChatId, model, prompt: content,
               format: documentFormat,
               ...(documentTemplate ? { templateUrl: documentTemplate.url, templateName: documentTemplate.name } : {}),
             }
-          : { action: 'send_message', chatId: activeChatId, projectId: sessionProjectId, model, content, mode, attachments: attachmentsToSend }),
+          : { action: 'send_message', chatId: activeChatId, model, content, mode, attachments: attachmentsToSend }),
       }, SEND_TIMEOUT_MS);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -412,7 +326,7 @@ export function useAiSection() {
 
     try {
       const body: Record<string, unknown> = {
-        action: 'generate_image', chatId: activeChatId, projectId: sessionProjectId, model, prompt: params.prompt, n: params.n,
+        action: 'generate_image', chatId: activeChatId, model, prompt: params.prompt, n: params.n,
       };
       // aspectRatio НЕ передаём при редактировании по референсу (inputReferences) — иначе модель
       // насильно растягивает результат под выбранное в UI соотношение сторон вместо того, чтобы
@@ -462,7 +376,7 @@ export function useAiSection() {
     setMessages((prev) => [...prev, { id: tempId, role: 'user', content: params.prompt, attachments: videoAttachments.length ? videoAttachments : null, model: null, costRub: null, jobStatus: 'done', createdAt: null, pinned: false }]);
 
     try {
-      const body: Record<string, unknown> = { action: 'generate_video', chatId: activeChatId, projectId: sessionProjectId, model, prompt: params.prompt, duration: params.duration };
+      const body: Record<string, unknown> = { action: 'generate_video', chatId: activeChatId, model, prompt: params.prompt, duration: params.duration };
       if (params.aspectRatio) body.aspectRatio = params.aspectRatio;
       if (params.resolution) body.resolution = params.resolution;
       // Звук отправляем только когда его явно выключили: у моделей без поддержки переключателя
@@ -591,14 +505,6 @@ export function useAiSection() {
     templatesManagerOpen, setTemplatesManagerOpen,
     promptTemplates,
     files, filesPanelOpen, setFilesPanelOpen,
-    projects, sessionProjectId, chatProjectId,
-    // Название проекта текущей сессии — шапка чата показывает, что ассистент работает с его файлами.
-    activeSessionProjectName: (() => {
-      const pid = sessionProjectId ?? chatProjectId;
-      return pid == null ? null : (projects.projects.find((p) => p.id === pid)?.name ?? null);
-    })(),
-    handleUploadProjectFile, handleUploadProjectFiles, uploadQueue,
-    handleOpenProjectChat, handleStartProjectSession,
     handleModeChange, handleNewChat, handleAddFile, handleRemoveAttachment,
     handleSend, handleGenerateImage, handleGenerateVideo, handleRegenerate,
     handleSearchMessages, handleRenameChat, handleTogglePinned, handleDeleteChat,

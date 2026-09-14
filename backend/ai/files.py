@@ -50,10 +50,9 @@ def handle_upload_attachment(cur, conn, schema, me, body, qs):
         attachment['text'] = attachment_text
     # kind берём из запроса: обычное вложение в чат ('upload') или загруженный бланк документа
     # ('template') — в разделе "Мои файлы" они показываются разными группами.
-    # projectId — если файл загружается со страницы проекта, он сразу попадает в этот проект.
     _register_file(cur, schema, me['id'], attachment,
                    'template' if body.get('kind') == 'template' else 'upload',
-                   project_id=body.get('projectId'), rel_path=body.get('relPath') or '')
+                   rel_path=body.get('relPath') or '')
     cur.close(); conn.close()
     return _ok({'attachment': attachment})
 
@@ -80,7 +79,7 @@ def handle_file_init(cur, conn, schema, me, body, qs):
     file_id = uuid.uuid4().hex
     meta = {'name': name, 'contentType': content_type,
             'kind': 'template' if body.get('kind') == 'template' else 'upload',
-            'projectId': body.get('projectId'), 'relPath': body.get('relPath') or ''}
+            'relPath': body.get('relPath') or ''}
     _s3_client().put_object(Bucket=os.environ.get('S3_BUCKET', 'files'), Key=f"ai/_chunks/{file_id}/meta.json", Body=json.dumps(meta).encode())
     cur.close(); conn.close()
     return _ok({'fileId': file_id})
@@ -168,7 +167,7 @@ def handle_file_complete(cur, conn, schema, me, body, qs):
     if attachment_text is not None:
         attachment['text'] = attachment_text
     _register_file(cur, schema, me['id'], attachment, meta.get('kind') or 'upload',
-                   project_id=meta.get('projectId'), rel_path=meta.get('relPath') or '')
+                   rel_path=meta.get('relPath') or '')
     cur.close(); conn.close()
     return _ok({'attachment': attachment})
 

@@ -3,13 +3,10 @@ import json
 import traceback
 
 from common import _cors_headers, _schema, _db, _bad, _current_user, _log_ai_error
-import agent as agent_actions
 import chats as chats_actions
 import documents as documents_actions
 import files as files_actions
 import generate as generate_actions
-import indexing as indexing_actions
-import projects as projects_actions
 import userfiles as userfiles_actions
 
 
@@ -43,21 +40,6 @@ ACTIONS = {
     'file_chunk': files_actions.handle_file_chunk,
     'file_complete': files_actions.handle_file_complete,
     'file_abort': files_actions.handle_file_abort,
-    # Проекты — личное рабочее пространство сотрудника (файлы + диалоги)
-    'list_projects': projects_actions.handle_list_projects,
-    'get_project': projects_actions.handle_get_project,
-    'create_project': projects_actions.handle_create_project,
-    'update_project': projects_actions.handle_update_project,
-    'delete_project': projects_actions.handle_delete_project,
-    'attach_files': projects_actions.handle_attach_files,
-    'project_usage': projects_actions.handle_project_usage,
-    'project_summary': projects_actions.handle_project_summary,
-    # Разбор файлов проекта и поиск по их содержимому
-    'index_step': indexing_actions.handle_index_step,
-    'index_status': indexing_actions.handle_index_status,
-    'search_project': indexing_actions.handle_search_project,
-    # Сообщение в сессии проекта: ассистент сам ищет по документам и отвечает со ссылками на них
-    'project_message': agent_actions.handle_project_message,
     # "Мои файлы" — персональный список файлов сотрудника и самостоятельная очистка
     'list_files': userfiles_actions.handle_list_files,
     'delete_file': userfiles_actions.handle_delete_file,
@@ -97,17 +79,6 @@ def handler(event: dict, context) -> dict:
       ограничен ~3.5 МБ на уровне платформы). Каждая загрузка проверяется против ЛИЧНОГО ЛИМИТА
       КОЛИЧЕСТВА файлов сотрудника (users.ai_file_limit, задаёт администратор в разделе "Команда")
       и регистрируется в реестре ai_files.
-
-    - indexing.py: index_step (разбор файла проекта на фрагменты ПОРЦИЯМИ — один вызов = одна
-      порция, чтобы уложиться в таймаут функции на больших документах; поддержаны PDF, Word,
-      Excel и текстовые/кодовые файлы), index_status (сколько файлов ещё не разобрано),
-      search_project (поиск по содержимому файлов проекта — полнотекстовый поиск PostgreSQL с
-      русской морфологией, см. AI_PROJECTS_PLAN.md этап 2).
-
-    - agent.py: project_message (сообщение в сессии проекта — модель получает ИНСТРУМЕНТЫ
-      search_project_files/read_file/list_project_files и сама решает, что прочитать; до
-      MAX_AGENT_STEPS шагов, использованные документы возвращаются как источники и сохраняются
-      в ai_messages.sources, см. AI_PROJECTS_PLAN.md этап 3).
 
     - userfiles.py: list_files (все файлы сотрудника с группировкой по типу и текущим расходом
       лимита), delete_file (убрать один файл), clear_files (очистить всё или одну группу) —
@@ -169,8 +140,7 @@ def handler(event: dict, context) -> dict:
         except Exception as e:
             _log_ai_error(schema, me['id'], action, 'exception', 500,
                           f'{type(e).__name__}: {e}\n{traceback.format_exc()[-1500:]}',
-                          model=body.get('model'), chat_id=body.get('chatId'),
-                          project_id=body.get('projectId'))
+                          model=body.get('model'), chat_id=body.get('chatId'))
             try:
                 cur.close(); conn.close()
             except Exception:
@@ -189,7 +159,6 @@ def handler(event: dict, context) -> dict:
                 payload.get('error') or f'http_{status}', status,
                 payload.get('message'), model=body.get('model'),
                 chat_id=body.get('chatId') or payload.get('chatId'),
-                project_id=body.get('projectId'),
             )
         return result
 

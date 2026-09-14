@@ -29,11 +29,6 @@ export default function UserList({
   editAiSizeLimitValue,
   setEditAiSizeLimitValue,
   saveAiSizeLimit,
-  editAiProjectLimitId,
-  setEditAiProjectLimitId,
-  editAiProjectLimitValue,
-  setEditAiProjectLimitValue,
-  saveAiProjectLimit,
   editNameId,
   setEditNameId,
   editFirstName,
@@ -90,11 +85,6 @@ export default function UserList({
   editAiSizeLimitValue: string;
   setEditAiSizeLimitValue: (v: string) => void;
   saveAiSizeLimit: (id: number) => void;
-  editAiProjectLimitId: number | null;
-  setEditAiProjectLimitId: (id: number | null) => void;
-  editAiProjectLimitValue: string;
-  setEditAiProjectLimitValue: (v: string) => void;
-  saveAiProjectLimit: (id: number) => void;
   editNameId: number | null;
   setEditNameId: (id: number | null) => void;
   editFirstName: string;
@@ -165,11 +155,6 @@ export default function UserList({
               editAiSizeLimitValue={editAiSizeLimitValue}
               setEditAiSizeLimitValue={setEditAiSizeLimitValue}
               saveAiSizeLimit={saveAiSizeLimit}
-              editAiProjectLimitId={editAiProjectLimitId}
-              setEditAiProjectLimitId={setEditAiProjectLimitId}
-              editAiProjectLimitValue={editAiProjectLimitValue}
-              setEditAiProjectLimitValue={setEditAiProjectLimitValue}
-              saveAiProjectLimit={saveAiProjectLimit}
             />
 
             <UserCardActions

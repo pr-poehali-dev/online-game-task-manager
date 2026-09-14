@@ -17,7 +17,6 @@ interface AiChatPaneProps {
   onModelChange: (model: string) => void;
   activeChatTitle?: string;
   // Название проекта, если это сессия проекта — ассистент в ней сам ищет по его документам.
-  sessionProjectName?: string | null;
   onOpenChatList: () => void;
   onOpenModelFaq: () => void;
   messages: AiMessage[];
@@ -61,7 +60,6 @@ export default function AiChatPane({
   model,
   onModelChange,
   activeChatTitle,
-  sessionProjectName,
   onOpenChatList,
   onOpenModelFaq,
   messages,
@@ -110,15 +108,6 @@ export default function AiChatPane({
           >
             <Icon name="PanelLeft" size={18} />
           </button>
-          {sessionProjectName && (
-            <span
-              title={`Ассистент отвечает по документам проекта «${sessionProjectName}»`}
-              className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary/15 text-primary text-[11px] max-w-[160px]"
-            >
-              <Icon name="Folder" size={10} className="shrink-0" />
-              <span className="truncate">{sessionProjectName}</span>
-            </span>
-          )}
           {activeChatTitle && (
             <span className="hidden lg:inline text-sm font-medium truncate min-w-0">{activeChatTitle}</span>
           )}

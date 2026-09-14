@@ -461,7 +461,7 @@ def _check_file_limit(cur, schema, user_id, incoming_size=0):
     return used, count_limit, None
 
 
-def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None, project_id=None, rel_path=''):
+def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None, rel_path=''):
     '''Записывает файл в персональный реестр сотрудника. Ошибка записи НЕ должна ронять саму
     загрузку — файл уже в S3 и сотруднику важнее получить его в чат, чем строгий учёт.'''
     key = _extract_key(attachment.get('url'))
@@ -469,11 +469,11 @@ def _register_file(cur, schema, user_id, attachment, kind='upload', chat_id=None
         return
     try:
         cur.execute(
-            f"INSERT INTO {schema}.ai_files (user_id, file_key, name, url, size, content_type, kind, chat_id, project_id, rel_path) "
+            f"INSERT INTO {schema}.ai_files (user_id, file_key, name, url, size, content_type, kind, chat_id, rel_path) "
             f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (user_id, key, attachment.get('name') or 'file', attachment.get('url'),
              int(attachment.get('size') or 0), attachment.get('contentType') or 'application/octet-stream',
-             kind, chat_id, project_id, (rel_path or '')[:500])
+             kind, chat_id, (rel_path or '')[:500])
         )
     except Exception:
         pass
@@ -502,16 +502,10 @@ def _message_to_dict(row):
     }
     if len(row) > 10:
         result['hasDocSpec'] = bool(row[10])
-    # Источники и шаги агента — только у ответов в сессиях проекта (backend/ai/agent.py):
-    # какие документы ассистент прочитал, чтобы ответить, и что он для этого делал.
-    if len(row) > 11:
-        result['sources'] = row[11]
-    if len(row) > 12:
-        result['agentSteps'] = row[12]
     return result
 
 def _log_ai_error(schema, user_id, action, error_code, status_code=None,
-                  message=None, model=None, chat_id=None, project_id=None):
+                  message=None, model=None, chat_id=None):
     '''Записывает неудачу раздела AI в ai_error_log. Логи облачной функции доступны только на
     платформе, поэтому на боевом сервере причину ошибки «Не удалось выполнить запрос» иначе не
     увидеть — храним её в базе вместе с ДОСЛОВНЫМ ответом AI Tunnel.
@@ -524,11 +518,11 @@ def _log_ai_error(schema, user_id, action, error_code, status_code=None,
         cur = conn.cursor()
         cur.execute(
             f"INSERT INTO {schema}.ai_error_log "
-            f"(user_id, action, model, error_code, status_code, message, chat_id, project_id) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+            f"(user_id, action, model, error_code, status_code, message, chat_id) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (user_id, (action or '')[:100], (model or None), (error_code or '')[:100],
              status_code, (message or None) and str(message)[:2000],
-             chat_id or None, project_id or None)
+             chat_id or None)
         )
         cur.close(); conn.close()
     except Exception:

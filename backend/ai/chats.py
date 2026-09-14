@@ -55,20 +55,11 @@ def handle_balance(cur, conn, schema, me, body, qs):
 
 
 def handle_list_chats(cur, conn, schema, me, body, qs):
-    '''Диалоги сотрудника. По умолчанию — только те, что ВНЕ проектов: диалоги проекта живут на
-    его странице и в общем списке дублироваться не должны. projectId=<id> отдаёт диалоги
-    конкретного проекта, projectId=all — вообще все (на случай общего поиска).'''
-    project_filter = qs.get('projectId') or body.get('projectId')
-    if project_filter == 'all':
-        where, params = "user_id = %s", (me['id'],)
-    elif project_filter:
-        where, params = "user_id = %s AND project_id = %s", (me['id'], project_filter)
-    else:
-        where, params = "user_id = %s AND project_id IS NULL", (me['id'],)
+    '''Все диалоги сотрудника: закреплённые сверху, дальше по времени последнего изменения.'''
     cur.execute(
         f"SELECT id, title, mode, model, pinned, created_at, updated_at FROM {schema}.ai_chats "
-        f"WHERE {where} ORDER BY pinned DESC, updated_at DESC",
-        params
+        f"WHERE user_id = %s ORDER BY pinned DESC, updated_at DESC",
+        (me['id'],)
     )
     chats = [_chat_to_dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
@@ -81,7 +72,7 @@ def handle_get_chat(cur, conn, schema, me, body, qs):
         cur.close(); conn.close()
         return _bad('bad_chat_id')
     cur.execute(
-        f"SELECT id, title, mode, model, pinned, created_at, updated_at, project_id FROM {schema}.ai_chats "
+        f"SELECT id, title, mode, model, pinned, created_at, updated_at FROM {schema}.ai_chats "
         f"WHERE id = %s AND user_id = %s",
         (chat_id, me['id'])
     )
@@ -89,19 +80,15 @@ def handle_get_chat(cur, conn, schema, me, body, qs):
     if not row:
         cur.close(); conn.close()
         return _bad('not_found', 404)
-    # project_id нужен фронту, чтобы понять: продолжение сессии ПРОЕКТА (ассистент ищет по
-    # документам, action=project_message) или обычный диалог.
-    chat_project_id = row[7]
     cur.execute(
         f"SELECT id, role, content, attachments, model, cost_rub, job_id, job_status, created_at, pinned, "
-        f"(doc_spec IS NOT NULL) AS has_doc_spec, sources, agent_steps "
+        f"(doc_spec IS NOT NULL) AS has_doc_spec "
         f"FROM {schema}.ai_messages WHERE chat_id = %s ORDER BY id ASC",
         (chat_id,)
     )
     messages = [_message_to_dict(r) for r in cur.fetchall()]
     cur.close(); conn.close()
-    chat = _chat_to_dict(row[:7])
-    chat['projectId'] = chat_project_id
+    chat = _chat_to_dict(row)
     return _ok({'chat': chat, 'messages': messages})
 
 
@@ -298,7 +285,7 @@ def handle_ai_errors(cur, conn, schema, me, body, qs):
     params = () if me['can_manage_team'] else (me['id'],)
     cur.execute(
         f"SELECT e.id, e.action, e.model, e.error_code, e.status_code, e.message, "
-        f"e.chat_id, e.project_id, e.created_at, u.first_name, u.last_name "
+        f"e.chat_id, e.created_at, u.first_name, u.last_name "
         f"FROM {schema}.ai_error_log e "
         f"LEFT JOIN {schema}.users u ON u.id = e.user_id "
         f"{where} ORDER BY e.id DESC LIMIT {limit}",
@@ -306,9 +293,9 @@ def handle_ai_errors(cur, conn, schema, me, body, qs):
     )
     entries = [{
         'id': r[0], 'action': r[1], 'model': r[2], 'errorCode': r[3], 'statusCode': r[4],
-        'message': r[5], 'chatId': r[6], 'projectId': r[7],
-        'createdAt': r[8].isoformat() if r[8] else None,
-        'userName': ' '.join(x for x in [r[9], r[10]] if x) or '—',
+        'message': r[5], 'chatId': r[6],
+        'createdAt': r[7].isoformat() if r[7] else None,
+        'userName': ' '.join(x for x in [r[8], r[9]] if x) or '—',
     } for r in cur.fetchall()]
     cur.close(); conn.close()
     return _ok({'entries': entries, 'canSeeAll': me['can_manage_team']})

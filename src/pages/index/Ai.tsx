@@ -4,7 +4,6 @@ import AiTemplatesManager from './AiTemplatesManager';
 import AiSidebar from './AiSidebar';
 import AiChatPane from './AiChatPane';
 import AiFilesPanel from './AiFilesPanel';
-import AiProjectPage from './AiProjectPage';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { useAiSection } from './useAiSection';
 
@@ -53,24 +52,10 @@ export default function Ai() {
         onDeleteChat={ai.handleDeleteChat}
         onSearchMessages={ai.handleSearchMessages}
         onOpenFiles={() => ai.setFilesPanelOpen(true)}
-        projects={ai.projects}
         filesUsed={ai.files.usedFiles}
         filesLimit={ai.files.limitFiles}
       />
 
-      {/* Когда открыт проект — вместо ленты переписки показывается его страница (файлы, поиск,
-          знания, настройки). Список диалогов слева при этом остаётся на месте. */}
-      {ai.projects.activeProjectId != null ? (
-        <AiProjectPage
-          state={ai.projects}
-          onOpenChat={ai.handleOpenProjectChat}
-          onStartSession={ai.handleStartProjectSession}
-          onUploadFiles={ai.handleUploadProjectFiles}
-          uploading={ai.uploading}
-          uploadProgress={ai.uploadProgress}
-          uploadQueue={ai.uploadQueue}
-        />
-      ) : (
       <AiChatPane
         mode={ai.mode}
         onModeChange={ai.handleModeChange}
@@ -79,7 +64,6 @@ export default function Ai() {
         model={ai.model}
         onModelChange={ai.setModel}
         activeChatTitle={ai.activeChatTitle}
-        sessionProjectName={ai.activeSessionProjectName}
         onOpenChatList={() => ai.setChatListOpen(true)}
         onOpenModelFaq={() => ai.setModelFaqOpen(true)}
         messages={ai.messages}
@@ -111,7 +95,6 @@ export default function Ai() {
         onGenerateImage={ai.handleGenerateImage}
         onGenerateVideo={ai.handleGenerateVideo}
       />
-      )}
 
       {/* "Мои файлы" — выезжающая панель поверх чата: личное хранилище сотрудника с деревом
           файлов, расходом лимита и самостоятельной очисткой. */}
