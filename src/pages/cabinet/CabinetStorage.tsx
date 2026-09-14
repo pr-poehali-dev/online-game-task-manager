@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import func2url from '../../../backend/func2url.json';
+import AiStorageSummary from './AiStorageSummary';
 
 const STORAGE_CONFIG_URL = (func2url as Record<string, string>)['storage-config'];
 const TOKEN_KEY = 'era_auth_token';
@@ -111,8 +112,9 @@ export default function CabinetStorage() {
   if (!available) {
     return (
       <div className="max-w-2xl">
-        <h1 className="text-xl font-semibold mb-1">Хранилище (MinIO)</h1>
-        <p className="text-sm text-muted-foreground mb-6">Адреса и ключи для файлового хранилища.</p>
+        <h1 className="text-xl font-semibold mb-1">Хранилище</h1>
+        <p className="text-sm text-muted-foreground mb-6">Занятое место и настройки файлового хранилища.</p>
+        <AiStorageSummary />
         <div className="rounded-xl border border-border bg-card p-5 flex items-start gap-3">
           <Icon name="Info" size={18} className="text-muted-foreground shrink-0 mt-0.5" />
           <div className="text-sm text-muted-foreground">
@@ -127,10 +129,17 @@ export default function CabinetStorage() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="text-xl font-semibold mb-1">Хранилище (MinIO)</h1>
+      <h1 className="text-xl font-semibold mb-1">Хранилище</h1>
       <p className="text-sm text-muted-foreground mb-6">
-        Адреса и ключи для файлового хранилища на вашем сервере. После сохранения backend
-        перезапустится автоматически в течение нескольких секунд.
+        Занятое место и настройки файлового хранилища на вашем сервере.
+      </p>
+
+      <AiStorageSummary />
+
+      <h2 className="text-base font-semibold mb-1">Подключение (MinIO)</h2>
+      <p className="text-sm text-muted-foreground mb-4">
+        Адреса и ключи хранилища. После сохранения backend перезапустится автоматически в течение
+        нескольких секунд.
       </p>
 
       <div className="rounded-xl border border-border bg-card p-4 space-y-4">
