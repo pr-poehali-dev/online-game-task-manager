@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
-import { deployStatuses, priorityMap } from './sharedConstants';
+import { priorityMap } from './sharedConstants';
 import { formatDeadline, deadlineState, resolveAssignee } from './sharedHelpers';
 import type { Priority, DeployStatus, CategoryId, ServerId, DeadlineState, AssigneeView, TeamMember } from './sharedTypes';
 
@@ -19,7 +19,10 @@ export function PriorityBadge({ p }: { p: Priority }) {
 }
 
 export function DeployBadge({ status }: { status: DeployStatus }) {
-  const ds = deployStatuses.find((d) => d.id === status) ?? deployStatuses[0];
+  // Статусы деплоя — редактируемый справочник (см. useCatalog и db_migrations V0095), поэтому
+  // подпись/цвет/иконка берутся из него, а не из захардкоженного списка.
+  const { deployStatusMeta } = useCatalog();
+  const ds = deployStatusMeta(status);
   if (status === 'none') return null;
   return (
     <span

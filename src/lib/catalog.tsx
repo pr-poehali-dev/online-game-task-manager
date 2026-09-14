@@ -41,6 +41,24 @@ export interface ServerItem {
   logsDir: string | null;
 }
 
+export interface DeployStatusItem {
+  id: string;
+  label: string;
+  icon: string;
+  color: string;
+  // Колонка доски, в которую попадает задача при выборе этого статуса.
+  column: string;
+  sortOrder: number;
+  // Системные статусы ('none' и 'ready_live') нельзя удалять и переносить в другую колонку:
+  // на них держится логика доски и бейдж «Требуется залить в лаунчер».
+  isSystem: boolean;
+}
+
+const FALLBACK_DEPLOY_STATUS: DeployStatusItem = {
+  id: 'none', label: 'Без статуса', icon: 'Minus', color: '215 15% 50%',
+  column: 'todo', sortOrder: 0, isSystem: true,
+};
+
 const FALLBACK_CATEGORY: CategoryItem = { id: 'other', label: 'Прочее', icon: 'MoreHorizontal', color: '215 15% 55%', sortOrder: 0 };
 const FALLBACK_SERVER: ServerItem = {
   id: 'default', label: 'Сервер', color: '215 15% 55%', sortOrder: 0, protocol: 'hf', description: null,
@@ -50,9 +68,11 @@ const FALLBACK_SERVER: ServerItem = {
 interface CatalogContextValue {
   categories: CategoryItem[];
   servers: ServerItem[];
+  deployStatuses: DeployStatusItem[];
   loading: boolean;
   categoryMeta: (id: string) => CategoryItem;
   serverMeta: (id: string) => ServerItem;
+  deployStatusMeta: (id: string) => DeployStatusItem;
   reload: () => Promise<void>;
 }
 
@@ -61,6 +81,7 @@ const CatalogContext = createContext<CatalogContextValue | null>(null);
 export function CatalogProvider({ children }: { children: ReactNode }) {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [servers, setServers] = useState<ServerItem[]>([]);
+  const [deployStatuses, setDeployStatuses] = useState<DeployStatusItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -70,6 +91,7 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
         const data = await res.json();
         setCategories(data.categories || []);
         setServers(data.servers || []);
+        setDeployStatuses(data.deployStatuses || []);
       }
     } catch {
       /* ignore */
@@ -88,8 +110,12 @@ export function CatalogProvider({ children }: { children: ReactNode }) {
     return servers.find((s) => s.id === id) ?? FALLBACK_SERVER;
   }
 
+  function deployStatusMeta(id: string): DeployStatusItem {
+    return deployStatuses.find((d) => d.id === id) ?? FALLBACK_DEPLOY_STATUS;
+  }
+
   return (
-    <CatalogContext.Provider value={{ categories, servers, loading, categoryMeta, serverMeta, reload }}>
+    <CatalogContext.Provider value={{ categories, servers, deployStatuses, loading, categoryMeta, serverMeta, deployStatusMeta, reload }}>
       {children}
     </CatalogContext.Provider>
   );

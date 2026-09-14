@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Task, TeamMember, TaskOutcome, Sprint, Attachment } from './shared';
-import { taskAssigneeIds, deployStatuses, ModalOverlay, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
+import { taskAssigneeIds, ModalOverlay, mskLocalToIso, isoToMskLocal, TASKS_URL, authHeaders } from './shared';
+import type { DeployStatusItem } from '@/lib/catalog';
 import TaskModalHeader from './TaskModalHeader';
 import TaskModalMeta from './TaskModalMeta';
 import TaskModalDetails from './TaskModalDetails';
@@ -79,9 +80,9 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
     return d.url || '';
   }
 
-  function changeDeployStatus(ds: (typeof deployStatuses)[number]) {
+  function changeDeployStatus(ds: DeployStatusItem) {
     // Быстрая смена статуса деплоя прямо со страницы просмотра, без входа в режим редактирования
-    const updated = { ...task, column: ds.column, deployStatus: ds.id };
+    const updated = { ...task, column: ds.column as Task['column'], deployStatus: ds.id };
     setForm(updated);
     setDeployOpen(false);
     onSave(updated);

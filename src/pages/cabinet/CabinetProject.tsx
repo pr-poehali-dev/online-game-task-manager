@@ -2,10 +2,11 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import CabinetServers from './CabinetServers';
 import CabinetCategories from './CabinetCategories';
+import CabinetDeployStatuses from './CabinetDeployStatuses';
 import CabinetStorage from './CabinetStorage';
 import CabinetServiceKeys from './CabinetServiceKeys';
 
-type ProjectSubsection = 'menu' | 'servers' | 'categories' | 'storage' | 'keys';
+type ProjectSubsection = 'menu' | 'servers' | 'categories' | 'deploy' | 'storage' | 'keys';
 
 export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
   const [sub, setSub] = useState<ProjectSubsection>('menu');
@@ -22,6 +23,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
         </button>
         {sub === 'servers' && <CabinetServers />}
         {sub === 'categories' && <CabinetCategories />}
+        {sub === 'deploy' && <CabinetDeployStatuses />}
         {sub === 'storage' && <CabinetStorage />}
         {sub === 'keys' && <CabinetServiceKeys />}
       </div>
@@ -31,7 +33,7 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
   return (
     <div className="max-w-2xl">
       <h1 className="text-xl font-semibold mb-1">Управление проектом</h1>
-      <p className="text-sm text-muted-foreground mb-6">Настройка серверов, категорий и служебной информации проекта.</p>
+      <p className="text-sm text-muted-foreground mb-6">Настройка серверов, категорий, статусов деплоя и служебной информации проекта.</p>
 
       <div className="space-y-2">
         <button
@@ -58,6 +60,20 @@ export default function CabinetProject({ isOwner }: { isOwner: boolean }) {
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium">Категории</div>
             <div className="text-xs text-muted-foreground">Категории задач и статей</div>
+          </div>
+          <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
+        </button>
+
+        <button
+          onClick={() => setSub('deploy')}
+          className="w-full flex items-center gap-3 rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-colors text-left"
+        >
+          <div className="h-9 w-9 rounded-lg bg-primary/15 flex items-center justify-center shrink-0">
+            <Icon name="Rocket" size={17} className="text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium">Статусы деплоя</div>
+            <div className="text-xs text-muted-foreground">Стадии работы над задачей и их колонки</div>
           </div>
           <Icon name="ChevronRight" size={16} className="text-muted-foreground shrink-0" />
         </button>

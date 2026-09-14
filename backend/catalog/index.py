@@ -81,8 +81,23 @@ def _server_row(r):
     }
 
 
+def _deploy_status_row(r):
+    return {
+        'id': r[0], 'label': r[1], 'icon': r[2], 'color': r[3],
+        'column': r[4], 'sortOrder': r[5], 'isSystem': bool(r[6]),
+    }
+
+
+# Колонки доски, к которым администратор может привязывать СВОИ статусы деплоя. Колонка 'done'
+# намеренно исключена: единственный статус в ней — системный 'ready_live', на нём держится бейдж
+# «Требуется залить в лаунчер» и уведомления, поэтому её содержимое не редактируется.
+EDITABLE_STATUS_COLUMNS = ('todo', 'progress', 'hold')
+
+DEPLOY_STATUS_COLUMNS = "id, label, icon, color, column_id, sort_order, is_system"
+
+
 def handler(event: dict, context) -> dict:
-    '''Справочники категорий (для задач, статей базы знаний и идей) и серверов. Чтение доступно любому авторизованному участнику, создание/редактирование/удаление — только администраторам.'''
+    '''Справочники категорий (для задач, статей базы знаний и идей), серверов и статусов деплоя (таблица deploy_statuses, см. db_migrations V0095: статусы с is_system=true — 'none' и 'ready_live' — нельзя удалять и переносить в другую колонку, у остальных доступны колонки todo/progress/hold). Чтение доступно любому авторизованному участнику, создание/редактирование/удаление — только администраторам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -119,8 +134,14 @@ def handler(event: dict, context) -> dict:
             f"FROM {schema}.servers ORDER BY sort_order ASC, id ASC"
         )
         srvs = [_server_row(r) for r in cur.fetchall()]
+        cur.execute(
+            f"SELECT {DEPLOY_STATUS_COLUMNS} FROM {schema}.deploy_statuses ORDER BY sort_order ASC, id ASC"
+        )
+        statuses = [_deploy_status_row(r) for r in cur.fetchall()]
         cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'categories': cats, 'servers': srvs})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({
+            'categories': cats, 'servers': srvs, 'deployStatuses': statuses,
+        })}
 
     # Дальше — только администраторам
     if me['role'] != 'admin':
@@ -280,6 +301,92 @@ def handler(event: dict, context) -> dict:
         if fallback_id:
             cur.execute(f"UPDATE {schema}.tasks SET server = %s WHERE server = %s", (fallback_id, srv_id))
         cur.execute(f"DELETE FROM {schema}.servers WHERE id = %s", (srv_id,))
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    if action == 'create_deploy_status':
+        label = (body.get('label') or '').strip()
+        if not label:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_label'})}
+        column_id = body.get('column') or 'todo'
+        if column_id not in EDITABLE_STATUS_COLUMNS:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_column'})}
+        icon = body.get('icon') or 'Circle'
+        color = body.get('color') or '215 15% 55%'
+        base_id = _slugify(label)
+        new_id = base_id
+        n = 1
+        while True:
+            cur.execute(f"SELECT 1 FROM {schema}.deploy_statuses WHERE id = %s", (new_id,))
+            if not cur.fetchone():
+                break
+            n += 1
+            new_id = f"{base_id}-{n}"
+        cur.execute(f"SELECT COALESCE(MAX(sort_order), -1) + 1 FROM {schema}.deploy_statuses")
+        sort_order = cur.fetchone()[0]
+        cur.execute(
+            f"INSERT INTO {schema}.deploy_statuses (id, label, icon, color, column_id, sort_order, is_system) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, false) RETURNING {DEPLOY_STATUS_COLUMNS}",
+            (new_id, label, icon, color, column_id, sort_order)
+        )
+        st = _deploy_status_row(cur.fetchone())
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'deployStatus': st})}
+
+    if action == 'update_deploy_status':
+        st_id = body.get('id')
+        if not st_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        label = (body.get('label') or '').strip()
+        if not label:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_label'})}
+        cur.execute(f"SELECT is_system, column_id FROM {schema}.deploy_statuses WHERE id = %s", (st_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        is_system, current_column = bool(row[0]), row[1]
+        # У системных статусов ('none', 'ready_live') разрешено менять только внешний вид —
+        # подпись, цвет и иконку. Колонка остаётся прежней: на ней держится логика доски.
+        if is_system:
+            column_id = current_column
+        else:
+            column_id = body.get('column') or current_column
+            if column_id not in EDITABLE_STATUS_COLUMNS:
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_column'})}
+        icon = body.get('icon') or 'Circle'
+        color = body.get('color') or '215 15% 55%'
+        cur.execute(
+            f"UPDATE {schema}.deploy_statuses SET label = %s, icon = %s, color = %s, column_id = %s "
+            f"WHERE id = %s RETURNING {DEPLOY_STATUS_COLUMNS}",
+            (label, icon, color, column_id, st_id)
+        )
+        st = _deploy_status_row(cur.fetchone())
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'deployStatus': st})}
+
+    if action == 'delete_deploy_status':
+        st_id = body.get('id')
+        if not st_id:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT is_system FROM {schema}.deploy_statuses WHERE id = %s", (st_id,))
+        row = cur.fetchone()
+        if not row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if bool(row[0]):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'cant_delete_system'})}
+        # Задачи с удаляемым статусом не теряются: их переводят в «без статуса» ('none'),
+        # который защищён от удаления и всегда существует.
+        cur.execute(f"UPDATE {schema}.tasks SET deploy_status = 'none' WHERE deploy_status = %s", (st_id,))
+        cur.execute(f"DELETE FROM {schema}.deploy_statuses WHERE id = %s", (st_id,))
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 

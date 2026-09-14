@@ -2,7 +2,9 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { Task, TeamMember, Attachment } from './shared';
-import { columns, deployStatuses, DeployBadge, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge, inputCls } from './shared';
+import { columns, holdColumn, DeployBadge, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge, inputCls } from './shared';
+import { useCatalog } from '@/lib/catalog';
+import type { DeployStatusItem } from '@/lib/catalog';
 import { PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
 import type { PrivateNote } from './usePrivateNotes';
 
@@ -54,13 +56,15 @@ export default function TaskModalDetails({
   onSetLauncherUploaded?: (id: string, uploaded: boolean) => void;
   deployOpen: boolean;
   setDeployOpen: (v: boolean | ((prev: boolean) => boolean)) => void;
-  changeDeployStatus: (ds: (typeof deployStatuses)[number]) => void;
+  changeDeployStatus: (ds: DeployStatusItem) => void;
   links: { url: string; label: string }[];
   newLink: { url: string; label: string };
   setNewLink: (updater: (p: { url: string; label: string }) => { url: string; label: string }) => void;
   addLink: () => void;
   removeLink: (i: number) => void;
 }) {
+  const { deployStatuses } = useCatalog();
+
   return (
     <>
       {/* Description */}
@@ -147,7 +151,9 @@ export default function TaskModalDetails({
           </button>
           {deployOpen && (
             <div className="space-y-3 animate-scale-in mt-2">
-              {columns.map((col) => (
+              {[...columns, holdColumn]
+                .filter((col) => deployStatuses.some((ds) => ds.column === col.id))
+                .map((col) => (
                 <div key={col.id}>
                   <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                     <Icon name={col.icon} size={11} />

@@ -1,28 +1,17 @@
 import type {
   Priority,
   ColumnId,
-  DeployStatus,
   TaskOutcome,
   Sprint,
 } from './sharedTypes';
 
 export const AVATAR_HUES = ['152 60% 48%', '210 80% 60%', '270 65% 65%', '330 70% 62%', '35 85% 58%', '190 70% 55%', '0 65% 60%', '45 90% 55%'];
 
-// Каждый статус деплоя жёстко привязан к колонке доски — выбор статуса переключает колонку задачи автоматически.
-export const deployStatuses: { id: DeployStatus; label: string; color: string; icon: string; column: ColumnId }[] = [
-  { id: 'none',          label: 'Без статуса',                     color: '215 15% 50%', icon: 'Minus',          column: 'todo' },
-  { id: 'unfeasible',    label: 'Нереализуемо',                    color: '0 0% 55%',    icon: 'Ban',            column: 'todo' },
-  { id: 'tested_rework', label: 'На доработку (есть замечания)',   color: '0 65% 60%',   icon: 'CircleX',        column: 'todo' },
-  { id: 'in_progress',   label: 'Взято в работу',                  color: '35 85% 58%',  icon: 'Hammer',         column: 'progress' },
-  { id: 'local',         label: 'Готово локально у скриптера',     color: '270 65% 65%', icon: 'Code2',          column: 'progress' },
-  { id: 'test',          label: 'На тестировании (залито на тестовый)', color: '210 80% 62%', icon: 'FlaskConical', column: 'progress' },
-  { id: 'tested_ok',     label: 'Протестировано — всё ок',         color: '152 55% 50%', icon: 'CircleCheck',    column: 'progress' },
-  { id: 'ready_live',    label: 'Можно заливать на лайв',          color: '45 90% 55%',  icon: 'Rocket',         column: 'done' },
-];
-
-export function deployStatusMeta(id: DeployStatus) {
-  return deployStatuses.find((d) => d.id === id) ?? deployStatuses[0];
-}
+// deployStatuses/deployStatusMeta УДАЛЕНЫ отсюда: список статусов деплоя теперь динамический и
+// редактируется администратором (см. useCatalog() в src/lib/catalog.tsx, backend/catalog/index.py,
+// таблица deploy_statuses, db_migrations V0095). Используйте useCatalog().deployStatuses /
+// useCatalog().deployStatusMeta. Каждый статус по-прежнему привязан к колонке доски — выбор
+// статуса переключает колонку задачи автоматически.
 
 export const outcomes: { id: TaskOutcome; label: string; color: string; icon: string }[] = [
   { id: 'done',       label: 'Реализовано',   color: '152 55% 50%', icon: 'CircleCheck' },

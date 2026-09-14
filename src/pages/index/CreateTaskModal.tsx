@@ -5,7 +5,7 @@ import AttachmentsField from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
-import { deployStatuses, columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
+import { columns, holdColumn, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -17,7 +17,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   onCreate: (t: Task) => void;
   sprints: Sprint[];
 }) {
-  const { servers, categories } = useCatalog();
+  const { servers, categories, deployStatuses } = useCatalog();
   const initialDeployStatus = (deployStatuses.find((ds) => ds.column === column)?.id ?? 'none') as DeployStatus;
   const [form, setForm] = useState({
     title: preset?.title ?? '',
@@ -114,7 +114,9 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Статус деплоя (определяет колонку)</label>
             <div className="space-y-3">
-              {columns.map((col) => (
+              {[...columns, holdColumn]
+                .filter((col) => deployStatuses.some((ds) => ds.column === col.id))
+                .map((col) => (
                 <div key={col.id}>
                   <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
                     <Icon name={col.icon} size={11} />
@@ -127,7 +129,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
                         <button
                           key={ds.id}
                           type="button"
-                          onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column }))}
+                          onClick={() => setForm((p) => ({ ...p, deployStatus: ds.id, column: ds.column as ColumnId }))}
                           className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all"
                           style={{
                             background: active ? `hsl(${ds.color} / 0.18)` : 'transparent',

@@ -10,8 +10,10 @@ import {
 } from '@dnd-kit/core';
 import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome, DeployStatus } from './shared';
-import { columns, deployStatuses, CategoryBadge, PriorityBadge } from './shared';
+import { columns, CategoryBadge, PriorityBadge } from './shared';
 import type { PermissionKey } from '@/lib/auth';
+import { useCatalog } from '@/lib/catalog';
+import type { DeployStatusItem } from '@/lib/catalog';
 import { TaskCard, Column } from './BoardTaskCard';
 import { HoldSection } from './BoardHoldSection';
 import { SORT_OPTIONS, sortTasks, canDragTask } from './boardSort';
@@ -42,11 +44,13 @@ export default function Board({
   currentUserId: number | null;
   tasksWithPatchFiles: Set<string>;
 }) {
+  // Список статусов деплоя редактируется администратором, поэтому берём его из справочника.
+  const { deployStatuses } = useCatalog();
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [sortMode, setSortMode] = useState<SortMode>('smart');
   const [sortOpen, setSortOpen] = useState(false);
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
-  const [pendingDrop, setPendingDrop] = useState<{ task: Task; targetColumn: ColumnId; options: typeof deployStatuses } | null>(null);
+  const [pendingDrop, setPendingDrop] = useState<{ task: Task; targetColumn: ColumnId; options: DeployStatusItem[] } | null>(null);
   const [holdOpen, setHoldOpen] = useState(false);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));

@@ -32,7 +32,13 @@ export type ServerId = string;
 // категории через кабинет (раздел "Управление проектом → Категории", см. CabinetProject.tsx).
 // Категории общие для задач и статей базы знаний (одна и та же таблица/справочник).
 export type CategoryId = string;
-export type DeployStatus = 'none' | 'in_progress' | 'local' | 'test' | 'ready_live' | 'tested_ok' | 'tested_rework' | 'unfeasible';
+// DeployStatus — идентификатор статуса деплоя из динамического справочника (см. useCatalog() в
+// src/lib/catalog.tsx, backend/catalog/index.py, таблица deploy_statuses, db_migrations V0095).
+// Раньше был фиксированным union-типом, теперь любая строка: администратор может добавлять и
+// переименовывать статусы колонок «К выполнению», «В работе» и «На удержании» через кабинет.
+// Системные 'none' и 'ready_live' защищены от удаления — на них держится логика доски и бейдж
+// «Требуется залить в лаунчер».
+export type DeployStatus = string;
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
 export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas' | 'patchnotes' | 'patches' | 'logs' | 'ai';
 

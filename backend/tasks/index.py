@@ -48,16 +48,19 @@ def _tg_send(chat_id, text, button_url=None):
         print(f"[tasks] tg send error: {e}")
 
 
-DEPLOY_STATUS_LABELS = {
-    'none': 'Без статуса',
-    'unfeasible': 'Нереализуемо',
-    'tested_rework': 'На доработку (есть замечания)',
-    'in_progress': 'Взято в работу',
-    'local': 'Готово локально у скриптера',
-    'test': 'На тестировании (залито на тестовый)',
-    'tested_ok': 'Протестировано — всё ок',
-    'ready_live': 'Можно заливать на лайв',
-}
+def _deploy_status_label(cur, schema, status_id):
+    '''Человеческая подпись статуса деплоя для уведомлений и журнала активности. Берётся из
+    справочника deploy_statuses (см. db_migrations V0095) — раньше список был захардкожен здесь,
+    и статусы, добавленные администратором, попадали в уведомления голым идентификатором.
+    Если статуса нет в справочнике (например его только что удалили) — возвращаем сам id.'''
+    if not status_id:
+        return 'Без статуса'
+    try:
+        cur.execute(f"SELECT label FROM {schema}.deploy_statuses WHERE id = %s", (status_id,))
+        row = cur.fetchone()
+        return row[0] if row else status_id
+    except Exception:
+        return status_id
 
 
 def _telegram_targets(cur, schema, user_ids):
@@ -131,7 +134,7 @@ def _notify_deploy_status(cur, schema, task_id, task_title, new_status, actor_id
     targets.discard(actor_id)
     if not targets:
         return
-    status_label = DEPLOY_STATUS_LABELS.get(new_status, new_status)
+    status_label = _deploy_status_label(cur, schema, new_status)
     for uid in targets:
         _add_notif(cur, schema, uid, 'task_deploy_status', f'Статус деплоя изменён: {status_label}', task_title, 'task', task_id, actor_id)
     if column == 'hold':
@@ -700,7 +703,7 @@ def handler(event: dict, context) -> dict:
                 row = cur.fetchone()
                 if deploy_changed:
                     _notify_deploy_status(cur, schema, task_id, own_row[3], requested_deploy, me['id'], own_row[2], own_ids, column=requested_column)
-                    _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], DEPLOY_STATUS_LABELS.get(requested_deploy, requested_deploy))
+                    _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, own_row[3], _deploy_status_label(cur, schema, requested_deploy))
                 new_launcher_uploaded = False if deploy_changed else bool(own_row[6])
                 _check_launcher_badge_appeared(
                     cur, schema, task_id, own_row[3], me['id'], own_row[2], own_ids,
@@ -781,7 +784,7 @@ def handler(event: dict, context) -> dict:
         task_title = task_title_full
         if deploy_changed_full:
             _notify_deploy_status(cur, schema, task_id, task_title, new_deploy_status_val, me['id'], own_row[2], assignee_ids, column=new_column_val)
-            _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, DEPLOY_STATUS_LABELS.get(new_deploy_status_val, new_deploy_status_val))
+            _log_activity(cur, schema, me['id'], 'task_deploy_status', 'task', task_id, task_title, _deploy_status_label(cur, schema, new_deploy_status_val))
         _check_launcher_badge_appeared(
             cur, schema, task_id, task_title, me['id'], own_row[2], assignee_ids,
             own_row[5], own_row[4], bool(own_row[6]), new_column_val, new_deploy_status_val, launcher_uploaded
