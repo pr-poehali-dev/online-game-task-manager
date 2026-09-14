@@ -610,6 +610,12 @@ def handler(event: dict, context) -> dict:
         if not title:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
+        # Категория обязательна: без неё задачи оседали в «Прочем» и терялись в отчётах.
+        # Проверяем и на сервере — форма не единственный способ попасть сюда.
+        category = (body.get('category') or '').strip()
+        if not category:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_category'})}
         assignee_ids = _norm_assignees(body)
         assignee_id = assignee_ids[0] if assignee_ids else None
         links = json.dumps(body.get('links') or [])
@@ -632,7 +638,7 @@ def handler(event: dict, context) -> dict:
                 # экраны, пока servers хранит полный выбор.
                 servers[0] if servers else None,
                 json.dumps(servers),
-                body.get('category') or 'other',
+                category,
                 body.get('sprintId'),
                 body.get('deployStatus') or 'none',
                 body.get('description'),

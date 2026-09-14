@@ -31,7 +31,9 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     // ради совместимости со старыми экранами.
     server: (preset?.server ?? servers[0]?.id ?? '') as ServerId,
     servers: [(preset?.server ?? servers[0]?.id ?? '')].filter(Boolean) as ServerId[],
-    category: (preset?.category ?? 'other') as CategoryId,
+    // Категория обязательна и НЕ подставляется по умолчанию: пустое значение заставляет
+    // автора осознанно выбрать её, иначе все задачи копились бы в «Прочем».
+    category: (preset?.category ?? '') as CategoryId | '',
     sprintId: '',
     description: '',
     deadline: '',
@@ -67,8 +69,10 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     setNewLink({ url: '', label: '' });
   }
 
+  const canCreate = Boolean(form.title.trim() && form.category);
+
   function handleCreate() {
-    if (!form.title.trim()) return;
+    if (!canCreate) return;
     onCreate({
       ...form,
       id: 't' + Date.now(),
@@ -151,9 +155,16 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             { value: 'low', label: 'Низкий' },
           ]} />
           <ServerMultiSelect value={form.servers} onChange={setServers} />
-          <Select label="Категория" value={form.category} onChange={(v) => set('category', v)} options={
-            categories.map((c) => ({ value: c.id, label: c.label }))
-          } />
+          <Select
+            label="Категория *"
+            value={form.category}
+            onChange={(v) => set('category', v)}
+            invalid={!form.category}
+            options={[
+              { value: '', label: '— Выберите категорию —' },
+              ...categories.map((c) => ({ value: c.id, label: c.label })),
+            ]}
+          />
           <AssigneeMultiSelect team={team} value={form.assigneeIds} onChange={setAssignees} />
           <Select label="Спринт" value={form.sprintId} onChange={(v) => set('sprintId', v)} options={[
             { value: '', label: '— Без спринта —' },
@@ -212,7 +223,12 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
         <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
           Отмена
         </button>
-        <button onClick={handleCreate} disabled={!form.title.trim()} className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity">
+        <button
+          onClick={handleCreate}
+          disabled={!canCreate}
+          title={!form.title.trim() ? 'Введите название задачи' : (!form.category ? 'Выберите категорию' : '')}
+          className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+        >
           Создать
         </button>
       </div>

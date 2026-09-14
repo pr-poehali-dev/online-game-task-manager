@@ -167,12 +167,15 @@ export function ModalOverlay({ onClose, children, wide }: { onClose: () => void;
   );
 }
 
-export function Select({ label, value, onChange, options, compact }: {
+export function Select({ label, value, onChange, options, compact, invalid }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   options: { value: string; label: string }[];
   compact?: boolean;
+  // invalid — поле обязательное и пока не заполнено: подсвечиваем рамку, чтобы было понятно,
+  // почему кнопка сохранения недоступна.
+  invalid?: boolean;
 }) {
   return (
     <div>
@@ -180,7 +183,7 @@ export function Select({ label, value, onChange, options, compact }: {
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-lg border border-border bg-secondary/60 text-foreground focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
+        className={`w-full rounded-lg bg-secondary/60 text-foreground focus:outline-none focus:ring-1 ${invalid ? 'border border-destructive focus:ring-destructive' : 'border border-border focus:ring-primary'} ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
