@@ -1,10 +1,20 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { resolveAssignee, taskAssigneeIds, outcomes, outcomeMeta, AssigneeStack, formatMskDateTime } from './shared';
+import { resolveAssignee, taskAssigneeIds, taskServerIds, outcomes, outcomeMeta, AssigneeStack, ServerBadge, formatMskDateTime } from './shared';
 
 type ArchiveTab = 'tasks' | 'sprints';
+
+// Порядок задач в архиве. По умолчанию — самые недавно закрытые сверху: в архив чаще всего
+// заходят за тем, что закрыли только что.
+type ArchiveSort = 'date_desc' | 'date_asc' | 'server';
+
+const ARCHIVE_SORTS: { id: ArchiveSort; label: string; icon: string }[] = [
+  { id: 'date_desc', label: 'Сначала новые', icon: 'ArrowDownWideNarrow' },
+  { id: 'date_asc', label: 'Сначала старые', icon: 'ArrowUpWideNarrow' },
+  { id: 'server', label: 'По серверам', icon: 'Server' },
+];
 
 export default function Archive({
   tasks,
@@ -33,10 +43,30 @@ export default function Archive({
   onRestoreSprint: (id: string) => void;
   onDeleteSprint: (id: string) => void;
 }) {
-  const { categoryMeta } = useCatalog();
+  const { categoryMeta, serverMeta } = useCatalog();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [confirmSprintId, setConfirmSprintId] = useState<string | null>(null);
   const [tab, setTab] = useState<ArchiveTab>('tasks');
+  const [sort, setSort] = useState<ArchiveSort>('date_desc');
+
+  // Дата закрытия есть не у всех задач: те, что закрыли до появления этого поля, сортируем по
+  // дате создания, иначе они непредсказуемо прыгали бы в конец списка.
+  const sortedTasks = useMemo(() => {
+    const when = (t: Task) => new Date(t.archivedAt || t.createdAt || 0).getTime();
+    const list = [...tasks];
+    if (sort === 'server') {
+      // Внутри одного сервера — недавно закрытые сверху, как и в сортировке по дате.
+      return list.sort((a, b) => {
+        const an = taskServerIds(a).map((id) => serverMeta(id).label).join(', ');
+        const bn = taskServerIds(b).map((id) => serverMeta(id).label).join(', ');
+        // Задачи без сервера уходят в конец, а не смешиваются с первым по алфавиту.
+        if (!an !== !bn) return an ? -1 : 1;
+        if (an !== bn) return an.localeCompare(bn, 'ru');
+        return when(b) - when(a);
+      });
+    }
+    return list.sort((a, b) => (sort === 'date_asc' ? when(a) - when(b) : when(b) - when(a)));
+  }, [tasks, sort, serverMeta]);
 
   function formatDate(d: string) {
     return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
@@ -108,6 +138,24 @@ export default function Archive({
             </button>
           );
         })}
+
+        {/* Порядок вывода: по дате закрытия или группировкой по серверам */}
+        <div className="flex flex-wrap gap-2 sm:ml-auto">
+          {ARCHIVE_SORTS.map((o) => (
+            <button
+              key={o.id}
+              onClick={() => setSort(o.id)}
+              className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5 ${
+                sort === o.id
+                  ? 'bg-secondary text-foreground border-border'
+                  : 'text-muted-foreground border-border hover:text-foreground'
+              }`}
+            >
+              <Icon name={o.icon} size={12} />
+              {o.label}
+            </button>
+          ))}
+        </div>
       </div>
       )}
 
@@ -185,7 +233,7 @@ export default function Archive({
         </div>
       ) : (
         <div className="space-y-2.5">
-          {tasks.map((t) => {
+          {sortedTasks.map((t) => {
             const ids = taskAssigneeIds(t);
             const namesLabel = ids.length > 0 ? ids.map((id) => resolveAssignee(team, id).name).join(', ') : 'Не назначен';
             const om = outcomeMeta(t.outcome ?? 'done');
@@ -212,6 +260,10 @@ export default function Archive({
                     </div>
                   )}
                 </button>
+                {/* Серверы задачи — без них сортировка «по серверам» была бы непонятной */}
+                <div className="hidden sm:flex items-center gap-1.5 shrink-0">
+                  {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
+                </div>
                 <AssigneeStack ids={ids} team={team} size={26} />
                 {isAdmin && (confirmId === t.id ? (
                   <div className="shrink-0 flex items-center gap-1.5">
