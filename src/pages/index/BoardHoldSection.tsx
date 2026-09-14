@@ -84,7 +84,7 @@ export function HoldSection({
             task={t}
             index={i}
             team={team}
-            isAdmin={isAdmin}
+            canArchive={can('task_archive')}
             canDrag={canDragTask(t, currentUserId, isAdmin)}
             menuFor={menuFor}
             setMenuFor={setMenuFor}

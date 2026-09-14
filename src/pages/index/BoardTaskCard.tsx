@@ -7,7 +7,7 @@ export function TaskCard({
   task: t,
   index: i,
   team,
-  isAdmin,
+  canArchive,
   canDrag,
   menuFor,
   setMenuFor,
@@ -18,7 +18,7 @@ export function TaskCard({
   task: Task;
   index: number;
   team: TeamMember[];
-  isAdmin: boolean;
+  canArchive: boolean;
   canDrag: boolean;
   menuFor: string | null;
   setMenuFor: (id: string | null) => void;
@@ -37,7 +37,7 @@ export function TaskCard({
       className={`group relative rounded-xl border border-border bg-card p-4 hover:border-primary/50 transition-all cursor-pointer animate-scale-in ${isDragging ? 'opacity-30' : ''} ${canDrag ? 'touch-none' : ''}`}
       style={{ animationDelay: `${i * 60}ms` }}
     >
-      {isAdmin && (
+      {canArchive && (
         <div className="absolute top-2 right-2 z-10" onClick={(e) => e.stopPropagation()}>
           <button
             onClick={() => setMenuFor(menuFor === t.id ? null : t.id)}

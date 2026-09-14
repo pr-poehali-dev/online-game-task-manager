@@ -29,7 +29,7 @@ def _schema():
 
 
 ALL_PERMISSIONS = [
-    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart', 'task_archive',
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',

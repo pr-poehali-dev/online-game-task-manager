@@ -41,6 +41,7 @@ export default function Restart({
   const restartTasks = tasks.filter((t) => !t.archived && t.column === 'restart');
   // Кандидаты на перенос: не в архиве, не в рестарте, готовы к заливке на лайв или в колонке Done
   const canRestart = isAdmin || can('task_restart');
+  const canArchive = can('task_archive');
   const candidates = tasks
     .filter((t) => !t.archived && t.column !== 'restart' && (t.deployStatus === 'ready_live' || t.column === 'done'))
     .filter((t) => isAdmin || taskAssigneeIds(t).includes(currentUserId ?? -1) || t.creatorId === currentUserId);
@@ -138,6 +139,7 @@ export default function Restart({
                       task={t}
                       team={team}
                       isAdmin={isAdmin}
+                      canArchive={canArchive}
                       archiveMenu={archiveMenu}
                       setArchiveMenu={setArchiveMenu}
                       onCardClick={onCardClick}
@@ -160,6 +162,7 @@ function RestartTaskCard({
   task: t,
   team,
   isAdmin,
+  canArchive,
   archiveMenu,
   setArchiveMenu,
   onCardClick,
@@ -171,6 +174,7 @@ function RestartTaskCard({
   task: Task;
   team: TeamMember[];
   isAdmin: boolean;
+  canArchive: boolean;
   archiveMenu: string | null;
   setArchiveMenu: (id: string | null) => void;
   onCardClick: (t: Task) => void;
@@ -208,7 +212,7 @@ function RestartTaskCard({
         <AssigneeStack ids={assignees} team={team} size={24} />
         {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
       </div>
-      {isAdmin && (
+      {(isAdmin || canArchive) && (
         <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
           {done ? (
             <>
@@ -219,6 +223,7 @@ function RestartTaskCard({
                 <Icon name="Undo2" size={13} />
                 Вернуть
               </button>
+              {canArchive && (
               <div className="relative ml-auto">
                 <button
                   onClick={() => setArchiveMenu(archiveMenu === t.id ? null : t.id)}
@@ -245,6 +250,7 @@ function RestartTaskCard({
                   </div>
                 )}
               </div>
+              )}
             </>
           ) : (
             <button

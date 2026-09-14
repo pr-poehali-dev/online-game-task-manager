@@ -10,6 +10,7 @@ export type PermissionKey =
   | 'task_edit_own'
   | 'task_view_others'
   | 'task_restart'
+  | 'task_archive'
   | 'idea_create'
   | 'kb_create'
   | 'kb_edit'

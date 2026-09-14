@@ -220,7 +220,7 @@ def _db():
 
 
 ALL_PERMISSIONS = [
-    'task_create', 'task_edit_own', 'task_view_others', 'task_restart',
+    'task_create', 'task_edit_own', 'task_view_others', 'task_restart', 'task_archive',
     'idea_create',
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
@@ -937,7 +937,10 @@ def handler(event: dict, context) -> dict:
 
     # Архивация задачи с исходом — только администратор
     if action == 'archive':
-        if me['role'] != 'admin':
+        # Закрывать задачи может администратор ИЛИ сотрудник с точечным правом task_archive —
+        # чтобы делегировать закрытие, не выдавая полный админский доступ. У администраторов
+        # право включено по умолчанию (см. _effective_perms), но его можно снять явно.
+        if not me['perms']['task_archive']:
             cur.close(); conn.close()
             return _forbidden()
         task_id = body.get('id')

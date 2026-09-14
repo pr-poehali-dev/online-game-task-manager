@@ -9,6 +9,7 @@ export default function TaskModalHeader({
   canFullEdit,
   canEditDeploy,
   isAdmin,
+  canArchive,
   archiveMenu,
   setArchiveMenu,
   onClose,
@@ -23,6 +24,8 @@ export default function TaskModalHeader({
   canFullEdit: boolean;
   canEditDeploy: boolean;
   isAdmin: boolean;
+  // Право закрывать задачи: админ или сотрудник с точечным правом task_archive.
+  canArchive: boolean;
   archiveMenu: boolean;
   setArchiveMenu: (v: boolean | ((prev: boolean) => boolean)) => void;
   onClose: () => void;
@@ -62,7 +65,7 @@ export default function TaskModalHeader({
             Редактировать
           </button>
         )}
-        {isAdmin && (task.archived ? (
+        {task.archived ? (isAdmin && (
           <button
             onClick={() => onUnarchive(task.id)}
             className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
@@ -70,7 +73,7 @@ export default function TaskModalHeader({
             <Icon name="ArchiveRestore" size={13} />
             Вернуть на доску
           </button>
-        ) : (
+        )) : (canArchive && (
           <div className="relative">
             <button
               onClick={() => setArchiveMenu((v) => !v)}

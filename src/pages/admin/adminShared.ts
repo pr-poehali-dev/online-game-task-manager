@@ -22,6 +22,7 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       { key: 'task_edit_own', label: 'Редактирование своих задач (созданных самим)' },
       { key: 'task_view_others', label: 'Просмотр чужих задач' },
       { key: 'task_restart', label: 'Перенос своих задач в «К рестарту»' },
+      { key: 'task_archive', label: 'Закрывать задачи (убирать с доски в архив)' },
     ],
   },
   {

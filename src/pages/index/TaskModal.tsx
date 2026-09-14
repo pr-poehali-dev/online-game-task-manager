@@ -37,6 +37,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const isCreator = task.creatorId != null && task.creatorId === currentUserId;
   const isAssignee = currentUserId != null && taskAssigneeIds(task).includes(currentUserId);
   const canFullEdit = isAdmin || (can('task_edit_own') && isCreator);
+  // Закрывать задачи может админ или сотрудник с точечным правом task_archive.
+  const canArchive = can('task_archive');
   // Статус деплоя может менять автор задачи или назначенный исполнитель — даже без полного доступа
   const canEditDeploy = canFullEdit || isCreator || isAssignee;
   // Режим просмотра по умолчанию: чистое описание + прикреплённая информация, без полей редактирования.
@@ -119,6 +121,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
         canFullEdit={canFullEdit}
         canEditDeploy={canEditDeploy}
         isAdmin={isAdmin}
+        canArchive={canArchive}
         archiveMenu={archiveMenu}
         setArchiveMenu={setArchiveMenu}
         onClose={onClose}
