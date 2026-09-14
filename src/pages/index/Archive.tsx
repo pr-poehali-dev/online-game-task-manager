@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, TaskOutcome, Sprint } from './shared';
-import { resolveAssignee, taskAssigneeIds, outcomes, outcomeMeta, AssigneeStack } from './shared';
+import { resolveAssignee, taskAssigneeIds, outcomes, outcomeMeta, AssigneeStack, formatMskDateTime } from './shared';
 
 type ArchiveTab = 'tasks' | 'sprints';
 
@@ -204,6 +204,13 @@ export default function Archive({
                 <button onClick={() => onCardClick(t)} className="flex-1 min-w-0 text-left">
                   <div className="text-sm font-medium truncate">{t.title}</div>
                   <div className="text-xs text-muted-foreground truncate">{categoryMeta(t.category).label} · {namesLabel}</div>
+                  {/* Кто и когда закрыл задачу — видно прямо в списке архива, без открытия карточки */}
+                  {t.closedBy != null && (
+                    <div className="text-[11px] text-muted-foreground/80 truncate mt-0.5">
+                      Закрыл: {resolveAssignee(team, t.closedBy).name}
+                      {t.archivedAt ? ` · ${formatMskDateTime(t.archivedAt)}` : ''}
+                    </div>
+                  )}
                 </button>
                 <AssigneeStack ids={ids} team={team} size={26} />
                 {isAdmin && (confirmId === t.id ? (

@@ -70,6 +70,24 @@ export default function TaskModalMeta({
         </div>
       )}
 
+      {/* Кто и когда закрыл задачу — только у закрытых задач, рядом с данными о создании */}
+      {task.archived && (task.closedBy != null || task.archivedAt) && (
+        <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground -mt-2">
+          {task.archivedAt && (
+            <span className="flex items-center gap-1">
+              <Icon name="Archive" size={11} />
+              Закрыта {formatMskDateTime(task.archivedAt)}
+            </span>
+          )}
+          {task.closedBy != null && (
+            <span className="flex items-center gap-1">
+              <AssigneeAvatar a={resolveAssignee(team, task.closedBy)} size={15} />
+              {resolveAssignee(team, task.closedBy).name}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Meta grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
         {isEditing && !canFullEdit && !canEditDeploy && (

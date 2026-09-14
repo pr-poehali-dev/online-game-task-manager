@@ -306,12 +306,16 @@ def _row_to_task(r):
         'attachments': r[19] if r[19] is not None else [],
         'deadline': r[20].isoformat() if r[20] else None,
         'launcherUploaded': bool(r[21]),
+        # Кто и когда закрыл задачу — заполняются при архивации и сбрасываются при возврате
+        # на доску, чтобы в карточке и в архиве был виден автор закрытия.
+        'closedBy': r[23],
+        'archivedAt': r[24].isoformat() if r[24] else None,
     }
 
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded, servers"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded, servers, closed_by, archived_at"
 )
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -593,7 +597,9 @@ def handler(event: dict, context) -> dict:
         tasks = []
         for r in cur.fetchall():
             d = _row_to_task(r)
-            d['commentCount'] = r[21]
+            # Счётчик комментариев идёт ПОСЛЕДНИМ в SELECT — берём с конца, чтобы добавление
+            # новых колонок в TASK_COLUMNS больше не сбивало индекс.
+            d['commentCount'] = r[-1]
             # Без права task_view_others — видит только задачи, где он исполнитель или автор
             if not me['perms']['task_view_others'] and me['id'] not in _task_assignee_ids(d) and d.get('creatorId') != me['id']:
                 continue

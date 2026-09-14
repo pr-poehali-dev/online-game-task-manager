@@ -91,6 +91,9 @@ export interface Task {
   attachments?: Attachment[];
   deadline?: string | null;
   launcherUploaded?: boolean;
+  // Кто и когда закрыл задачу. Заполняются при отправке в архив, сбрасываются при возврате.
+  closedBy?: number | null;
+  archivedAt?: string | null;
 }
 
 export interface Sprint {
