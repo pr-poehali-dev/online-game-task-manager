@@ -8,12 +8,11 @@ type ArchiveTab = 'tasks' | 'sprints';
 
 // Порядок задач в архиве. По умолчанию — самые недавно закрытые сверху: в архив чаще всего
 // заходят за тем, что закрыли только что.
-type ArchiveSort = 'date_desc' | 'date_asc' | 'server';
+type ArchiveSort = 'date_desc' | 'date_asc';
 
 const ARCHIVE_SORTS: { id: ArchiveSort; label: string; icon: string }[] = [
   { id: 'date_desc', label: 'Сначала новые', icon: 'ArrowDownWideNarrow' },
   { id: 'date_asc', label: 'Сначала старые', icon: 'ArrowUpWideNarrow' },
-  { id: 'server', label: 'По серверам', icon: 'Server' },
 ];
 
 export default function Archive({
@@ -48,25 +47,25 @@ export default function Archive({
   const [confirmSprintId, setConfirmSprintId] = useState<string | null>(null);
   const [tab, setTab] = useState<ArchiveTab>('tasks');
   const [sort, setSort] = useState<ArchiveSort>('date_desc');
+  // Фильтр по серверу ВНУТРИ архива: выбран конкретный сервер — показываем только его задачи.
+  const [serverFilter, setServerFilter] = useState<string>('all');
+
+  // Сервер показываем в фильтре, только если в архиве реально есть его задачи — пустые кнопки
+  // по всему списку серверов только мешали бы.
+  const serversInArchive = useMemo(() => {
+    const ids = new Set<string>();
+    tasks.forEach((t) => taskServerIds(t).forEach((id) => ids.add(id)));
+    return [...ids].sort((a, b) => serverMeta(a).label.localeCompare(serverMeta(b).label, 'ru'));
+  }, [tasks, serverMeta]);
 
   // Дата закрытия есть не у всех задач: те, что закрыли до появления этого поля, сортируем по
   // дате создания, иначе они непредсказуемо прыгали бы в конец списка.
-  const sortedTasks = useMemo(() => {
+  const visibleTasks = useMemo(() => {
     const when = (t: Task) => new Date(t.archivedAt || t.createdAt || 0).getTime();
-    const list = [...tasks];
-    if (sort === 'server') {
-      // Внутри одного сервера — недавно закрытые сверху, как и в сортировке по дате.
-      return list.sort((a, b) => {
-        const an = taskServerIds(a).map((id) => serverMeta(id).label).join(', ');
-        const bn = taskServerIds(b).map((id) => serverMeta(id).label).join(', ');
-        // Задачи без сервера уходят в конец, а не смешиваются с первым по алфавиту.
-        if (!an !== !bn) return an ? -1 : 1;
-        if (an !== bn) return an.localeCompare(bn, 'ru');
-        return when(b) - when(a);
-      });
-    }
-    return list.sort((a, b) => (sort === 'date_asc' ? when(a) - when(b) : when(b) - when(a)));
-  }, [tasks, sort, serverMeta]);
+    return tasks
+      .filter((t) => serverFilter === 'all' || taskServerIds(t).includes(serverFilter))
+      .sort((a, b) => (sort === 'date_asc' ? when(a) - when(b) : when(b) - when(a)));
+  }, [tasks, sort, serverFilter]);
 
   function formatDate(d: string) {
     return new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
@@ -139,7 +138,7 @@ export default function Archive({
           );
         })}
 
-        {/* Порядок вывода: по дате закрытия или группировкой по серверам */}
+        {/* Порядок вывода: по дате закрытия */}
         <div className="flex flex-wrap gap-2 sm:ml-auto">
           {ARCHIVE_SORTS.map((o) => (
             <button
@@ -157,6 +156,44 @@ export default function Archive({
           ))}
         </div>
       </div>
+      )}
+
+      {/* Фильтр по серверу: выбран конкретный — в списке остаются только его задачи.
+          Показываем, только если в архиве есть задачи больше чем с одного сервера. */}
+      {tab === 'tasks' && serversInArchive.length > 1 && (
+        <div className="flex flex-wrap items-center gap-2 mb-5">
+          <button
+            onClick={() => setServerFilter('all')}
+            className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors ${
+              serverFilter === 'all'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'text-muted-foreground border-border hover:text-foreground'
+            }`}
+          >
+            Все серверы
+          </button>
+          {serversInArchive.map((id) => {
+            const m = serverMeta(id);
+            const active = serverFilter === id;
+            const count = tasks.filter((t) => taskServerIds(t).includes(id)).length;
+            return (
+              <button
+                key={id}
+                onClick={() => setServerFilter(id)}
+                className="text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors flex items-center gap-1.5"
+                style={{
+                  background: active ? `hsl(${m.color} / 0.18)` : 'transparent',
+                  borderColor: active ? `hsl(${m.color} / 0.5)` : 'hsl(var(--border))',
+                  color: active ? `hsl(${m.color})` : 'hsl(var(--muted-foreground))',
+                }}
+              >
+                <span className="h-2 w-2 rounded-full" style={{ background: `hsl(${m.color})` }} />
+                {m.label}
+                <span className="opacity-70 font-mono">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {tab === 'sprints' && (
@@ -226,14 +263,28 @@ export default function Archive({
         )
       )}
 
-      {tab === 'tasks' && (tasks.length === 0 ? (
+      {/* Пусто по фильтру и пустой архив — разные ситуации: во втором случае подсказываем,
+          что список сузил фильтр, и даём вернуться ко всем серверам. */}
+      {tab === 'tasks' && (visibleTasks.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Icon name="Archive" size={40} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">В архиве пока пусто</p>
+          {serverFilter === 'all' ? (
+            <p className="text-sm">В архиве пока пусто</p>
+          ) : (
+            <>
+              <p className="text-sm">Нет закрытых задач по серверу «{serverMeta(serverFilter).label}»</p>
+              <button
+                onClick={() => setServerFilter('all')}
+                className="mt-3 text-xs font-medium px-3 py-1.5 rounded-lg border border-border hover:text-foreground transition-colors"
+              >
+                Показать все серверы
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="space-y-2.5">
-          {sortedTasks.map((t) => {
+          {visibleTasks.map((t) => {
             const ids = taskAssigneeIds(t);
             const namesLabel = ids.length > 0 ? ids.map((id) => resolveAssignee(team, id).name).join(', ') : 'Не назначен';
             const om = outcomeMeta(t.outcome ?? 'done');
