@@ -1,6 +1,6 @@
 import Icon from '@/components/ui/icon';
 import type { Task, Sprint } from './shared';
-import { ServerBadge } from './shared';
+import { ServerBadge, sprintServerIds } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 const statusMeta: Record<Sprint['status'], { label: string; color: string; icon: string }> = {
@@ -50,7 +50,7 @@ export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit
             <span className="text-xs text-muted-foreground">
               {formatDate(sp.startDate)} — {formatDate(sp.endDate)}
             </span>
-            {sp.server && <ServerBadge id={sp.server} />}
+            {sprintServerIds(sp).map((sid) => <ServerBadge key={sid} id={sid} />)}
           </div>
           <h3 className="font-semibold text-base leading-tight">{sp.title}</h3>
           {sp.goal && (

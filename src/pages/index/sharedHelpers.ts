@@ -42,6 +42,12 @@ export function taskServerIds(task: { server?: string | null; servers?: string[]
   return task.server ? [task.server] : [];
 }
 
+// Серверы спринта — та же логика совместимости, что и у задач (см. taskServerIds).
+export function sprintServerIds(sprint: { server?: string | null; servers?: string[] }): string[] {
+  if (sprint.servers && sprint.servers.length > 0) return sprint.servers;
+  return sprint.server ? [sprint.server] : [];
+}
+
 export function resolveAssignee(team: TeamMember[], id: number | null): AssigneeView {
   const m = id != null ? team.find((t) => t.id === id) : undefined;
   if (!m) {

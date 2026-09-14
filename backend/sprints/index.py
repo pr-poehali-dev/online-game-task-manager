@@ -92,14 +92,33 @@ def _row_to_sprint(r):
         'endDate': r[4].isoformat() if hasattr(r[4], 'isoformat') else r[4],
         'status': r[5],
         'server': r[6],
+        'servers': r[7] if r[7] is not None else ([r[6]] if r[6] else []),
     }
 
 
-SPRINT_COLUMNS = "id, title, goal, start_date, end_date, status, server"
+SPRINT_COLUMNS = "id, title, goal, start_date, end_date, status, server, servers"
+
+
+def _norm_servers(body):
+    '''Приводит выбор серверов спринта к списку строк без повторов. Спринт может охватывать сразу
+    несколько серверов, поэтому фронт присылает servers — массив. Поле server оставлено для
+    совместимости: если пришло только оно, считаем его списком из одного элемента.'''
+    raw = body.get('servers')
+    if raw is None:
+        single = body.get('server')
+        raw = [single] if single else []
+    result = []
+    for v in raw:
+        if not v:
+            continue
+        v = str(v)
+        if v not in result:
+            result.append(v)
+    return result
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD спринтов таск-менеджера: список, создание, обновление, удаление. Создание/обновление/удаление пишется в журнал активности (activity_log).'''
+    '''CRUD спринтов таск-менеджера: список, создание, обновление, удаление. Создание/обновление/удаление пишется в журнал активности (activity_log). Спринт может охватывать сразу НЕСКОЛЬКО серверов (поле servers, jsonb, см. db_migrations V0094): поле server сохранено для совместимости и хранит первый сервер списка.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -149,9 +168,10 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_title'})}
         sprint_id = body.get('id') or f"s{int(time.time() * 1000)}"
+        new_servers = _norm_servers(body)
         cur.execute(
-            f"INSERT INTO {schema}.sprints (id, title, goal, start_date, end_date, status, server, created_by) "
-            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING {SPRINT_COLUMNS}",
+            f"INSERT INTO {schema}.sprints (id, title, goal, start_date, end_date, status, server, servers, created_by) "
+            f"VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING {SPRINT_COLUMNS}",
             (
                 sprint_id,
                 title,
@@ -159,7 +179,9 @@ def handler(event: dict, context) -> dict:
                 body.get('startDate'),
                 body.get('endDate'),
                 body.get('status') or 'planned',
-                body.get('server'),
+                # server хранит ПЕРВЫЙ сервер списка — ради совместимости со старыми экранами.
+                new_servers[0] if new_servers else None,
+                json.dumps(new_servers),
                 me['id'],
             )
         )
@@ -187,16 +209,18 @@ def handler(event: dict, context) -> dict:
         if not sprint_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        upd_servers = _norm_servers(body)
         cur.execute(
             f"UPDATE {schema}.sprints SET title = %s, goal = %s, start_date = %s, end_date = %s, status = %s, "
-            f"server = %s, updated_at = NOW() WHERE id = %s RETURNING {SPRINT_COLUMNS}",
+            f"server = %s, servers = %s, updated_at = NOW() WHERE id = %s RETURNING {SPRINT_COLUMNS}",
             (
                 (body.get('title') or '').strip(),
                 body.get('goal') or '',
                 body.get('startDate'),
                 body.get('endDate'),
                 body.get('status') or 'planned',
-                body.get('server'),
+                upd_servers[0] if upd_servers else None,
+                json.dumps(upd_servers),
                 sprint_id,
             )
         )

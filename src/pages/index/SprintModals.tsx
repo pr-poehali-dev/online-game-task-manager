@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { useCatalog } from '@/lib/catalog';
 import type { Sprint, Task } from './shared';
-import { ModalOverlay, Select, inputCls, CategoryBadge, PriorityBadge, taskServerIds } from './shared';
+import { ModalOverlay, Select, inputCls, CategoryBadge, PriorityBadge, taskServerIds, sprintServerIds } from './shared';
+import { ServerMultiSelect } from './TaskModalShared';
 
 function TaskMultiSelect({ tasks, value, onChange }: {
   tasks: Task[];
@@ -74,8 +74,9 @@ export function SprintEditModal({ sprint, onClose, onSave }: {
   onClose: () => void;
   onSave: (s: Sprint) => void;
 }) {
-  const [form, setForm] = useState<Sprint>({ ...sprint });
+  const [form, setForm] = useState<Sprint>({ ...sprint, servers: sprintServerIds(sprint) });
   const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids, server: ids[0] ?? null }));
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -105,11 +106,14 @@ export function SprintEditModal({ sprint, onClose, onSave }: {
             <input type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} className={inputCls} />
           </div>
         </div>
-        <Select label="Статус" value={form.status} onChange={(v) => set('status', v)} options={[
-          { value: 'planned', label: 'Запланирован' },
-          { value: 'active', label: 'Активный' },
-          { value: 'done', label: 'Завершён' },
-        ]} />
+        <div className="grid grid-cols-2 gap-3">
+          <Select label="Статус" value={form.status} onChange={(v) => set('status', v)} options={[
+            { value: 'planned', label: 'Запланирован' },
+            { value: 'active', label: 'Активный' },
+            { value: 'done', label: 'Завершён' },
+          ]} />
+          <ServerMultiSelect value={sprintServerIds(form)} onChange={setServers} />
+        </div>
       </div>
       <div className="flex justify-end gap-3 px-6 pb-5">
         <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">Отмена</button>
@@ -134,13 +138,18 @@ export function CreateSprintModal({ onClose, onCreate, availableTasks }: {
     endDate: twoWeeks,
     status: 'planned',
     server: null,
+    servers: [],
   });
   const [taskIds, setTaskIds] = useState<string[]>([]);
-  const { servers } = useCatalog();
   const set = (k: keyof Sprint, v: string) => setForm((p) => ({ ...p, [k]: v }));
+  // Спринт может охватывать несколько серверов; server хранит первый из списка ради совместимости.
+  const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids, server: ids[0] ?? null }));
 
-  const filteredTasks = form.server
-    ? availableTasks.filter((t) => taskServerIds(t).includes(form.server as string))
+  // Список задач для привязки сужаем до выбранных серверов — показываем всё, что относится
+  // к ЛЮБОМУ из них.
+  const pickedServers = sprintServerIds(form);
+  const filteredTasks = pickedServers.length > 0
+    ? availableTasks.filter((t) => taskServerIds(t).some((sid) => pickedServers.includes(sid)))
     : availableTasks;
 
   return (
@@ -177,10 +186,7 @@ export function CreateSprintModal({ onClose, onCreate, availableTasks }: {
             { value: 'active', label: 'Активный' },
             { value: 'done', label: 'Завершён' },
           ]} />
-          <Select label="Сервер" value={form.server ?? ''} onChange={(v) => set('server', v)} options={[
-            { value: '', label: '— Без привязки —' },
-            ...servers.map((s) => ({ value: s.id, label: s.label })),
-          ]} />
+          <ServerMultiSelect value={pickedServers} onChange={setServers} />
         </div>
         <TaskMultiSelect tasks={filteredTasks} value={taskIds} onChange={setTaskIds} />
       </div>

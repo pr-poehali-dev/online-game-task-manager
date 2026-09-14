@@ -101,4 +101,6 @@ export interface Sprint {
   endDate: string;
   status: 'active' | 'planned' | 'done';
   server?: ServerId | null;
+  // Полный список серверов спринта. server оставлен для совместимости и равен первому элементу.
+  servers?: ServerId[];
 }
