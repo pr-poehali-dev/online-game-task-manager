@@ -2,7 +2,7 @@ import Icon from '@/components/ui/icon';
 import RichEditor from '@/components/RichEditor';
 import AttachmentsField, { AttachmentsList } from '@/components/AttachmentsField';
 import type { Task, TeamMember, Attachment } from './shared';
-import { columns, holdColumn, DeployBadge, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge, inputCls } from './shared';
+import { columns, DeployBadge, TASKS_URL, authHeaders, needsLauncherUpload, LauncherBadge, inputCls } from './shared';
 import { useCatalog } from '@/lib/catalog';
 import type { DeployStatusItem } from '@/lib/catalog';
 import { PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
@@ -151,7 +151,7 @@ export default function TaskModalDetails({
           </button>
           {deployOpen && (
             <div className="space-y-3 animate-scale-in mt-2">
-              {[...columns, holdColumn]
+              {columns
                 .filter((col) => deployStatuses.some((ds) => ds.column === col.id))
                 .map((col) => (
                 <div key={col.id}>

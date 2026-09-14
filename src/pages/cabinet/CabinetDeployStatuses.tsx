@@ -16,10 +16,11 @@ const ICON_OPTIONS = [
 // Колонки доски, к которым можно привязать свой статус. «Готово» отсутствует намеренно:
 // единственный статус в ней — системный «Можно заливать на лайв», на нём держатся бейдж
 // «Требуется залить в лаунчер» и уведомления, поэтому её состав не редактируется.
+// «На удержании» тоже нет: она не привязана к статусам — отложить можно задачу в любом статусе,
+// и при переносе туда статус сохраняется.
 const COLUMN_OPTIONS: { id: string; title: string; hint: string }[] = [
   { id: 'todo', title: 'К выполнению', hint: 'Задача ещё не в работе' },
   { id: 'progress', title: 'В работе', hint: 'Задача в процессе' },
-  { id: 'hold', title: 'На удержании', hint: 'Задача временно отложена' },
 ];
 
 interface StatusFormState {
@@ -171,7 +172,9 @@ export default function CabinetDeployStatuses() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   function columnTitle(id: string) {
-    return COLUMN_OPTIONS.find((c) => c.id === id)?.title ?? (id === 'done' ? 'Готово' : id);
+    if (id === 'done') return 'Готово';
+    if (id === 'hold') return 'На удержании';
+    return COLUMN_OPTIONS.find((c) => c.id === id)?.title ?? id;
   }
 
   async function createStatus(form: StatusFormState) {

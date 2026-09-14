@@ -5,7 +5,7 @@ import AttachmentsField from '@/components/AttachmentsField';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
-import { columns, holdColumn, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
+import { columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
 import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
@@ -114,7 +114,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           <div>
             <label className="block text-xs text-muted-foreground mb-2">Статус деплоя (определяет колонку)</label>
             <div className="space-y-3">
-              {[...columns, holdColumn]
+              {columns
                 .filter((col) => deployStatuses.some((ds) => ds.column === col.id))
                 .map((col) => (
                 <div key={col.id}>
