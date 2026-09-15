@@ -301,13 +301,18 @@ function PinnedPanel({ pinnedMessages, chatTitle, onJump }: { pinnedMessages: Ai
 }
 
 export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate, onPickDocumentHint }: AiMessageListProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
   const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string } | null>(null);
 
+  // Двигаем scrollTop только у самой ленты сообщений, а не через scrollIntoView(bottomRef) —
+  // у него block по умолчанию 'start', и он тянет за собой ВСЕ скролл-контейнеры-предки
+  // (в т.ч. внешний .h-screen с overflow-hidden в Index.tsx), из-за чего вся страница
+  // проскакивала на ~80px вверх и прятала шапку при каждом открытии/обновлении чата.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = scrollContainerRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
   }, [messages.length, sending]);
 
   const pinnedMessages = useMemo(() => messages.filter((m) => m.pinned), [messages]);
@@ -346,8 +351,16 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
 
   function jumpToMessage(id: number) {
     const el = messageRefs.current.get(id);
-    if (!el) return;
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const container = scrollContainerRef.current;
+    if (!el || !container) return;
+    // Считаем позицию вручную через getBoundingClientRect (а не offsetTop — он отсчитывается
+    // от ближайшего offsetParent, который необязательно совпадает с container) и двигаем
+    // scrollTop только у ленты — по той же причине, что и в автоскролле выше: scrollIntoView
+    // трогает и внешние скролл-контейнеры-предки.
+    const elRect = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const target = container.scrollTop + (elRect.top - containerRect.top) - container.clientHeight / 2 + el.clientHeight / 2;
+    container.scrollTo({ top: target, behavior: 'smooth' });
     setHighlightedId(id);
     setTimeout(() => setHighlightedId((cur) => (cur === id ? null : cur)), 1500);
   }
@@ -374,7 +387,7 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <PinnedPanel pinnedMessages={pinnedMessages} chatTitle={chatTitle} onJump={jumpToMessage} />
-      <div className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-6 py-4 space-y-4">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-thin px-3 sm:px-6 py-4 space-y-4">
         {messages.map((m) => (
           <div key={m.id} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div
@@ -465,7 +478,6 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
       {lightboxImage && (
         <AiImageLightbox url={lightboxImage.url} name={lightboxImage.name} onClose={() => setLightboxImage(null)} />
