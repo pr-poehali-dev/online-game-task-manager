@@ -138,7 +138,17 @@ export default function AiChatPane({
             >
               <Icon name="HelpCircle" size={16} />
             </button>
-            <AiModelPicker models={models} modelsLoading={modelsLoading} value={model} onChange={onModelChange} onOpenFaq={onOpenModelFaq} />
+            {/* allowAuto=false для image/video — AI Tunnel принимает 'auto' только в текстовом
+                чате, для генерации изображений/видео нужна конкретная модель (см. aiHelpers.ts,
+                auto_not_supported). */}
+            <AiModelPicker
+              models={models}
+              modelsLoading={modelsLoading}
+              value={model}
+              onChange={onModelChange}
+              onOpenFaq={onOpenModelFaq}
+              allowAuto={mode !== 'image' && mode !== 'video'}
+            />
           </div>
         </div>
       </div>

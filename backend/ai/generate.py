@@ -124,6 +124,14 @@ def handle_generate_image(cur, conn, schema, me, body, qs):
     if not model or not prompt:
         cur.close(); conn.close()
         return _bad('bad_request')
+    # 'auto' документирован AI Tunnel только для /chat/completions — /images/generations требует
+    # точное имя модели из каталога и отвечает 404 "model not found", если получит 'auto' (см.
+    # docs/ai-tunnel-api-reference.md, разделы "Модель auto" и "Генерация изображений"). Раньше
+    # это уходило в AI Tunnel как есть, что и породило ошибки "Указанная модель (auto) не найдена"
+    # в журнале — ловим на своей стороне понятным кодом, до платного запроса.
+    if model == 'auto':
+        cur.close(); conn.close()
+        return _bad('auto_not_supported')
 
     spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
     if spent >= limit_:
@@ -255,6 +263,11 @@ def handle_generate_video(cur, conn, schema, me, body, qs):
     if not model or not prompt:
         cur.close(); conn.close()
         return _bad('bad_request')
+    # См. комментарий в handle_generate_image — 'auto' у AI Tunnel работает только в
+    # /chat/completions, /videos требует конкретную модель из каталога.
+    if model == 'auto':
+        cur.close(); conn.close()
+        return _bad('auto_not_supported')
 
     spent, limit_ = _get_or_create_usage(cur, schema, me['id'])
     if spent >= limit_:

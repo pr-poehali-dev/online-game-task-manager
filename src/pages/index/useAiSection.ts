@@ -118,6 +118,17 @@ export function useAiSection() {
   useEffect(() => { loadModels(modelGroup); }, [modelGroup, loadModels]);
   useEffect(() => { loadChats(); loadUsage(); }, [loadChats, loadUsage]);
 
+  // 'auto' сохранён в localStorage с тех пор, когда его ещё предлагали для картинок/видео
+  // (AI Tunnel понимает его только в текстовом чате, см. aiHelpers.ts, auto_not_supported) — либо
+  // это первый визит без сохранённого значения. Как только каталог группы images/videos
+  // загрузился, тихо подставляем первую реальную модель вместо 'auto', чтобы отправка не падала
+  // ошибкой на ровном месте.
+  useEffect(() => {
+    if (modelGroup === 'chat' || model !== 'auto') return;
+    const firstModel = Object.keys(models)[0];
+    if (firstModel) setModel(firstModel);
+  }, [modelGroup, model, models]);
+
   const loadChat = useCallback(async (chatId: number) => {
     setMessagesLoading(true);
     setSendError('');

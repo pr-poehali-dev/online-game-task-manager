@@ -37,6 +37,11 @@ const CODE_HINTS: Record<string, { title: string; hint: string }> = {
   limit_exceeded: { title: 'Исчерпан месячный лимит', hint: 'Увеличьте лимит сотруднику в разделе «Команда».' },
   exception: { title: 'Сбой в коде раздела AI', hint: 'Неожиданная ошибка на сервере — покажите текст ниже разработчику.' },
   server_error: { title: 'Сбой в коде раздела AI', hint: 'Неожиданная ошибка на сервере — покажите текст ниже разработчику.' },
+  // not_found — код НАШЕГО backend (диалог удалён/не найден), а не ответ AI Tunnel. Без этой
+  // записи под тем же HTTP-статусом 404 срабатывал STATUS_HINTS[404] «Модель убрали из
+  // каталога» — вводило в заблуждение, когда причина вообще не в модели.
+  not_found: { title: 'Диалог не найден', hint: 'Диалог был удалён или не существует — откройте другой диалог.' },
+  auto_not_supported: { title: '«Авто» здесь не работает', hint: 'Автоподбор модели поддерживает только текстовый чат. Для изображений и видео выберите модель вручную в списке.' },
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -53,12 +58,15 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 function explain(e: AiErrorEntry): { title: string; hint: string } {
+  // errorCode === 'aitunnel_error' — единственный случай, когда statusCode пришёл ОТ AI Tunnel
+  // (см. backend/ai/common.py, _aitunnel_request). Любой другой errorCode (not_found,
+  // limit_exceeded и т.п.) — код НАШЕГО backend, который может использовать тот же HTTP-статус
+  // (например 404) для совсем другой причины — подсказку по этому статусу подставлять нельзя,
+  // раньше это приводило к «Модель убрали из каталога» у ошибки «диалог не найден».
   if (e.errorCode === 'aitunnel_error' && e.statusCode && STATUS_HINTS[e.statusCode]) {
     return STATUS_HINTS[e.statusCode];
   }
-  return CODE_HINTS[e.errorCode]
-    || (e.statusCode ? STATUS_HINTS[e.statusCode] : undefined)
-    || { title: e.errorCode, hint: 'Точный ответ сервиса — в тексте ниже.' };
+  return CODE_HINTS[e.errorCode] || { title: e.errorCode, hint: 'Точный ответ сервиса — в тексте ниже.' };
 }
 
 function fmtWhen(iso: string | null): string {

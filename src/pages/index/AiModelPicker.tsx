@@ -26,6 +26,11 @@ interface AiModelPickerProps {
   // onOpenFaq — открыть справку «как выбрать модель». На телефоне отдельной кнопки в шапке нет
   // (не хватает места в одном ряду), поэтому вход в справку живёт здесь, рядом с выбором модели.
   onOpenFaq?: () => void;
+  // allowAuto — AI Tunnel понимает 'auto' только в /chat/completions (см.
+  // docs/ai-tunnel-api-reference.md, "Модель auto"): /images/generations и /videos требуют
+  // конкретную модель и отвечают 404, если получат 'auto'. По умолчанию true (текстовые режимы),
+  // AiChatPane передаёт false для режимов 'image'/'video'.
+  allowAuto?: boolean;
 }
 
 type Tab = 'recommended' | 'advanced' | 'cheap';
@@ -51,7 +56,7 @@ function fmtPrice(info: AiModelsMap[string]): string {
   return '';
 }
 
-export default function AiModelPicker({ models, modelsLoading, value, onChange, onOpenFaq }: AiModelPickerProps) {
+export default function AiModelPicker({ models, modelsLoading, value, onChange, onOpenFaq, allowAuto = true }: AiModelPickerProps) {
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<Tab>('recommended');
@@ -169,7 +174,7 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
             ) : (
               <>
                 <CommandEmpty>Ничего не найдено</CommandEmpty>
-                {tab === 'recommended' && (
+                {tab === 'recommended' && allowAuto && (
                   <CommandGroup heading="Рекомендуется">
                     <CommandItem
                       value="auto авто оптимальная"
