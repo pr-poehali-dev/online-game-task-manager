@@ -257,10 +257,31 @@
 .tiptap-editor .ProseMirror table .selectedCell {
   background: hsl(var(--primary) / 0.12);
 }
+/* Горизонтальная линия — разделитель смысловых блоков. Сплошная линия цветом --border на
+   тёмном фоне почти не видна, поэтому линия сделана градиентной: плотная в середине и
+   растворяющаяся к краям. Выглядит аккуратнее сплошной черты и заметна при этом лучше. */
 .tiptap-editor .ProseMirror hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
-  margin: 1em 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    hsl(var(--muted-foreground) / 0.35) 20%,
+    hsl(var(--muted-foreground) / 0.35) 80%,
+    transparent
+  );
+  margin: 1.4em 0;
+}
+/* Выделенная линия (кликнули по ней в редакторе) — подсвечиваем, иначе непонятно, что
+   выбрано и что удалит Backspace. */
+.tiptap-editor .ProseMirror hr.ProseMirror-selectednode {
+  background: linear-gradient(
+    to right,
+    transparent,
+    hsl(var(--primary) / 0.7) 20%,
+    hsl(var(--primary) / 0.7) 80%,
+    transparent
+  );
 }
 
 /* Knowledge base rendered article */
@@ -355,10 +376,19 @@
   background: hsl(var(--secondary));
   font-weight: 600;
 }
+/* Тот же вид линии, что и в редакторе: иначе после сохранения разделитель менял бы
+   внешний вид — в редакторе одна черта, в просмотре другая. */
 .kb-content hr {
   border: none;
-  border-top: 1px solid hsl(var(--border));
-  margin: 1.2em 0;
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    hsl(var(--muted-foreground) / 0.35) 20%,
+    hsl(var(--muted-foreground) / 0.35) 80%,
+    transparent
+  );
+  margin: 1.5em 0;
 }
 
 .line-clamp-2 {
