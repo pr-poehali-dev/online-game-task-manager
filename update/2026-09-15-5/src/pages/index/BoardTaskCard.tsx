@@ -4,16 +4,47 @@ import Icon from '@/components/ui/icon';
 import type { Task, TeamMember, ColumnId, TaskOutcome } from './shared';
 import { taskAssigneeIds, taskServerIds, outcomes, CategoryBadge, PriorityBadge, DeployBadge, DeadlineBadge, AssigneeStack, ServerBadge, taskAge, needsLauncherUpload, LauncherBadge } from './shared';
 
+// Резервный способ копирования — через скрытый textarea + document.execCommand('copy').
+// navigator.clipboard.writeText требует безопасный контекст (HTTPS) и разрешение Clipboard API,
+// которое браузер может не выдать внутри iframe (например превью редактора) — тогда основной
+// способ падает с ошибкой, хотя копирование в принципе возможно этим более старым API.
+function legacyCopy(text: string): boolean {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  let ok = false;
+  try {
+    ok = document.execCommand('copy');
+  } catch {
+    ok = false;
+  }
+  document.body.removeChild(textarea);
+  return ok;
+}
+
 // Клик по номеру задачи копирует прямую ссылку на неё (тот же адрес /task/{id}, что и в превью
 // ссылки в Telegram — см. deploy/server.py) вместо открытия карточки: сотруднику часто нужно
 // именно переслать ссылку коллеге, а не сразу открывать задачу самому.
 function handleCopyLink(e: React.MouseEvent, taskId: string) {
   e.stopPropagation();
   const url = `${window.location.origin}/task/${taskId}`;
-  navigator.clipboard.writeText(url).then(
-    () => toast.success('Ссылка на задачу скопирована'),
-    () => toast.error('Не удалось скопировать ссылку')
-  );
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(url).then(
+      () => toast.success('Ссылка на задачу скопирована'),
+      () => {
+        if (legacyCopy(url)) toast.success('Ссылка на задачу скопирована');
+        else toast.error('Не удалось скопировать ссылку');
+      }
+    );
+  } else if (legacyCopy(url)) {
+    toast.success('Ссылка на задачу скопирована');
+  } else {
+    toast.error('Не удалось скопировать ссылку');
+  }
 }
 
 export function TaskCard({
