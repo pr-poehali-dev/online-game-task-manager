@@ -36,7 +36,7 @@ function ToolBtn({
       type="button"
       title={title}
       onClick={onClick}
-      className={`h-7 w-7 flex items-center justify-center rounded-md text-sm transition-colors ${
+      className={`h-7 w-7 flex items-center justify-center rounded-md text-sm transition-all duration-200 ease-premium ${
         active
           ? 'bg-primary text-primary-foreground'
           : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
@@ -178,21 +178,28 @@ export default function RichEditor({ content, onChange, placeholder, onImageUplo
         <ToolBtn title="Таблица" active={false} onClick={insertTable}>
           <Icon name="Table" size={14} />
         </ToolBtn>
+        {/* Горизонтальная линия — разделитель смысловых блоков внутри описания.
+            Узел horizontalRule входит в StarterKit, отдельное расширение не нужно. */}
+        <ToolBtn title="Вставить горизонтальную линию" active={false} onClick={() => editor.chain().focus().setHorizontalRule().run()}>
+          <Icon name="Minus" size={14} />
+        </ToolBtn>
 
         {editor.isActive('table') && (
           <>
             <Divider />
             <ToolBtn title="Добавить строку ниже" active={false} onClick={() => editor.chain().focus().addRowAfter().run()}>
-              <Icon name="PlusSquare" size={13} />
+              <Icon name="PlusSquare" size={14} />
             </ToolBtn>
             <ToolBtn title="Добавить колонку справа" active={false} onClick={() => editor.chain().focus().addColumnAfter().run()}>
-              <Icon name="Columns" size={13} />
+              <Icon name="Columns" size={14} />
             </ToolBtn>
+            {/* Иконка именно «удалить строку», а не общий минус: рядом в панели уже есть
+                кнопка горизонтальной линии с минусом, и две одинаковые иконки путали бы. */}
             <ToolBtn title="Удалить строку" active={false} onClick={() => editor.chain().focus().deleteRow().run()}>
-              <Icon name="Minus" size={13} />
+              <Icon name="Rows3" size={14} fallback="Minus" />
             </ToolBtn>
             <ToolBtn title="Удалить таблицу" active={false} onClick={() => editor.chain().focus().deleteTable().run()}>
-              <Icon name="Trash2" size={13} />
+              <Icon name="Trash2" size={14} />
             </ToolBtn>
           </>
         )}
@@ -205,10 +212,10 @@ export default function RichEditor({ content, onChange, placeholder, onImageUplo
             </>
           )}
           <ToolBtn title="Отменить" active={false} onClick={() => editor.chain().focus().undo().run()}>
-            <Icon name="Undo2" size={13} />
+            <Icon name="Undo2" size={14} />
           </ToolBtn>
           <ToolBtn title="Повторить" active={false} onClick={() => editor.chain().focus().redo().run()}>
-            <Icon name="Redo2" size={13} />
+            <Icon name="Redo2" size={14} />
           </ToolBtn>
         </div>
       </div>
