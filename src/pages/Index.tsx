@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 import {
   taskAssigneeIds,
   taskServerIds,
+  taskSprintIds,
 } from './index/shared';
 import type {
   Task,
@@ -104,7 +105,7 @@ export default function Index() {
   const filteredTasks = activeTasks
     .filter((t) => server === 'all' || taskServerIds(t).includes(server))
     .filter((t) => category === 'all' || t.category === category)
-    .filter((t) => sprintFilter === 'all' || (sprintFilter === 'none' ? !t.sprintId : t.sprintId === sprintFilter))
+    .filter((t) => sprintFilter === 'all' || (sprintFilter === 'none' ? taskSprintIds(t).length === 0 : taskSprintIds(t).includes(sprintFilter)))
     .filter((t) => assigneeFilter === 'all' || taskAssigneeIds(t).includes(assigneeFilter));
   const filteredArchive = archivedTasks
     .filter((t) => outcomeFilter === 'all' || (t.outcome ?? 'done') === outcomeFilter)

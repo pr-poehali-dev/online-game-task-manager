@@ -50,6 +50,8 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
   const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids as Task['servers'], server: (ids[0] ?? '') as Task['server'] }));
+  // sprintId держит первый спринт списка — так же, как server для серверов.
+  const setSprints = (ids: string[]) => setForm((p) => ({ ...p, sprintIds: ids, sprintId: ids[0] ?? '' }));
   const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(task.id);
 
   function addLink() {
@@ -147,6 +149,7 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           setAssignees={setAssignees}
           setKbIds={setKbIds}
           setServers={setServers}
+          setSprints={setSprints}
           deadlineLocal={deadlineLocal}
           setDeadlineLocal={setDeadlineLocal}
         />

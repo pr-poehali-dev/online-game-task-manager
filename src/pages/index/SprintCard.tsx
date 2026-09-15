@@ -1,6 +1,6 @@
 import Icon from '@/components/ui/icon';
 import type { Task, Sprint } from './shared';
-import { ServerBadge, sprintServerIds } from './shared';
+import { ServerBadge, sprintServerIds, taskSprintIds } from './shared';
 import type { PermissionKey } from '@/lib/auth';
 
 const statusMeta: Record<Sprint['status'], { label: string; color: string; icon: string }> = {
@@ -25,7 +25,7 @@ export default function SprintCard({ sprint, index, tasks, onFilterBoard, onEdit
 }) {
   const sp = sprint;
   const i = index;
-  const spTasks = tasks.filter((t) => t.sprintId === sp.id);
+  const spTasks = tasks.filter((t) => taskSprintIds(t).includes(sp.id));
   const done = spTasks.filter((t) => t.column === 'done').length;
   const total = spTasks.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;

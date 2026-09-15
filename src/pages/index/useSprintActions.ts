@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { authHeaders, SPRINTS_URL } from './shared';
+import { authHeaders, SPRINTS_URL, taskSprintIds } from './shared';
 import type { Sprint, Task } from './shared';
 
 export function useSprintActions(
@@ -19,7 +19,15 @@ export function useSprintActions(
         const data = await res.json();
         setSprints((prev) => [...prev, data.sprint]);
         if (taskIds.length > 0 && setTasks) {
-          setTasks((prev) => prev.map((t) => (taskIds.includes(t.id) ? { ...t, sprintId: data.sprint.id } : t)));
+          // Новый спринт ДОБАВЛЯЕТСЯ к списку задачи, а не заменяет его — так же, как на
+          // сервере (backend/sprints): задача может входить сразу в несколько спринтов.
+          setTasks((prev) => prev.map((t) => {
+            if (!taskIds.includes(t.id)) return t;
+            const current = taskSprintIds(t);
+            if (current.includes(data.sprint.id)) return t;
+            const updated = [...current, data.sprint.id];
+            return { ...t, sprintIds: updated, sprintId: updated[0] };
+          }));
         }
       } else {
         toast.error('Не удалось создать спринт');

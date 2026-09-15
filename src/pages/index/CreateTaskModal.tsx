@@ -6,7 +6,7 @@ import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Priority, ServerId, CategoryId, Sprint, ColumnId, DeployStatus, Attachment } from './shared';
 import { columns, Select, ModalOverlay, inputCls, TASKS_URL, authHeaders, mskLocalToIso } from './shared';
-import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
+import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect, SprintMultiSelect } from './TaskModalShared';
 
 export default function CreateTaskModal({ column, team, kbArticles, preset, onClose, onCreate, sprints }: {
   column: ColumnId;
@@ -34,7 +34,10 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     // Категория обязательна и НЕ подставляется по умолчанию: пустое значение заставляет
     // автора осознанно выбрать её, иначе все задачи копились бы в «Прочем».
     category: (preset?.category ?? '') as CategoryId | '',
-    sprintId: '',
+    // Задача может входить сразу в несколько спринтов; sprintId хранит первый из списка
+    // ради совместимости со старыми экранами.
+    sprintId: preset?.sprintId ?? '',
+    sprintIds: (preset?.sprintIds ?? (preset?.sprintId ? [preset.sprintId] : [])) as string[],
     description: '',
     deadline: '',
   });
@@ -45,6 +48,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   const setAssignees = (ids: number[]) => setForm((p) => ({ ...p, assigneeIds: ids, assigneeId: ids[0] ?? null }));
   const setKbIds = (ids: number[]) => setForm((p) => ({ ...p, kbArticleIds: ids }));
   const setServers = (ids: string[]) => setForm((p) => ({ ...p, servers: ids as ServerId[], server: (ids[0] ?? '') as ServerId }));
+  const setSprints = (ids: string[]) => setForm((p) => ({ ...p, sprintIds: ids, sprintId: ids[0] ?? '' }));
 
   async function uploadImage(file: File): Promise<string> {
     const dataUrl: string = await new Promise((resolve) => {
@@ -168,10 +172,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             ]}
           />
           <AssigneeMultiSelect team={team} value={form.assigneeIds} onChange={setAssignees} />
-          <Select label="Спринт" value={form.sprintId} onChange={(v) => set('sprintId', v)} options={[
-            { value: '', label: '— Без спринта —' },
-            ...sprints.filter((s) => s.status !== 'done').map((s) => ({ value: s.id, label: s.title })),
-          ]} />
+          <SprintMultiSelect sprints={sprints} value={form.sprintIds} onChange={setSprints} />
           <div>
             <label className="block text-xs text-muted-foreground mb-1.5">Дедлайн (МСК)</label>
             <input

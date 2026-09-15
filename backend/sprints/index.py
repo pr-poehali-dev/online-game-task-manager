@@ -197,9 +197,18 @@ def handler(event: dict, context) -> dict:
                 except (TypeError, ValueError):
                     continue
             if valid_ids:
+                # Задача может входить сразу в несколько спринтов, поэтому новый спринт
+                # ДОБАВЛЯЕТСЯ к списку sprint_ids, а не заменяет его (иначе привязка к новому
+                # спринту молча выкидывала бы задачу из всех прежних).
+                # sprint_id (одиночное поле) заполняем только если он ещё пуст — там должен
+                # остаться ПЕРВЫЙ спринт задачи, как и в остальных местах.
                 cur.execute(
-                    f"UPDATE {schema}.tasks SET sprint_id = %s, updated_at = NOW() WHERE id = ANY(%s)",
-                    (sprint_id, valid_ids)
+                    f"UPDATE {schema}.tasks SET "
+                    f"sprint_ids = CASE WHEN sprint_ids @> %s::jsonb THEN sprint_ids "
+                    f"ELSE COALESCE(sprint_ids, '[]'::jsonb) || %s::jsonb END, "
+                    f"sprint_id = COALESCE(NULLIF(sprint_id, ''), %s), "
+                    f"updated_at = NOW() WHERE id = ANY(%s)",
+                    (json.dumps([sprint_id]), json.dumps([sprint_id]), sprint_id, valid_ids)
                 )
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'sprint': sprint})}
@@ -242,6 +251,20 @@ def handler(event: dict, context) -> dict:
         trow = cur.fetchone()
         sprint_title = trow[0] if trow else None
         cur.execute(f"DELETE FROM {schema}.sprints WHERE id = %s", (sprint_id,))
+        # Убираем удалённый спринт из задач, иначе они остались бы со ссылкой на
+        # несуществующий спринт: в карточке отображалась бы пустота, а фильтр по спринтам
+        # показывал бы задачи в «призрачной» группе.
+        cur.execute(
+            f"UPDATE {schema}.tasks SET sprint_ids = COALESCE(sprint_ids, '[]'::jsonb) - %s, updated_at = NOW() "
+            f"WHERE sprint_ids @> %s::jsonb",
+            (sprint_id, json.dumps([sprint_id]))
+        )
+        # Одиночное поле держит первый спринт списка — пересобираем его после удаления.
+        cur.execute(
+            f"UPDATE {schema}.tasks SET sprint_id = NULLIF(sprint_ids->>0, ''), updated_at = NOW() "
+            f"WHERE sprint_id = %s",
+            (sprint_id,)
+        )
         _log_activity(cur, schema, me['id'], 'sprint_delete', 'sprint', sprint_id, sprint_title)
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}

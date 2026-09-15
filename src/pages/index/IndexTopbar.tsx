@@ -9,6 +9,7 @@ import { SidebarContent } from './IndexSidebar';
 import { useCatalog } from '@/lib/catalog';
 import {
   resolveAssignee,
+  taskSprintIds,
 } from './shared';
 import type {
   TeamMember,
@@ -269,7 +270,7 @@ export default function IndexTopbar({
               <Icon name="Zap" size={12} className="text-muted-foreground shrink-0" />
               {sprints.filter((s) => s.status !== 'done').map((sp) => {
                 const active = sprintFilter === sp.id;
-                const count = activeTasks.filter((t) => t.sprintId === sp.id).length;
+                const count = activeTasks.filter((t) => taskSprintIds(t).includes(sp.id)).length;
                 const statusColor = sp.status === 'active' ? '152 55% 50%' : sp.status === 'planned' ? '210 80% 62%' : '215 15% 50%';
                 return (
                   <button

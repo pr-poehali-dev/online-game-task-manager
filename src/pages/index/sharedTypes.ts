@@ -85,6 +85,8 @@ export interface Task {
   links?: { url: string; label: string }[];
   category: CategoryId;
   sprintId?: string;
+  // Полный список спринтов задачи. sprintId оставлен для совместимости и равен первому элементу.
+  sprintIds?: string[];
   deployStatus?: DeployStatus;
   comments?: Comment[];
   commentCount?: number;

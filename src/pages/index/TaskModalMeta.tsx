@@ -2,8 +2,8 @@ import Icon from '@/components/ui/icon';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import { useCatalog } from '@/lib/catalog';
 import type { Task, TeamMember, Sprint } from './shared';
-import { taskAssigneeIds, taskServerIds, resolveAssignee, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
-import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect } from './TaskModalShared';
+import { taskAssigneeIds, taskServerIds, taskSprintIds, resolveAssignee, CategoryBadge, DeadlineBadge, AssigneeAvatar, Select, formatMskDateTime } from './shared';
+import { AssigneeMultiSelect, KbMultiSelect, ServerMultiSelect, SprintMultiSelect } from './TaskModalShared';
 
 export default function TaskModalMeta({
   task,
@@ -19,6 +19,7 @@ export default function TaskModalMeta({
   setAssignees,
   setKbIds,
   setServers,
+  setSprints,
   deadlineLocal,
   setDeadlineLocal,
 }: {
@@ -35,6 +36,7 @@ export default function TaskModalMeta({
   setAssignees: (ids: number[]) => void;
   setKbIds: (ids: number[]) => void;
   setServers: (ids: string[]) => void;
+  setSprints: (ids: string[]) => void;
   deadlineLocal: string;
   setDeadlineLocal: (v: string) => void;
 }) {
@@ -111,10 +113,7 @@ export default function TaskModalMeta({
               categories.map((c) => ({ value: c.id, label: c.label }))
             } />
             <AssigneeMultiSelect compact team={team} value={taskAssigneeIds(form)} onChange={setAssignees} />
-            <Select compact label="Спринт" value={form.sprintId ?? ''} onChange={(v) => set('sprintId', v)} options={[
-              { value: '', label: '— Без спринта —' },
-              ...sprints.filter((s) => s.status !== 'done' || s.id === form.sprintId).map((s) => ({ value: s.id, label: s.title })),
-            ]} />
+            <SprintMultiSelect compact sprints={sprints} value={taskSprintIds(form)} onChange={setSprints} />
             <div>
               <label className="block text-[11px] tracking-[0.01em] text-muted-foreground mb-1">Дедлайн (МСК)</label>
               <input
@@ -140,10 +139,21 @@ export default function TaskModalMeta({
                 <DeadlineBadge iso={task.deadline} />
               </div>
             )}
-            {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">Спринт</span>
-                <span className="text-xs font-medium text-foreground">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
+            {taskSprintIds(form).some((id) => sprints.find((s) => s.id === id)) && (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">
+                  {taskSprintIds(form).length > 1 ? 'Спринты' : 'Спринт'}
+                </span>
+                {taskSprintIds(form).map((id) => {
+                  const sp = sprints.find((s) => s.id === id);
+                  if (!sp) return null;
+                  return (
+                    <span key={id} className="inline-flex items-center gap-1 rounded-md bg-primary/15 text-primary px-1.5 py-0.5 text-xs font-medium">
+                      <Icon name="Zap" size={12} />
+                      {sp.title}
+                    </span>
+                  );
+                })}
               </div>
             )}
             {taskAssigneeIds(form).length > 0 && (

@@ -11,6 +11,7 @@ import Ai from './Ai';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
 import type { PermissionKey } from '@/lib/auth';
+import { taskSprintIds } from './shared';
 import type {
   TeamMember,
   Task,
@@ -317,7 +318,7 @@ export default function IndexMain({
         <CreateSprintModal
           onClose={() => setCreateSprint(false)}
           onCreate={handleCreateSprint}
-          availableTasks={activeTasks.filter((t) => !t.sprintId)}
+          availableTasks={activeTasks.filter((t) => taskSprintIds(t).length === 0)}
         />
       )}
     </>

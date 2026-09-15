@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
 import type { Attachment } from '@/components/AttachmentsField';
-import type { TeamMember } from './shared';
+import type { TeamMember, Sprint } from './shared';
 import { resolveAssignee, AssigneeAvatar } from './shared';
 import { useCatalog } from '@/lib/catalog';
 import type { PrivateNote } from './usePrivateNotes';
@@ -168,6 +168,78 @@ export function ServerMultiSelect({ value, onChange, compact }: {
                 </span>
                 <span className="h-2 w-2 rounded-full shrink-0" style={{ background: `hsl(${srv.color})` }} />
                 <span className="truncate">{srv.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Выбор СПРИНТОВ задачи. Одна и та же правка может входить сразу в несколько спринтов
+// (например «Багфиксы» и «Релиз HF»), поэтому выбор множественный — по образцу
+// ServerMultiSelect. Пустой список допустим: задача может быть вне спринтов.
+export function SprintMultiSelect({ sprints, value, onChange, compact }: {
+  sprints: Sprint[];
+  value: string[];
+  onChange: (ids: string[]) => void;
+  compact?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const toggle = (id: string) => {
+    onChange(value.includes(id) ? value.filter((x) => x !== id) : [...value, id]);
+  };
+  // Завершённые спринты не предлагаем, но уже выбранные показываем — иначе при открытии старой
+  // задачи её спринт молча пропал бы из списка и потерялся при сохранении.
+  const options = sprints.filter((s) => s.status !== 'done' || value.includes(s.id));
+
+  return (
+    <div>
+      <label className={`block text-muted-foreground ${compact ? 'text-[11px] tracking-[0.01em] mb-1' : 'text-xs mb-1.5'}`}>Спринты</label>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full rounded-lg border border-border bg-secondary/50 text-left flex items-center gap-1.5 flex-wrap transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70 ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
+      >
+        {value.length === 0 && <span className="text-muted-foreground">Без спринта</span>}
+        {value.map((id) => {
+          const sp = sprints.find((s) => s.id === id);
+          return (
+            <span
+              key={id}
+              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium bg-primary/15 text-primary"
+            >
+              <Icon name="Zap" size={12} />
+              {sp?.title || 'Спринт удалён'}
+              <span
+                onClick={(e) => { e.stopPropagation(); toggle(id); }}
+                className="hover:opacity-70 cursor-pointer"
+              >
+                <Icon name="X" size={12} />
+              </span>
+            </span>
+          );
+        })}
+        <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
+      </button>
+      {open && (
+        <div className="mt-1.5 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.04),0_8px_24px_-12px_hsl(222_30%_2%/0.5)] p-1 max-h-52 overflow-auto scrollbar-thin">
+          {options.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">Активных спринтов пока нет</div>}
+          {options.map((sp) => {
+            const active = value.includes(sp.id);
+            return (
+              <button
+                key={sp.id}
+                type="button"
+                onClick={() => toggle(sp.id)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-all duration-200 ease-premium text-left"
+              >
+                <span className={`h-4 w-4 shrink-0 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
+                  {active && <Icon name="Check" size={12} />}
+                </span>
+                <span className="truncate">{sp.title}</span>
+                {sp.status === 'done' && <span className="ml-auto text-[11px] text-muted-foreground shrink-0">завершён</span>}
               </button>
             );
           })}
