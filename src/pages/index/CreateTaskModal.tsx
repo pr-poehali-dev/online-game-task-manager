@@ -103,7 +103,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
         {form.column === 'restart' ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">
             <Icon name="RotateCcw" size={12} />
-            К рестарту
+            На лайв
           </div>
         ) : form.column === 'hold' ? (
           <div className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-md bg-secondary/60 text-muted-foreground">

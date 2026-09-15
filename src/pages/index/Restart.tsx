@@ -39,7 +39,7 @@ export default function Restart({
   const [archiveMenu, setArchiveMenu] = useState<string | null>(null);
 
   const restartTasks = tasks.filter((t) => !t.archived && t.column === 'restart');
-  // Кандидаты на перенос: не в архиве, не в рестарте, готовы к заливке на лайв или в колонке Done
+  // Кандидаты на перенос: не в архиве, не в разделе «На лайв», готовы к заливке или в колонке Done
   const canRestart = isAdmin || can('task_restart');
   const canArchive = can('task_archive');
   const candidates = tasks
@@ -58,7 +58,7 @@ export default function Restart({
     <div className="max-w-6xl animate-fade-in">
       <div className="flex items-center gap-3 mb-1">
         <Icon name="RotateCcw" size={20} className="text-primary" />
-        <h2 className="font-display tracking-wide text-lg">К рестарту</h2>
+        <h2 className="font-display tracking-wide text-lg">На лайв</h2>
         <span className="text-sm text-muted-foreground">· {restartTasks.length} задач</span>
       </div>
       <p className="text-sm text-muted-foreground mb-5">Короткие задачи, которые применяются во время плановых технических работ. Отметьте «Готово» после выполнения и отправьте в архив.</p>
@@ -111,7 +111,7 @@ export default function Restart({
       {restartTasks.length === 0 ? (
         <div className="text-center py-16 text-muted-foreground">
           <Icon name="RotateCcw" size={40} className="mx-auto mb-3 opacity-40" />
-          <p className="text-sm">Список к рестарту пуст</p>
+          <p className="text-sm">Список «На лайв» пуст</p>
         </div>
       ) : (
         <div className="space-y-6">

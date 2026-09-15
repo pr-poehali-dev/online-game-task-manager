@@ -111,7 +111,7 @@ export default function Patchnotes() {
       </div>
       <p className="text-sm text-muted-foreground mb-5">
         Автоматический журнал изменений по каждому серверу — заполняется при отметке «Реализовано»
-        в разделе «К рестарту».
+        в разделе «На лайв».
       </p>
 
       <div className="flex gap-1 bg-secondary/60 p-1 rounded-lg mb-4 w-fit">

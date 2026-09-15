@@ -129,7 +129,7 @@ export function taskAge(iso: string | null | undefined): string {
 }
 
 // Задача требует заливки файлов патча в лаунчер, если у неё есть прикреплённые файлы
-// и она находится в состоянии, готовом к раскатке («Можно заливать на лайв» или «К рестарту»),
+// и она находится в состоянии, готовом к раскатке («Можно заливать на лайв» или «На лайв»),
 // но ещё не отмечена как загруженная.
 export function needsLauncherUpload(task: { column: ColumnId; deployStatus?: DeployStatus; launcherUploaded?: boolean }, hasFiles: boolean): boolean {
   if (!hasFiles || task.launcherUploaded) return false;

@@ -75,7 +75,7 @@ export default function IndexTopbar({
 
   const NAV_ITEMS = [
     { k: 'board', label: 'Доска', icon: 'LayoutGrid' },
-    { k: 'restart', label: 'К рестарту', icon: 'RotateCcw' },
+    { k: 'restart', label: 'На лайв', icon: 'RotateCcw' },
     { k: 'sprints', label: 'Спринты', icon: 'Zap' },
     { k: 'ideas', label: 'Идеи', icon: 'Lightbulb' },
     { k: 'knowledge', label: 'База знаний', icon: 'BookOpen' },
@@ -113,7 +113,7 @@ export default function IndexTopbar({
             {view === 'sprints' && 'Спринты'}
             {view === 'archive' && 'Архив задач'}
             {view === 'knowledge' && 'База знаний'}
-            {view === 'restart' && 'К рестарту'}
+            {view === 'restart' && 'На лайв'}
             {view === 'ideas' && 'Идеи'}
             {view === 'patchnotes' && 'Патчноуты'}
             {view === 'patches' && 'Патчи'}

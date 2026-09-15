@@ -462,7 +462,7 @@ def _forbidden():
 def _needs_launcher_upload(column, deploy_status, launcher_uploaded, has_files):
     '''Та же логика, что и needsLauncherUpload на фронтенде (src/pages/index/shared.tsx) —
     задача требует заливки в лаунчер, если есть прикреплённые файлы патча, задача в состоянии,
-    готовом к раскатке (колонка «К рестарту» или статус «Можно заливать на лайв»), и ещё не отмечена загруженной.'''
+    готовом к раскатке (колонка «На лайв» или статус «Можно заливать на лайв»), и ещё не отмечена загруженной.'''
     if not has_files or launcher_uploaded:
         return False
     return column == 'restart' or deploy_status == 'ready_live'
@@ -532,7 +532,7 @@ def _norm_assignees(body):
 
 
 def handler(event: dict, context) -> dict:
-    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. При появлении у задачи бейджа «Требуется залить в лаунчер» (смена статуса деплоя/колонки, снятие отметки «Загружено») уведомляются (в приложении и Telegram) все пользователи с правом launcher_notify. Задача может относиться сразу к НЕСКОЛЬКИМ серверам (поле servers, jsonb, см. db_migrations V0093): поле server сохранено для совместимости и хранит первый сервер списка, а при закрытии задачи из раздела «К рестарту» запись в патчноуты создаётся для каждого выбранного сервера. Доступно авторизованным участникам команды.'''
+    '''CRUD задач таск-менеджера с привязкой исполнителя к реальным сотрудникам. Список, создание, обновление и удаление задач, загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. Значимые действия (создание, смена статуса деплоя, архивация, удаление) пишутся в журнал активности (activity_log). Действия private_notes / private_note_add / private_note_delete — приватные заметки, видимые только автору, выбранному адресату и администраторам. При появлении у задачи бейджа «Требуется залить в лаунчер» (смена статуса деплоя/колонки, снятие отметки «Загружено») уведомляются (в приложении и Telegram) все пользователи с правом launcher_notify. Задача может относиться сразу к НЕСКОЛЬКИМ серверам (поле servers, jsonb, см. db_migrations V0093): поле server сохранено для совместимости и хранит первый сервер списка, а при закрытии задачи из раздела «На лайв» запись в патчноуты создаётся для каждого выбранного сервера. Доступно авторизованным участникам команды.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -821,7 +821,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
 
-    # Перенос задачи в раздел «К рестарту» — по праву task_restart (только свои задачи для не-админа)
+    # Перенос задачи в раздел «На лайв» — по праву task_restart (только свои задачи для не-админа)
     if action == 'to_restart':
         task_id = body.get('id')
         if not task_id:
@@ -856,7 +856,7 @@ def handler(event: dict, context) -> dict:
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Возврат задачи из раздела «К рестарту» обратно в Done — по праву task_restart (только свои задачи для не-админа)
+    # Возврат задачи из раздела «На лайв» обратно в Done — по праву task_restart (только свои задачи для не-админа)
     if action == 'from_restart':
         task_id = body.get('id')
         if not task_id:
@@ -886,7 +886,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Отметка задачи «К рестарту» выполненной / снятие отметки — только администратор
+    # Отметка задачи «На лайв» выполненной / снятие отметки — только администратор
     if action == 'set_restart_done':
         if me['role'] != 'admin':
             cur.close(); conn.close()
@@ -968,7 +968,7 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         task = _row_to_task(row)
         _log_activity(cur, schema, me['id'], 'task_archive', 'task', task_id, task['title'], outcome)
-        # Автозапись в журнал патчноутов — только для задач, выполненных из раздела «К рестарту».
+        # Автозапись в журнал патчноутов — только для задач, выполненных из раздела «На лайв».
         # Задача может относиться сразу к нескольким серверам: тогда запись появляется в журнале
         # КАЖДОГО из них, иначе правка потерялась бы в истории всех серверов кроме первого.
         if task['column'] == 'restart' and outcome == 'done':
