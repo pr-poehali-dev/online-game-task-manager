@@ -69,7 +69,7 @@ export default function TaskModalDetails({
     <>
       {/* Description */}
       <div>
-        <label className="block text-[10px] text-muted-foreground mb-1">Описание</label>
+        <label className="block text-[11px] tracking-[0.01em] text-muted-foreground mb-1">Описание</label>
         {isEditing && canFullEdit ? (
           <>
             <RichEditor
@@ -111,7 +111,7 @@ export default function TaskModalDetails({
           <button
             type="button"
             onClick={onOpenPatches}
-            className={`inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm transition-colors w-fit ${
+            className={`inline-flex items-center gap-2 h-9 px-3 rounded-lg border text-sm transition-all duration-200 ease-premium w-fit ${
               hasPatchFiles
                 ? 'border-primary/40 bg-primary/10 text-primary hover:bg-primary/15'
                 : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary/60'
@@ -126,7 +126,7 @@ export default function TaskModalDetails({
             <button
               type="button"
               onClick={() => onSetLauncherUploaded(task.id, !task.launcherUploaded)}
-              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors w-fit"
+              className="inline-flex items-center gap-2 h-9 px-3 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:shadow-sm active:translate-y-px transition-all duration-200 ease-premium w-fit"
             >
               <Icon name={task.launcherUploaded ? 'RotateCcw' : 'CheckCircle2'} size={14} />
               {task.launcherUploaded ? 'Снять отметку загрузки' : 'Отметить как загружено в лаунчер'}
@@ -156,7 +156,7 @@ export default function TaskModalDetails({
                 .map((col) => (
                 <div key={col.id}>
                   <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <Icon name={col.icon} size={11} />
+                    <Icon name={col.icon} size={12} />
                     {col.title}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -194,13 +194,13 @@ export default function TaskModalDetails({
             <div className="flex flex-col gap-1.5 mb-2">
               {links.map((l, i) => (
                 <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
-                  <Icon name="Link" size={13} className="text-primary shrink-0" />
+                  <Icon name="Link" size={14} className="text-primary shrink-0" />
                   <a href={l.url} target="_blank" rel="noopener noreferrer" className="text-sm text-primary hover:underline truncate flex-1">
                     {l.label}
                   </a>
                   {isEditing && canFullEdit && (
                     <button onClick={() => removeLink(i)} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
-                      <Icon name="X" size={13} />
+                      <Icon name="X" size={14} />
                     </button>
                   )}
                 </div>
@@ -224,7 +224,7 @@ export default function TaskModalDetails({
               />
               <button
                 onClick={addLink}
-                className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0"
+                className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-accent active:translate-y-px transition-all duration-200 ease-premium shrink-0"
               >
                 <Icon name="Plus" size={16} />
               </button>

@@ -61,11 +61,11 @@ export function AssigneeMultiSelect({ team, value, onChange, compact }: {
 
   return (
     <div className="md:col-span-2">
-      <label className={`block text-muted-foreground ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>Исполнители</label>
+      <label className={`block text-muted-foreground ${compact ? 'text-[11px] tracking-[0.01em] mb-1' : 'text-xs mb-1.5'}`}>Исполнители</label>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
+        className={`w-full rounded-lg border border-border bg-secondary/50 text-left flex items-center gap-1.5 flex-wrap transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70 ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
       >
         {selected.length === 0 && <span className="text-muted-foreground">Не назначен</span>}
         {selected.map((m) => (
@@ -75,14 +75,14 @@ export function AssigneeMultiSelect({ team, value, onChange, compact }: {
               onClick={(e) => { e.stopPropagation(); toggle(m.id); }}
               className="hover:text-foreground cursor-pointer"
             >
-              <Icon name="X" size={11} />
+              <Icon name="X" size={12} />
             </span>
           </span>
         ))}
         <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
       </button>
       {open && (
-        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+        <div className="mt-1.5 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.04),0_8px_24px_-12px_hsl(222_30%_2%/0.5)] p-1 max-h-52 overflow-auto scrollbar-thin">
           {team.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">В команде пока никого нет</div>}
           {team.map((m) => {
             const active = value.includes(m.id);
@@ -92,10 +92,10 @@ export function AssigneeMultiSelect({ team, value, onChange, compact }: {
                 key={m.id}
                 type="button"
                 onClick={() => toggle(m.id)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-all duration-200 ease-premium"
               >
                 <span className={`h-4 w-4 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
-                  {active && <Icon name="Check" size={11} />}
+                  {active && <Icon name="Check" size={12} />}
                 </span>
                 <AssigneeAvatar a={resolveAssignee(team, m.id)} size={20} />
                 <span className="truncate">{name}</span>
@@ -124,11 +124,11 @@ export function ServerMultiSelect({ value, onChange, compact }: {
 
   return (
     <div>
-      <label className={`block text-muted-foreground ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>Серверы</label>
+      <label className={`block text-muted-foreground ${compact ? 'text-[11px] tracking-[0.01em] mb-1' : 'text-xs mb-1.5'}`}>Серверы</label>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
+        className={`w-full rounded-lg border border-border bg-secondary/50 text-left flex items-center gap-1.5 flex-wrap transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70 ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
       >
         {value.length === 0 && <span className="text-muted-foreground">Не выбран</span>}
         {value.map((id) => {
@@ -144,7 +144,7 @@ export function ServerMultiSelect({ value, onChange, compact }: {
                 onClick={(e) => { e.stopPropagation(); toggle(id); }}
                 className="hover:opacity-70 cursor-pointer"
               >
-                <Icon name="X" size={11} />
+                <Icon name="X" size={12} />
               </span>
             </span>
           );
@@ -152,7 +152,7 @@ export function ServerMultiSelect({ value, onChange, compact }: {
         <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
       </button>
       {open && (
-        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+        <div className="mt-1.5 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.04),0_8px_24px_-12px_hsl(222_30%_2%/0.5)] p-1 max-h-52 overflow-auto scrollbar-thin">
           {servers.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">Серверов пока нет</div>}
           {servers.map((srv) => {
             const active = value.includes(srv.id);
@@ -161,10 +161,10 @@ export function ServerMultiSelect({ value, onChange, compact }: {
                 key={srv.id}
                 type="button"
                 onClick={() => toggle(srv.id)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-all duration-200 ease-premium"
               >
                 <span className={`h-4 w-4 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
-                  {active && <Icon name="Check" size={11} />}
+                  {active && <Icon name="Check" size={12} />}
                 </span>
                 <span className="h-2 w-2 rounded-full shrink-0" style={{ background: `hsl(${srv.color})` }} />
                 <span className="truncate">{srv.label}</span>
@@ -209,7 +209,7 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
           type="button"
           title="Приватная заметка"
           onClick={() => setOpen((v) => !v)}
-          className={`h-7 w-7 flex items-center justify-center rounded-md text-sm transition-colors ${
+          className={`h-7 w-7 flex items-center justify-center rounded-md text-sm transition-all duration-200 ease-premium ${
             open ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
           }`}
         >
@@ -219,19 +219,19 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-colors"
+          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition-all duration-200 ease-premium"
         >
-          <Icon name="EyeOff" size={11} />
+          <Icon name="EyeOff" size={12} />
           Приватная заметка
         </button>
       )}
       {open && (
-        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1.5 z-30 w-72 rounded-lg border border-border bg-card shadow-xl p-2.5 animate-scale-in`}>
-          <label className="block text-[10px] text-muted-foreground mb-1">Видно только адресату (и тем, кому выдано право просмотра чужих приватных сообщений)</label>
+        <div className={`absolute ${align === 'right' ? 'right-0' : 'left-0'} top-full mt-1.5 z-30 w-72 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.05),0_24px_56px_-16px_hsl(222_30%_2%/0.6)] p-2.5 animate-scale-in`}>
+          <label className="block text-[11px] tracking-[0.01em] text-muted-foreground mb-1">Видно только адресату (и тем, кому выдано право просмотра чужих приватных сообщений)</label>
           <select
             value={targetId ?? ''}
             onChange={(e) => setTargetId(e.target.value ? Number(e.target.value) : null)}
-            className="w-full mb-2 rounded-md border border-border bg-secondary/60 px-2 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+            className="w-full mb-2 rounded-md border border-border bg-secondary/50 px-2 py-1.5 text-xs text-foreground transition-all duration-200 ease-premium focus:outline-none focus:border-primary/50 focus:bg-secondary/70"
           >
             <option value="">Кому адресовано…</option>
             {candidates.map((m) => (
@@ -243,16 +243,16 @@ export function PrivateNoteComposer({ team, currentUserId, onAdd, variant = 'but
             onChange={(e) => setText(e.target.value)}
             placeholder="Текст приватной заметки…"
             rows={3}
-            className="w-full rounded-md border border-border bg-secondary/60 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className="w-full rounded-md border border-border bg-secondary/50 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/70 transition-all duration-200 ease-premium focus:outline-none focus:border-primary/50 focus:bg-secondary/70 resize-none"
           />
           <div className="flex justify-end gap-1.5 mt-2">
-            <button onClick={() => setOpen(false)} className="h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            <button onClick={() => setOpen(false)} className="h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-all duration-200 ease-premium">
               Отмена
             </button>
             <button
               onClick={submit}
               disabled={!targetId || !text.trim() || saving}
-              className="h-7 px-2.5 rounded-md text-xs bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-40 transition-opacity"
+              className="h-7 px-2.5 rounded-md text-xs bg-gradient-to-b from-[hsl(38_90%_60%)] to-[hsl(38_85%_50%)] text-primary-foreground shadow-accent hover:shadow-accent-hover hover:brightness-[1.06] active:translate-y-px disabled:opacity-40 disabled:shadow-none transition-all duration-200 ease-premium"
             >
               Добавить
             </button>
@@ -293,16 +293,16 @@ function PrivateNoteItem({ note, team, currentUserId, isAdmin, onRemove, editabl
         {revealed ? (
           <span className="text-sm whitespace-pre-wrap break-words text-foreground">{note.text}</span>
         ) : (
-          <span className="text-xs text-muted-foreground italic hover:text-primary transition-colors">
+          <span className="text-xs text-muted-foreground italic hover:text-primary transition-all duration-200 ease-premium">
             Приватно для {target.name} — нажмите, чтобы показать
           </span>
         )}
       </button>
       <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/note:opacity-100 transition-opacity">
-        {revealed && <span className="text-[10px] text-muted-foreground whitespace-nowrap">от {author.name}</span>}
+        {revealed && <span className="text-[11px] text-muted-foreground whitespace-nowrap">от {author.name}</span>}
         {canDel && (
           <button onClick={() => onRemove(note.id)} className="text-muted-foreground hover:text-destructive">
-            <Icon name="X" size={11} />
+            <Icon name="X" size={12} />
           </button>
         )}
       </div>
@@ -346,14 +346,14 @@ export function KbMultiSelect({ articles, value, onChange, compact }: {
 
   return (
     <div className="md:col-span-2">
-      <label className={`text-muted-foreground flex items-center gap-1.5 ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>
+      <label className={`text-muted-foreground flex items-center gap-1.5 ${compact ? 'text-[11px] tracking-[0.01em] mb-1' : 'text-xs mb-1.5'}`}>
         <Icon name="BookOpen" size={compact ? 11 : 12} />
         Связанные статьи базы знаний
       </label>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`w-full rounded-lg border border-border bg-secondary/60 text-left flex items-center gap-1.5 flex-wrap focus:outline-none focus:ring-1 focus:ring-primary ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
+        className={`w-full rounded-lg border border-border bg-secondary/50 text-left flex items-center gap-1.5 flex-wrap transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70 ${compact ? 'min-h-8 px-2.5 py-1.5 text-xs' : 'min-h-9 px-3 py-2 text-sm'}`}
       >
         {selected.length === 0 && <span className="text-muted-foreground">Не выбрано</span>}
         {selected.map((a) => (
@@ -363,14 +363,14 @@ export function KbMultiSelect({ articles, value, onChange, compact }: {
               onClick={(e) => { e.stopPropagation(); toggle(Number(a.id)); }}
               className="hover:text-foreground cursor-pointer shrink-0"
             >
-              <Icon name="X" size={11} />
+              <Icon name="X" size={12} />
             </span>
           </span>
         ))}
         <Icon name="ChevronDown" size={14} className="ml-auto text-muted-foreground shrink-0" />
       </button>
       {open && (
-        <div className="mt-1.5 rounded-lg border border-border bg-card p-1 max-h-52 overflow-auto scrollbar-thin">
+        <div className="mt-1.5 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.04),0_8px_24px_-12px_hsl(222_30%_2%/0.5)] p-1 max-h-52 overflow-auto scrollbar-thin">
           {articles.length === 0 && <div className="text-xs text-muted-foreground px-2 py-2">В базе знаний пока нет статей</div>}
           {articles.map((a) => {
             const active = value.includes(Number(a.id));
@@ -379,10 +379,10 @@ export function KbMultiSelect({ articles, value, onChange, compact }: {
                 key={a.id}
                 type="button"
                 onClick={() => toggle(Number(a.id))}
-                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors text-left"
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-all duration-200 ease-premium text-left"
               >
                 <span className={`h-4 w-4 shrink-0 rounded flex items-center justify-center border ${active ? 'bg-primary border-primary text-primary-foreground' : 'border-border'}`}>
-                  {active && <Icon name="Check" size={11} />}
+                  {active && <Icon name="Check" size={12} />}
                 </span>
                 <span className="truncate">{a.title}</span>
               </button>

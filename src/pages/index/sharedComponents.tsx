@@ -166,12 +166,16 @@ export function ServerBadge({ id }: { id: ServerId }) {
 export function ModalOverlay({ onClose, children, wide }: { onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto"
-      style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+      // Подложка: глубже и с более заметным размытием — модальное окно должно читаться как
+      // отдельный слой, а не как панель, приклеенная поверх страницы.
+      className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto animate-fade-in"
+      style={{ background: 'hsl(222 30% 2% / 0.72)', backdropFilter: 'blur(8px)' }}
       onClick={onClose}
     >
       <div
-        className={`w-full rounded-2xl border border-border bg-card animate-scale-in mb-8 ${wide ? 'max-w-3xl xl:max-w-5xl' : 'max-w-lg'}`}
+        // Та же логика глубины, что у карточек доски: светлая грань сверху внутри + глубокая
+        // мягкая тень наружу. Граница приглушена — край задаёт тень, а не жёсткая линия.
+        className={`w-full rounded-2xl border border-border/70 bg-card animate-scale-in mb-8 shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.05),0_32px_72px_-20px_hsl(222_30%_2%/0.7)] ${wide ? 'max-w-3xl xl:max-w-5xl' : 'max-w-lg'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}
@@ -192,11 +196,11 @@ export function Select({ label, value, onChange, options, compact, invalid }: {
 }) {
   return (
     <div>
-      <label className={`block text-muted-foreground ${compact ? 'text-[10px] mb-1' : 'text-xs mb-1.5'}`}>{label}</label>
+      <label className={`block text-muted-foreground ${compact ? 'text-[11px] tracking-[0.01em] mb-1' : 'text-xs mb-1.5'}`}>{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-lg bg-secondary/60 text-foreground focus:outline-none focus:ring-1 ${invalid ? 'border border-destructive focus:ring-destructive' : 'border border-border focus:ring-primary'} ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
+        className={`w-full rounded-lg bg-secondary/50 text-foreground transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:bg-secondary/70 ${invalid ? 'border border-destructive focus:border-destructive' : 'border border-border focus:border-primary/50'} ${compact ? 'px-2.5 py-1.5 text-xs' : 'px-3 py-2 text-sm'}`}
       >
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -204,4 +208,6 @@ export function Select({ label, value, onChange, options, compact, invalid }: {
   );
 }
 
-export const inputCls = 'w-full rounded-lg border border-border bg-secondary/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary';
+// Поле ввода. Фокус — мягкая подсветка рамки и свечение того же цвета (см. :focus-visible в
+// index.css), без жёсткого кольца с зазором. Переходы идут по общей премиальной кривой.
+export const inputCls = 'w-full rounded-lg border border-border bg-secondary/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/70 transition-all duration-200 ease-premium hover:border-border hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70';

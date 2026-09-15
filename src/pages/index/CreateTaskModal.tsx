@@ -86,8 +86,8 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
     <ModalOverlay onClose={onClose} wide>
       <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
         <h2 className="font-display tracking-wide text-lg">Новая задача</h2>
-        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
-          <Icon name="X" size={18} />
+        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all duration-200 ease-premium">
+          <Icon name="X" size={16} />
         </button>
       </div>
 
@@ -97,7 +97,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           value={form.title}
           onChange={(e) => set('title', e.target.value)}
           placeholder="Название задачи..."
-          className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors placeholder:text-muted-foreground/50"
+          className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-primary/50 pb-1 transition-all duration-200 ease-premium placeholder:text-muted-foreground/50"
         />
 
         {form.column === 'restart' ? (
@@ -119,7 +119,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
                 .map((col) => (
                 <div key={col.id}>
                   <div className="flex items-center gap-1.5 mb-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
-                    <Icon name={col.icon} size={11} />
+                    <Icon name={col.icon} size={12} />
                     {col.title}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -202,10 +202,10 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
             <div className="flex flex-col gap-1.5 mb-2">
               {links.map((l, i) => (
                 <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary/40 px-3 py-2 group">
-                  <Icon name="Link" size={13} className="text-primary shrink-0" />
+                  <Icon name="Link" size={14} className="text-primary shrink-0" />
                   <span className="text-sm text-primary truncate flex-1">{l.label}</span>
                   <button onClick={() => setLinks((p) => p.filter((_, idx) => idx !== i))} className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all">
-                    <Icon name="X" size={13} />
+                    <Icon name="X" size={14} />
                   </button>
                 </div>
               ))}
@@ -214,7 +214,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
           <div className="flex gap-2">
             <input value={newLink.label} onChange={(e) => setNewLink((p) => ({ ...p, label: e.target.value }))} placeholder="Название (напр. Тикет #1234)" className={inputCls + ' flex-1'} />
             <input value={newLink.url} onChange={(e) => setNewLink((p) => ({ ...p, url: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && addLink()} placeholder="https://..." className={inputCls + ' flex-1'} />
-            <button onClick={addLink} className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground transition-colors shrink-0">
+            <button onClick={addLink} className="h-9 px-3 rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground hover:shadow-accent active:translate-y-px transition-all duration-200 ease-premium shrink-0">
               <Icon name="Plus" size={16} />
             </button>
           </div>
@@ -222,14 +222,14 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
       </div>
 
       <div className="flex justify-between px-6 pb-5">
-        <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground transition-colors">
+        <button onClick={onClose} className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:shadow-sm active:translate-y-px transition-all duration-200 ease-premium">
           Отмена
         </button>
         <button
           onClick={handleCreate}
           disabled={!canCreate}
           title={!form.title.trim() ? 'Введите название задачи' : (!form.category ? 'Выберите категорию' : '')}
-          className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+          className="h-9 px-6 rounded-lg bg-gradient-to-b from-[hsl(38_90%_60%)] to-[hsl(38_85%_50%)] text-primary-foreground text-sm font-medium shadow-accent hover:shadow-accent-hover hover:brightness-[1.06] active:translate-y-px disabled:opacity-40 disabled:shadow-none transition-all duration-200 ease-premium"
         >
           Создать
         </button>

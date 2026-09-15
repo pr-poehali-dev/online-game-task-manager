@@ -47,7 +47,7 @@ export default function TaskModalMeta({
           value={form.title}
           onChange={(e) => set('title', e.target.value)}
           readOnly={!isEditing || !canFullEdit}
-          className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-border pb-1 transition-colors"
+          className="w-full bg-transparent text-lg font-semibold text-foreground focus:outline-none border-b border-transparent focus:border-primary/50 pb-1 transition-all duration-200 ease-premium"
           placeholder="Название задачи"
         />
       </div>
@@ -57,13 +57,13 @@ export default function TaskModalMeta({
         <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground -mt-3">
           {task.createdAt && (
             <span className="flex items-center gap-1">
-              <Icon name="Calendar" size={11} />
+              <Icon name="Calendar" size={12} />
               Создана {formatMskDateTime(task.createdAt)}
             </span>
           )}
           {task.creatorId != null && (
             <span className="flex items-center gap-1">
-              <AssigneeAvatar a={resolveAssignee(team, task.creatorId)} size={15} />
+              <AssigneeAvatar a={resolveAssignee(team, task.creatorId)} size={16} />
               {resolveAssignee(team, task.creatorId).name}
             </span>
           )}
@@ -75,13 +75,13 @@ export default function TaskModalMeta({
         <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground -mt-2">
           {task.archivedAt && (
             <span className="flex items-center gap-1">
-              <Icon name="Archive" size={11} />
+              <Icon name="Archive" size={12} />
               Закрыта {formatMskDateTime(task.archivedAt)}
             </span>
           )}
           {task.closedBy != null && (
             <span className="flex items-center gap-1">
-              <AssigneeAvatar a={resolveAssignee(team, task.closedBy)} size={15} />
+              <AssigneeAvatar a={resolveAssignee(team, task.closedBy)} size={16} />
               {resolveAssignee(team, task.closedBy).name}
             </span>
           )}
@@ -116,12 +116,12 @@ export default function TaskModalMeta({
               ...sprints.filter((s) => s.status !== 'done' || s.id === form.sprintId).map((s) => ({ value: s.id, label: s.title })),
             ]} />
             <div>
-              <label className="block text-[10px] text-muted-foreground mb-1">Дедлайн (МСК)</label>
+              <label className="block text-[11px] tracking-[0.01em] text-muted-foreground mb-1">Дедлайн (МСК)</label>
               <input
                 type="datetime-local"
                 value={deadlineLocal}
                 onChange={(e) => setDeadlineLocal(e.target.value)}
-                className="w-full rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                className="w-full rounded-lg border border-border bg-secondary/50 px-2.5 py-1.5 text-xs text-foreground transition-all duration-200 ease-premium hover:bg-secondary/70 focus:outline-none focus:border-primary/50 focus:bg-secondary/70"
               />
             </div>
             <div className="md:col-span-4">
@@ -129,26 +129,26 @@ export default function TaskModalMeta({
             </div>
           </>
         ) : (
-          <div className="col-span-2 md:col-span-4 rounded-lg border border-border bg-secondary/20 px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+          <div className="col-span-2 md:col-span-4 rounded-lg border border-border/70 bg-secondary/20 shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.03)] px-3 py-2 flex flex-wrap items-center gap-x-5 gap-y-1.5">
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Категория</span>
+              <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">Категория</span>
               <CategoryBadge id={form.category} />
             </div>
             {task.deadline && (
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Дедлайн</span>
+                <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">Дедлайн</span>
                 <DeadlineBadge iso={task.deadline} />
               </div>
             )}
             {form.sprintId && sprints.find((s) => s.id === form.sprintId) && (
               <div className="flex items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Спринт</span>
+                <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">Спринт</span>
                 <span className="text-xs font-medium text-foreground">{sprints.find((s) => s.id === form.sprintId)?.title}</span>
               </div>
             )}
             {taskAssigneeIds(form).length > 0 && (
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Исполнители</span>
+                <span className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70">Исполнители</span>
                 {taskAssigneeIds(form).map((id) => (
                   <span key={id} className="inline-flex items-center gap-1 rounded-md bg-secondary/60 px-1.5 py-0.5 text-xs">
                     <AssigneeAvatar a={resolveAssignee(team, id)} size={14} />
@@ -171,7 +171,7 @@ export default function TaskModalMeta({
               <button
                 key={id}
                 onClick={() => onOpenArticle(art.id)}
-                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border bg-secondary/40 hover:border-primary/50 hover:text-primary transition-colors"
+                className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border border-border bg-secondary/40 hover:border-primary/50 hover:text-primary hover:bg-secondary/60 transition-all duration-200 ease-premium"
               >
                 <Icon name="BookOpen" size={12} />
                 <span className="truncate max-w-[240px]">{art.title}</span>

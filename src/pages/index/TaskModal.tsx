@@ -186,16 +186,19 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
 
       {/* Footer — кнопки сохранения/отмены видны только в режиме редактирования */}
       {isEditing && (
-        <div className="flex justify-end gap-2 px-6 pb-5">
+        /* Липкий футер: при длинном описании кнопки сохранения уезжали далеко вниз, и
+           приходилось прокручивать всё окно, чтобы сохранить правку. Полупрозрачный фон с
+           размытием отделяет панель действий от содержимого. */
+        <div className="sticky bottom-0 flex justify-end gap-2 px-6 py-4 border-t border-border/60 bg-card/85 backdrop-blur-xl rounded-b-2xl">
           <button
             onClick={cancelEdit}
-            className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
+            className="h-9 px-4 rounded-lg border border-border text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:shadow-sm active:translate-y-px transition-all duration-200 ease-premium"
           >
             Отмена
           </button>
           <button
             onClick={handleSave}
-            className="h-9 px-6 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+            className="h-9 px-6 rounded-lg bg-gradient-to-b from-[hsl(38_90%_60%)] to-[hsl(38_85%_50%)] text-primary-foreground text-sm font-medium shadow-accent hover:shadow-accent-hover hover:brightness-[1.06] active:translate-y-px transition-all duration-200 ease-premium"
           >
             Сохранить
           </button>

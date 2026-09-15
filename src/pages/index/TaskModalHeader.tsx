@@ -59,38 +59,38 @@ export default function TaskModalHeader({
         {!isEditing && (canFullEdit || canEditDeploy) && (
           <button
             onClick={onStartEdit}
-            className="h-8 px-3.5 rounded-lg bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-sm"
+            className="h-8 px-3.5 rounded-lg bg-gradient-to-b from-[hsl(38_90%_60%)] to-[hsl(38_85%_50%)] text-primary-foreground text-xs font-medium shadow-accent hover:shadow-accent-hover hover:brightness-[1.06] active:translate-y-px transition-all duration-200 ease-premium flex items-center gap-1.5"
           >
-            <Icon name="Pencil" size={13} />
+            <Icon name="Pencil" size={14} />
             Редактировать
           </button>
         )}
         {task.archived ? (isAdmin && (
           <button
             onClick={() => onUnarchive(task.id)}
-            className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+            className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:shadow-sm active:translate-y-px transition-all duration-200 ease-premium flex items-center gap-1.5"
           >
-            <Icon name="ArchiveRestore" size={13} />
+            <Icon name="ArchiveRestore" size={14} />
             Вернуть на доску
           </button>
         )) : (canArchive && (
           <div className="relative">
             <button
               onClick={() => setArchiveMenu((v) => !v)}
-              className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
+              className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 hover:shadow-sm active:translate-y-px transition-all duration-200 ease-premium flex items-center gap-1.5"
             >
-              <Icon name="Archive" size={13} />
+              <Icon name="Archive" size={14} />
               В архив
-              <Icon name="ChevronDown" size={12} />
+              <Icon name="ChevronDown" size={14} />
             </button>
             {archiveMenu && (
-              <div className="absolute right-0 top-9 z-10 w-48 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
-                <div className="text-[10px] uppercase tracking-wide text-muted-foreground px-2 py-1">Исход задачи</div>
+              <div className="absolute right-0 top-9 z-10 w-48 rounded-lg border border-border/70 bg-popover shadow-[inset_0_1px_0_0_hsl(210_40%_100%/0.05),0_24px_56px_-16px_hsl(222_30%_2%/0.6)] p-1 animate-scale-in">
+                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground/70 px-2 py-1">Исход задачи</div>
                 {outcomes.map((o) => (
                   <button
                     key={o.id}
                     onClick={() => { setArchiveMenu(false); onArchive(task.id, o.id); }}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-colors"
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm hover:bg-secondary/60 transition-all duration-200 ease-premium"
                     style={{ color: `hsl(${o.color})` }}
                   >
                     <Icon name={o.icon} size={14} />
@@ -104,13 +104,13 @@ export default function TaskModalHeader({
         {isAdmin && (
           <button
             onClick={() => onDelete(task.id)}
-            className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 transition-colors"
+            className="h-8 px-3 rounded-lg border border-destructive/40 text-destructive text-xs hover:bg-destructive/10 hover:border-destructive/60 active:translate-y-px transition-all duration-200 ease-premium"
           >
             Удалить
           </button>
         )}
-        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors">
-          <Icon name="X" size={18} />
+        <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all duration-200 ease-premium">
+          <Icon name="X" size={16} />
         </button>
       </div>
     </div>
