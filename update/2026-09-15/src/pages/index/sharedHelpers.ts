@@ -42,6 +42,13 @@ export function taskServerIds(task: { server?: string | null; servers?: string[]
   return task.server ? [task.server] : [];
 }
 
+// Спринты задачи: новый список sprintIds, а для задач, созданных до его появления, — одиночный
+// sprintId. Единая точка, чтобы старые задачи везде отображались корректно.
+export function taskSprintIds(task: { sprintId?: string | null; sprintIds?: string[] }): string[] {
+  if (task.sprintIds && task.sprintIds.length > 0) return task.sprintIds;
+  return task.sprintId ? [task.sprintId] : [];
+}
+
 // Серверы спринта — та же логика совместимости, что и у задач (см. taskServerIds).
 export function sprintServerIds(sprint: { server?: string | null; servers?: string[] }): string[] {
   if (sprint.servers && sprint.servers.length > 0) return sprint.servers;
