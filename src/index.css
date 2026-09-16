@@ -211,18 +211,24 @@
 .tiptap-editor .ProseMirror code {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.82em;
+  color: hsl(var(--primary));
   background: hsl(var(--secondary));
   border-radius: calc(var(--radius) * 0.5);
   padding: 1px 5px;
 }
+/* Блок кода раньше был почти того же цвета, что и фон страницы (18% против 16% светлоты) —
+   на тёмной теме подложка практически не читалась. Теперь фон заметно светлее страницы и
+   карточки, плюс тонкая рамка отделяет блок как самостоятельный элемент. */
 .tiptap-editor .ProseMirror pre {
-  background: hsl(220 18% 6%);
+  background: hsl(220 14% 16%);
+  border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 10px 14px;
   margin: 0.5em 0;
   overflow-x: auto;
 }
 .tiptap-editor .ProseMirror pre code {
+  color: hsl(var(--foreground));
   background: none;
   padding: 0;
 }
@@ -334,18 +340,21 @@
 .kb-content code {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.85em;
+  color: hsl(var(--primary));
   background: hsl(var(--secondary));
   border-radius: calc(var(--radius) * 0.5);
   padding: 1px 5px;
 }
 .kb-content pre {
-  background: hsl(220 18% 6%);
+  background: hsl(220 14% 16%);
+  border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 12px 16px;
   margin: 0.7em 0;
   overflow-x: auto;
 }
 .kb-content pre code {
+  color: hsl(var(--foreground));
   background: none;
   padding: 0;
 }
