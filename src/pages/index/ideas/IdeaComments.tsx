@@ -173,7 +173,7 @@ export default function IdeaComments({
               members={mentionMembers}
               onSubmit={onSubmit}
               placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
-              className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
+              className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:shadow-none"
             />
           </div>
           <div className="flex flex-col gap-1.5 shrink-0">
