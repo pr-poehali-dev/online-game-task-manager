@@ -65,6 +65,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST comment_reaction_toggle without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "comment_reaction_toggle", "id": 1, "emoji": "👍"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -13,6 +13,9 @@ import psycopg2
 
 
 SNIPPET_LEN = 100
+# Набор эмодзи-реакций на комментарии ограничен фиксированным списком (как в мессенджерах) — так
+# реакции остаются единообразными на всех карточках и не превращаются в произвольный текстовый ввод.
+ALLOWED_REACTION_EMOJI = {'👍', '👎', '❤️', '😂', '😮', '😢', '🎉', '🔥'}
 
 
 def _snippet(text, length=SNIPPET_LEN):
@@ -1094,6 +1097,20 @@ def handler(event: dict, context) -> dict:
             f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
             (str(task_id),)
         )
+        comment_rows = cur.fetchall()
+        comment_ids = [r[0] for r in comment_rows]
+        # Реакции — отдельным запросом по всем id разом (не по одному на комментарий), чтобы не
+        # плодить N+1 при большом обсуждении. Группируем по (comment_id, emoji) с списком поставивших.
+        reactions_by_comment: dict = {}
+        if comment_ids:
+            cur.execute(
+                f"SELECT comment_id, emoji, user_id FROM {schema}.task_comment_reactions "
+                f"WHERE comment_id = ANY(%s) ORDER BY created_at ASC",
+                (comment_ids,)
+            )
+            for cid, emoji, uid in cur.fetchall():
+                by_emoji = reactions_by_comment.setdefault(cid, {})
+                by_emoji.setdefault(emoji, []).append(uid)
         comments = [{
             'id': str(r[0]), 'taskId': str(r[1]), 'authorId': r[2], 'text': r[3],
             'createdAt': r[4].isoformat() if r[4] else None,
@@ -1101,7 +1118,8 @@ def handler(event: dict, context) -> dict:
             'mentions': r[6] if r[6] is not None else [],
             'attachments': r[7] if r[7] is not None else [],
             'editedAt': r[8].isoformat() if r[8] else None,
-        } for r in cur.fetchall()]
+            'reactions': [{'emoji': emoji, 'userIds': uids} for emoji, uids in reactions_by_comment.get(r[0], {}).items()],
+        } for r in comment_rows]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comments': comments})}
 
@@ -1209,6 +1227,42 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"DELETE FROM {schema}.task_comments WHERE id = %s", (int(cid),))
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Эмодзи-реакция на комментарий, как в мессенджерах: повторный клик тем же пользователем на тот
+    # же эмодзи убирает реакцию (toggle), а не плодит дубликаты — для этого в таблице уникальный
+    # индекс (comment_id, user_id, emoji).
+    if action == 'comment_reaction_toggle':
+        cid = body.get('id')
+        emoji = body.get('emoji')
+        if not cid or emoji not in ALLOWED_REACTION_EMOJI:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(f"SELECT task_id FROM {schema}.task_comments WHERE id = %s", (int(cid),))
+        crow = cur.fetchone()
+        if not crow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        task_id = crow[0]
+        if me['role'] != 'admin' and not me['perms']['task_view_others']:
+            cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+            own_row = cur.fetchone()
+            own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
+            if me['id'] not in own_ids and (not own_row or own_row[2] != me['id']):
+                cur.close(); conn.close()
+                return _forbidden()
+        cur.execute(
+            f"DELETE FROM {schema}.task_comment_reactions WHERE comment_id = %s AND user_id = %s AND emoji = %s",
+            (int(cid), me['id'], emoji)
+        )
+        added = cur.rowcount == 0
+        if added:
+            cur.execute(
+                f"INSERT INTO {schema}.task_comment_reactions (comment_id, user_id, emoji) VALUES (%s, %s, %s) "
+                f"ON CONFLICT (comment_id, user_id, emoji) DO NOTHING",
+                (int(cid), me['id'], emoji)
+            )
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'added': added})}
 
     # Приватные заметки: текст виден только автору, выбранному адресату и тем, кому явно выдано
     # право private_notes_view_others. Прикрепляются либо к задаче целиком (commentId = null),

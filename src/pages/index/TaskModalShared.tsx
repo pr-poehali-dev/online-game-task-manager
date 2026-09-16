@@ -7,6 +7,11 @@ import { resolveAssignee, AssigneeAvatar } from './shared';
 import { useCatalog } from '@/lib/catalog';
 import type { PrivateNote } from './usePrivateNotes';
 
+export interface CommentReaction {
+  emoji: string;
+  userIds: number[];
+}
+
 export interface TaskComment {
   id: string;
   taskId: string;
@@ -17,6 +22,7 @@ export interface TaskComment {
   mentions: number[];
   attachments: Attachment[];
   editedAt?: string | null;
+  reactions?: CommentReaction[];
 }
 
 export function renderMentionText(text: string, names: string[]) {
@@ -246,6 +252,67 @@ export function SprintMultiSelect({ sprints, value, onChange, compact }: {
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+const REACTION_EMOJI = ['👍', '👎', '❤️', '😂', '😮', '😢', '🎉', '🔥'];
+
+// Панель эмодзи-реакций под комментарием — как в мессенджерах: уже поставленные реакции показаны
+// «таблетками» со счётчиком (клик — снять свою, если стояла, или добавить), плюс кнопка со смайликом
+// открывает выбор из фиксированного набора эмодзи для новой реакции.
+export function CommentReactionsBar({ reactions, currentUserId, onToggle }: {
+  reactions: CommentReaction[];
+  currentUserId: number | null;
+  onToggle: (emoji: string) => void;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const active = reactions.filter((r) => r.userIds.length > 0);
+  const usedEmoji = new Set(active.map((r) => r.emoji));
+
+  return (
+    <div className="flex items-center gap-1 flex-wrap mt-1">
+      {active.map((r) => {
+        const mine = currentUserId != null && r.userIds.includes(currentUserId);
+        return (
+          <button
+            key={r.emoji}
+            type="button"
+            onClick={() => onToggle(r.emoji)}
+            title={mine ? 'Убрать реакцию' : 'Поставить такую же реакцию'}
+            className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs border transition-colors ${
+              mine ? 'bg-primary/15 border-primary/40 text-primary' : 'bg-secondary/50 border-border text-muted-foreground hover:bg-secondary/80'
+            }`}
+          >
+            <span>{r.emoji}</span>
+            <span className="font-mono">{r.userIds.length}</span>
+          </button>
+        );
+      })}
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setPickerOpen((v) => !v)}
+          title="Добавить реакцию"
+          className="h-6 w-6 flex items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+        >
+          <Icon name="SmilePlus" size={14} />
+        </button>
+        {pickerOpen && (
+          <div className="absolute left-0 top-full mt-1 z-30 flex gap-0.5 rounded-lg border border-border bg-popover shadow-xl p-1 animate-scale-in">
+            {REACTION_EMOJI.map((emoji) => (
+              <button
+                key={emoji}
+                type="button"
+                onClick={() => { onToggle(emoji); setPickerOpen(false); }}
+                className={`h-7 w-7 flex items-center justify-center rounded-md text-sm hover:bg-secondary/70 transition-colors ${usedEmoji.has(emoji) ? 'bg-secondary/50' : ''}`}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

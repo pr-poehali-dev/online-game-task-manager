@@ -6,7 +6,7 @@ import type { TeamMember } from './shared';
 import { resolveAssignee, AssigneeAvatar, TASKS_URL, authHeaders } from './shared';
 import MentionInput, { extractMentions } from './MentionInput';
 import type { TaskComment } from './TaskModalShared';
-import { renderMentionText, PrivateNoteComposer, PrivateNotesList } from './TaskModalShared';
+import { renderMentionText, PrivateNoteComposer, PrivateNotesList, CommentReactionsBar } from './TaskModalShared';
 import usePrivateNotes from './usePrivateNotes';
 import { commentsCache } from './taskDataCache';
 
@@ -128,6 +128,41 @@ export default function TaskComments({ taskId, team }: {
     }
   }
 
+  async function toggleReaction(commentId: string, emoji: string) {
+    // Оптимистичное обновление: сразу отражаем в UI, как это делает любой мессенджер, не дожидаясь
+    // ответа сервера — при ошибке запроса разница исчезнет при следующей фоновой загрузке.
+    setComments((prev) => {
+      const next = prev.map((c) => {
+        if (c.id !== commentId || !user) return c;
+        const reactions = c.reactions ?? [];
+        const idx = reactions.findIndex((r) => r.emoji === emoji);
+        const mine = idx >= 0 && reactions[idx].userIds.includes(user.id);
+        let nextReactions: typeof reactions;
+        if (mine) {
+          nextReactions = reactions
+            .map((r) => (r.emoji === emoji ? { ...r, userIds: r.userIds.filter((id) => id !== user.id) } : r))
+            .filter((r) => r.userIds.length > 0);
+        } else if (idx >= 0) {
+          nextReactions = reactions.map((r) => (r.emoji === emoji ? { ...r, userIds: [...r.userIds, user.id] } : r));
+        } else {
+          nextReactions = [...reactions, { emoji, userIds: [user.id] }];
+        }
+        return { ...c, reactions: nextReactions };
+      });
+      commentsCache.set(taskId, next);
+      return next;
+    });
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_reaction_toggle', id: commentId, emoji }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   const topLevel = comments.filter((c) => !c.parentId);
 
   function renderComment(c: TaskComment, isReply = false) {
@@ -203,6 +238,11 @@ export default function TaskComments({ taskId, team }: {
                   <AttachmentsList attachments={c.attachments} />
                 </div>
               )}
+              <CommentReactionsBar
+                reactions={c.reactions ?? []}
+                currentUserId={user?.id ?? null}
+                onToggle={(emoji) => toggleReaction(c.id, emoji)}
+              />
             </>
           )}
         </div>
