@@ -1,0 +1,372 @@
+import { useState, useEffect, useCallback } from 'react';
+import Icon from '@/components/ui/icon';
+import { useAuth } from '@/lib/auth';
+import { AttachmentsList, AttachmentsTrigger, CompactAttachmentsList, type Attachment } from '@/components/AttachmentsField';
+import type { TeamMember } from './shared';
+import { resolveAssignee, AssigneeAvatar, TASKS_URL, authHeaders } from './shared';
+import MentionInput, { extractMentions } from './MentionInput';
+import type { TaskComment } from './TaskModalShared';
+import { renderMentionText, PrivateNoteComposer, PrivateNotesList, CommentReactionsBar } from './TaskModalShared';
+import usePrivateNotes from './usePrivateNotes';
+import { commentsCache } from './taskDataCache';
+
+export default function TaskComments({ taskId, team, canPin }: {
+  taskId: string;
+  team: TeamMember[];
+  canPin: boolean;
+}) {
+  const { user, isAdmin } = useAuth();
+  // Первичное значение — из кеша (если задачу уже открывали в этой сессии), чтобы повторное
+  // открытие карточки задачи показывало комментарии мгновенно, без спиннера и пустого списка на
+  // время фонового fetch (см. taskDataCache.ts за подробностями).
+  const [comments, setComments] = useState<TaskComment[]>(() => commentsCache.get(taskId) ?? []);
+  const [newComment, setNewComment] = useState('');
+  const [newAttachments, setNewAttachments] = useState<Attachment[]>([]);
+  const [attachError, setAttachError] = useState('');
+  const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
+  const [pendingNote, setPendingNote] = useState<{ targetUserId: number; text: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(taskId);
+
+  const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
+  const mentionNames = mentionMembers.map((m) => m.name);
+
+  const loadComments = useCallback(async () => {
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comments', taskId }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const loaded = data.comments || [];
+        commentsCache.set(taskId, loaded);
+        setComments(loaded);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [taskId]);
+
+  useEffect(() => {
+    // Если для этой задачи уже есть кеш — не блокируем интерфейс повторным запросом: комментарии
+    // уже показаны из кеша выше, обновление в фоне (на случай новых комментариев от других
+    // участников) не критично для UX.
+    if (!commentsCache.has(taskId)) loadComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId]);
+
+  async function addComment() {
+    if (!newComment.trim() && newAttachments.length === 0 && !pendingNote) return;
+    const mentions = extractMentions(newComment, mentionMembers);
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment', taskId, text: newComment.trim(), parentId: (replyTo?.parentId ?? replyTo?.id) ?? null, mentions, attachments: newAttachments, withPrivateNote: !!pendingNote }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => {
+          const next = [...prev, data.comment];
+          commentsCache.set(taskId, next);
+          return next;
+        });
+        if (pendingNote) {
+          await addPrivateNote(pendingNote.targetUserId, pendingNote.text, data.comment.id);
+          setPendingNote(null);
+        }
+        setNewComment('');
+        setNewAttachments([]);
+        setReplyTo(null);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function removeComment(id: string) {
+    setComments((prev) => {
+      const next = prev.filter((c) => c.id !== id && c.parentId !== id);
+      commentsCache.set(taskId, next);
+      return next;
+    });
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_delete', id }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function saveEdit(id: string) {
+    const text = editText.trim();
+    if (!text) return;
+    const mentions = extractMentions(text, mentionMembers);
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_edit', id, text, mentions }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => {
+          const next = prev.map((c) => (c.id === id ? { ...c, text, mentions: data.mentions ?? mentions, editedAt: data.editedAt } : c));
+          commentsCache.set(taskId, next);
+          return next;
+        });
+        setEditingId(null);
+        setEditText('');
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function toggleReaction(commentId: string, emoji: string) {
+    // Оптимистичное обновление: сразу отражаем в UI, как это делает любой мессенджер, не дожидаясь
+    // ответа сервера — при ошибке запроса разница исчезнет при следующей фоновой загрузке.
+    setComments((prev) => {
+      const next = prev.map((c) => {
+        if (c.id !== commentId || !user) return c;
+        const reactions = c.reactions ?? [];
+        const idx = reactions.findIndex((r) => r.emoji === emoji);
+        const mine = idx >= 0 && reactions[idx].userIds.includes(user.id);
+        let nextReactions: typeof reactions;
+        if (mine) {
+          nextReactions = reactions
+            .map((r) => (r.emoji === emoji ? { ...r, userIds: r.userIds.filter((id) => id !== user.id) } : r))
+            .filter((r) => r.userIds.length > 0);
+        } else if (idx >= 0) {
+          nextReactions = reactions.map((r) => (r.emoji === emoji ? { ...r, userIds: [...r.userIds, user.id] } : r));
+        } else {
+          nextReactions = [...reactions, { emoji, userIds: [user.id] }];
+        }
+        return { ...c, reactions: nextReactions };
+      });
+      commentsCache.set(taskId, next);
+      return next;
+    });
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_reaction_toggle', id: commentId, emoji }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function togglePin(commentId: string) {
+    // Оптимистично: снимаем pinnedAt со всех и ставим на выбранный (если он не был закреплён) —
+    // ровно так же, как это делает backend (единовременно закреплён максимум один комментарий).
+    setComments((prev) => {
+      const target = prev.find((c) => c.id === commentId);
+      const wasPinned = !!target?.pinnedAt;
+      const next = prev.map((c) => ({
+        ...c,
+        pinnedAt: c.id === commentId && !wasPinned ? new Date().toISOString() : null,
+      }));
+      commentsCache.set(taskId, next);
+      return next;
+    });
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_pin_toggle', id: commentId }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const topLevel = comments.filter((c) => !c.parentId);
+  // Закреплённый комментарий (если есть) всегда идёт первым в списке обсуждения — независимо от
+  // времени создания, ровно как в мессенджерах.
+  const sortedTopLevel = [...topLevel].sort((a, b) => {
+    if (!!a.pinnedAt === !!b.pinnedAt) return 0;
+    return a.pinnedAt ? -1 : 1;
+  });
+
+  function renderComment(c: TaskComment, isReply = false) {
+    const auth = resolveAssignee(team, c.authorId != null ? Number(c.authorId) : null);
+    const isMine = !!user && Number(c.authorId) === user.id;
+    const canDel = isMine || isAdmin;
+    const isEditing = editingId === c.id;
+    return (
+      <div className="flex gap-2.5 group">
+        <AssigneeAvatar a={auth} size={isReply ? 24 : 28} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <span className="text-xs font-medium">{auth.name}</span>
+            <span className="text-xs text-muted-foreground">
+              {c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
+            </span>
+            {c.editedAt && <span className="text-xs text-muted-foreground italic">(изменено)</span>}
+            {c.pinnedAt && (
+              <span className="text-xs text-primary flex items-center gap-0.5">
+                <Icon name="Pin" size={11} /> Закреплено
+              </span>
+            )}
+            {!isEditing && (
+              <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
+                <Icon name="CornerDownRight" size={11} /> Ответить
+              </button>
+            )}
+            {!isReply && canPin && !isEditing && (
+              <button
+                onClick={() => togglePin(c.id)}
+                title={c.pinnedAt ? 'Открепить комментарий' : 'Закрепить наверху обсуждения'}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                <Icon name="Pin" size={11} /> {c.pinnedAt ? 'Открепить' : 'Закрепить'}
+              </button>
+            )}
+            {isMine && !isEditing && c.text && (
+              <button
+                onClick={() => { setEditingId(c.id); setEditText(c.text); }}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                <Icon name="Pencil" size={11} /> Изменить
+              </button>
+            )}
+            {!isEditing && <PrivateNoteComposer variant="button" team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />}
+            {canDel && !isEditing && (
+              <button
+                onClick={() => removeComment(c.id)}
+                className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-xs"
+              >
+                <Icon name="X" size={12} />
+              </button>
+            )}
+          </div>
+          {isEditing ? (
+            <div className="rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
+              <MentionInput
+                value={editText}
+                onChange={setEditText}
+                members={mentionMembers}
+                onSubmit={() => saveEdit(c.id)}
+                className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:shadow-none"
+              />
+              <div className="flex justify-end gap-1.5 px-2 pb-2">
+                <button onClick={() => { setEditingId(null); setEditText(''); }} className="h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => saveEdit(c.id)}
+                  disabled={!editText.trim()}
+                  className="h-7 px-2.5 rounded-md text-xs bg-primary text-primary-foreground hover:brightness-105 disabled:opacity-40 transition-all"
+                >
+                  Сохранить
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {(c.text || privateNotes.some((n) => n.commentId === c.id)) && (
+                <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 space-y-1.5">
+                  {c.text && <div className="whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>}
+                  <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
+                </div>
+              )}
+              {!!c.attachments?.length && (
+                <div className={c.text ? 'mt-1.5' : ''}>
+                  <AttachmentsList attachments={c.attachments} />
+                </div>
+              )}
+              <CommentReactionsBar
+                reactions={c.reactions ?? []}
+                currentUserId={user?.id ?? null}
+                onToggle={(emoji) => toggleReaction(c.id, emoji)}
+              />
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <label className="block text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+        <Icon name="MessageSquare" size={12} />
+        Комментарии {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
+      </label>
+      {sortedTopLevel.length > 0 && (
+        <div className="flex flex-col gap-2 mb-3">
+          {sortedTopLevel.map((c) => {
+            const replies = comments.filter((r) => r.parentId === c.id);
+            return (
+              <div key={c.id} className={c.pinnedAt ? 'rounded-lg bg-primary/5 border border-primary/20 p-2 -m-2' : ''}>
+                {renderComment(c)}
+                {replies.length > 0 && (
+                  <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">
+                    {replies.map((r) => <div key={r.id}>{renderComment(r, true)}</div>)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {replyTo && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-secondary/40 rounded-lg px-3 py-1.5 mb-2">
+          <Icon name="CornerDownRight" size={13} className="text-primary" />
+          Ответ для <span className="font-medium text-foreground">{resolveAssignee(team, replyTo.authorId != null ? Number(replyTo.authorId) : null).name}</span>
+          <button onClick={() => setReplyTo(null)} className="ml-auto hover:text-foreground">
+            <Icon name="X" size={13} />
+          </button>
+        </div>
+      )}
+      {pendingNote && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground bg-primary/5 border border-dashed border-primary/30 rounded-lg px-3 py-1.5 mb-2">
+          <Icon name="EyeOff" size={12} className="text-primary" />
+          Приватная заметка для <span className="font-medium text-foreground">{resolveAssignee(team, pendingNote.targetUserId).name}</span> будет добавлена вместе с комментарием
+          <button onClick={() => setPendingNote(null)} className="ml-auto hover:text-foreground">
+            <Icon name="X" size={13} />
+          </button>
+        </div>
+      )}
+      <div className="flex gap-2">
+        <div className="flex-1 min-w-0 rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
+          <MentionInput
+            value={newComment}
+            onChange={setNewComment}
+            members={mentionMembers}
+            onSubmit={addComment}
+            placeholder="Написать комментарий. @ — упомянуть. Ctrl+Enter — отправить"
+            className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:shadow-none"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5 shrink-0">
+          <AttachmentsTrigger uploadUrl={TASKS_URL} authHeaders={authHeaders} action="comment_upload_file" onUploaded={(a) => setNewAttachments((prev) => [...prev, a])} onError={setAttachError} />
+          <PrivateNoteComposer
+            variant="icon"
+            align="right"
+            team={team}
+            currentUserId={user?.id ?? null}
+            onAdd={async (uid, text) => { setPendingNote({ targetUserId: uid, text }); return true; }}
+          />
+          <button
+            onClick={addComment}
+            disabled={!newComment.trim() && !newAttachments.length && !pendingNote}
+            className="h-9 w-9 flex items-center justify-center rounded-lg bg-secondary text-sm text-foreground hover:bg-primary hover:text-primary-foreground disabled:opacity-40 transition-colors"
+          >
+            <Icon name="Send" size={15} />
+          </button>
+        </div>
+      </div>
+      <CompactAttachmentsList attachments={newAttachments} onRemove={(id) => setNewAttachments((prev) => prev.filter((a) => a.id !== id))} />
+      {attachError && <p className="text-xs text-destructive mt-1.5">{attachError}</p>}
+    </div>
+  );
+}
