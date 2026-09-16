@@ -16,6 +16,7 @@ export interface TaskComment {
   parentId: string | null;
   mentions: number[];
   attachments: Attachment[];
+  editedAt?: string | null;
 }
 
 export function renderMentionText(text: string, names: string[]) {

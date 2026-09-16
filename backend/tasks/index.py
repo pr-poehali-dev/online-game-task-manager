@@ -1090,7 +1090,7 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
-            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions, attachments "
+            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions, attachments, edited_at "
             f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
             (str(task_id),)
         )
@@ -1100,6 +1100,7 @@ def handler(event: dict, context) -> dict:
             'parentId': str(r[5]) if r[5] else None,
             'mentions': r[6] if r[6] is not None else [],
             'attachments': r[7] if r[7] is not None else [],
+            'editedAt': r[8].isoformat() if r[8] else None,
         } for r in cur.fetchall()]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comments': comments})}
@@ -1162,6 +1163,32 @@ def handler(event: dict, context) -> dict:
         }
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'comment': comment})}
+
+    # Редактировать комментарий задачи (только автор комментария — админ может удалить, но не подменять
+    # чужой текст от своего имени; это отдельная политика от comment_delete).
+    if action == 'comment_edit':
+        cid = body.get('id')
+        text = (body.get('text') or '').strip()
+        if not cid or not text:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_request'})}
+        cur.execute(f"SELECT user_id FROM {schema}.task_comments WHERE id = %s", (int(cid),))
+        crow = cur.fetchone()
+        if not crow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if crow[0] != me['id']:
+            cur.close(); conn.close()
+            return {'statusCode': 403, 'headers': _cors_headers(), 'body': json.dumps({'error': 'forbidden'})}
+        mentions = _norm_ids(body.get('mentions'))
+        cur.execute(
+            f"UPDATE {schema}.task_comments SET text = %s, mentions = %s, edited_at = now() "
+            f"WHERE id = %s RETURNING edited_at",
+            (text, json.dumps(mentions), int(cid))
+        )
+        edited_at = cur.fetchone()[0]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'editedAt': edited_at.isoformat() if edited_at else None, 'mentions': mentions})}
 
     # Удалить комментарий задачи (автор комментария или админ)
     if action == 'comment_delete':

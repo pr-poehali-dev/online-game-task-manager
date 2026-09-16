@@ -56,6 +56,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST comment_edit without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "comment_edit", "id": 1, "text": "test"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }

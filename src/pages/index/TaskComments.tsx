@@ -24,6 +24,8 @@ export default function TaskComments({ taskId, team }: {
   const [attachError, setAttachError] = useState('');
   const [replyTo, setReplyTo] = useState<TaskComment | null>(null);
   const [pendingNote, setPendingNote] = useState<{ targetUserId: number; text: string } | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
   const { notes: privateNotes, addNote: addPrivateNote, removeNote: removePrivateNote } = usePrivateNotes(taskId);
 
   const mentionMembers = team.map((m) => ({ id: m.id, name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}` }));
@@ -101,11 +103,38 @@ export default function TaskComments({ taskId, team }: {
     }
   }
 
+  async function saveEdit(id: string) {
+    const text = editText.trim();
+    if (!text) return;
+    const mentions = extractMentions(text, mentionMembers);
+    try {
+      const res = await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_edit', id, text, mentions }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setComments((prev) => {
+          const next = prev.map((c) => (c.id === id ? { ...c, text, mentions: data.mentions ?? mentions, editedAt: data.editedAt } : c));
+          commentsCache.set(taskId, next);
+          return next;
+        });
+        setEditingId(null);
+        setEditText('');
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const topLevel = comments.filter((c) => !c.parentId);
 
   function renderComment(c: TaskComment, isReply = false) {
     const auth = resolveAssignee(team, c.authorId != null ? Number(c.authorId) : null);
-    const canDel = !!user && (Number(c.authorId) === user.id || isAdmin);
+    const isMine = !!user && Number(c.authorId) === user.id;
+    const canDel = isMine || isAdmin;
+    const isEditing = editingId === c.id;
     return (
       <div className="flex gap-2.5 group">
         <AssigneeAvatar a={auth} size={isReply ? 24 : 28} />
@@ -115,11 +144,22 @@ export default function TaskComments({ taskId, team }: {
             <span className="text-xs text-muted-foreground">
               {c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
-            <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
-              <Icon name="CornerDownRight" size={11} /> Ответить
-            </button>
-            <PrivateNoteComposer variant="button" team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />
-            {canDel && (
+            {c.editedAt && <span className="text-xs text-muted-foreground italic">(изменено)</span>}
+            {!isEditing && (
+              <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
+                <Icon name="CornerDownRight" size={11} /> Ответить
+              </button>
+            )}
+            {isMine && !isEditing && c.text && (
+              <button
+                onClick={() => { setEditingId(c.id); setEditText(c.text); }}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                <Icon name="Pencil" size={11} /> Изменить
+              </button>
+            )}
+            {!isEditing && <PrivateNoteComposer variant="button" team={team} currentUserId={user?.id ?? null} onAdd={(uid, text) => addPrivateNote(uid, text, c.id)} />}
+            {canDel && !isEditing && (
               <button
                 onClick={() => removeComment(c.id)}
                 className="ml-auto opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all text-xs"
@@ -128,16 +168,42 @@ export default function TaskComments({ taskId, team }: {
               </button>
             )}
           </div>
-          {(c.text || privateNotes.some((n) => n.commentId === c.id)) && (
-            <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 space-y-1.5">
-              {c.text && <div className="whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>}
-              <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
+          {isEditing ? (
+            <div className="rounded-lg border border-border bg-secondary/60 focus-within:ring-1 focus-within:ring-primary">
+              <MentionInput
+                value={editText}
+                onChange={setEditText}
+                members={mentionMembers}
+                onSubmit={() => saveEdit(c.id)}
+                className="w-full resize-none bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:shadow-none"
+              />
+              <div className="flex justify-end gap-1.5 px-2 pb-2">
+                <button onClick={() => { setEditingId(null); setEditText(''); }} className="h-7 px-2.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  Отмена
+                </button>
+                <button
+                  onClick={() => saveEdit(c.id)}
+                  disabled={!editText.trim()}
+                  className="h-7 px-2.5 rounded-md text-xs bg-primary text-primary-foreground hover:brightness-105 disabled:opacity-40 transition-all"
+                >
+                  Сохранить
+                </button>
+              </div>
             </div>
-          )}
-          {!!c.attachments?.length && (
-            <div className={c.text ? 'mt-1.5' : ''}>
-              <AttachmentsList attachments={c.attachments} />
-            </div>
+          ) : (
+            <>
+              {(c.text || privateNotes.some((n) => n.commentId === c.id)) && (
+                <div className="text-sm bg-secondary/40 rounded-lg px-3 py-2 space-y-1.5">
+                  {c.text && <div className="whitespace-pre-wrap break-words">{renderMentionText(c.text, mentionNames)}</div>}
+                  <PrivateNotesList notes={privateNotes} team={team} currentUserId={user?.id ?? null} isAdmin={isAdmin} onRemove={removePrivateNote} commentId={c.id} />
+                </div>
+              )}
+              {!!c.attachments?.length && (
+                <div className={c.text ? 'mt-1.5' : ''}>
+                  <AttachmentsList attachments={c.attachments} />
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
