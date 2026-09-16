@@ -10,9 +10,10 @@ import { renderMentionText, PrivateNoteComposer, PrivateNotesList, CommentReacti
 import usePrivateNotes from './usePrivateNotes';
 import { commentsCache } from './taskDataCache';
 
-export default function TaskComments({ taskId, team }: {
+export default function TaskComments({ taskId, team, canPin }: {
   taskId: string;
   team: TeamMember[];
+  canPin: boolean;
 }) {
   const { user, isAdmin } = useAuth();
   // Первичное значение — из кеша (если задачу уже открывали в этой сессии), чтобы повторное
@@ -163,7 +164,37 @@ export default function TaskComments({ taskId, team }: {
     }
   }
 
+  async function togglePin(commentId: string) {
+    // Оптимистично: снимаем pinnedAt со всех и ставим на выбранный (если он не был закреплён) —
+    // ровно так же, как это делает backend (единовременно закреплён максимум один комментарий).
+    setComments((prev) => {
+      const target = prev.find((c) => c.id === commentId);
+      const wasPinned = !!target?.pinnedAt;
+      const next = prev.map((c) => ({
+        ...c,
+        pinnedAt: c.id === commentId && !wasPinned ? new Date().toISOString() : null,
+      }));
+      commentsCache.set(taskId, next);
+      return next;
+    });
+    try {
+      await fetch(TASKS_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'comment_pin_toggle', id: commentId }),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   const topLevel = comments.filter((c) => !c.parentId);
+  // Закреплённый комментарий (если есть) всегда идёт первым в списке обсуждения — независимо от
+  // времени создания, ровно как в мессенджерах.
+  const sortedTopLevel = [...topLevel].sort((a, b) => {
+    if (!!a.pinnedAt === !!b.pinnedAt) return 0;
+    return a.pinnedAt ? -1 : 1;
+  });
 
   function renderComment(c: TaskComment, isReply = false) {
     const auth = resolveAssignee(team, c.authorId != null ? Number(c.authorId) : null);
@@ -180,9 +211,23 @@ export default function TaskComments({ taskId, team }: {
               {c.createdAt ? new Date(c.createdAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}
             </span>
             {c.editedAt && <span className="text-xs text-muted-foreground italic">(изменено)</span>}
+            {c.pinnedAt && (
+              <span className="text-xs text-primary flex items-center gap-0.5">
+                <Icon name="Pin" size={11} /> Закреплено
+              </span>
+            )}
             {!isEditing && (
               <button onClick={() => setReplyTo(c)} className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5">
                 <Icon name="CornerDownRight" size={11} /> Ответить
+              </button>
+            )}
+            {!isReply && canPin && !isEditing && (
+              <button
+                onClick={() => togglePin(c.id)}
+                title={c.pinnedAt ? 'Открепить комментарий' : 'Закрепить наверху обсуждения'}
+                className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-0.5"
+              >
+                <Icon name="Pin" size={11} /> {c.pinnedAt ? 'Открепить' : 'Закрепить'}
               </button>
             )}
             {isMine && !isEditing && c.text && (
@@ -256,12 +301,12 @@ export default function TaskComments({ taskId, team }: {
         <Icon name="MessageSquare" size={12} />
         Комментарии {comments.length > 0 && <span className="font-mono">({comments.length})</span>}
       </label>
-      {topLevel.length > 0 && (
+      {sortedTopLevel.length > 0 && (
         <div className="flex flex-col gap-2 mb-3">
-          {topLevel.map((c) => {
+          {sortedTopLevel.map((c) => {
             const replies = comments.filter((r) => r.parentId === c.id);
             return (
-              <div key={c.id}>
+              <div key={c.id} className={c.pinnedAt ? 'rounded-lg bg-primary/5 border border-primary/20 p-2 -m-2' : ''}>
                 {renderComment(c)}
                 {replies.length > 0 && (
                   <div className="ml-9 mt-2 space-y-2 border-l-2 border-border/60 pl-3">

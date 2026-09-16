@@ -183,8 +183,10 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
           removeLink={removeLink}
         />
 
-        {/* Comments — только в режиме просмотра, не отвлекают во время редактирования задачи */}
-        {!isEditing && <TaskComments taskId={task.id} team={team} />}
+        {/* Comments — только в режиме просмотра, не отвлекают во время редактирования задачи.
+            canPin — те же права, что на смену статуса деплоя: автор задачи, назначенный
+            исполнитель или админ (см. action=comment_pin_toggle в backend/tasks/index.py). */}
+        {!isEditing && <TaskComments taskId={task.id} team={team} canPin={canEditDeploy || isAdmin} />}
       </div>
 
       {/* Footer — кнопки сохранения/отмены видны только в режиме редактирования */}

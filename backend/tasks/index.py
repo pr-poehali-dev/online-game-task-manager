@@ -1093,7 +1093,7 @@ def handler(event: dict, context) -> dict:
                 cur.close(); conn.close()
                 return _forbidden()
         cur.execute(
-            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions, attachments, edited_at "
+            f"SELECT id, task_id, user_id, text, created_at, parent_id, mentions, attachments, edited_at, pinned_at "
             f"FROM {schema}.task_comments WHERE task_id = %s ORDER BY created_at ASC",
             (str(task_id),)
         )
@@ -1118,6 +1118,7 @@ def handler(event: dict, context) -> dict:
             'mentions': r[6] if r[6] is not None else [],
             'attachments': r[7] if r[7] is not None else [],
             'editedAt': r[8].isoformat() if r[8] else None,
+            'pinnedAt': r[9].isoformat() if r[9] else None,
             'reactions': [{'emoji': emoji, 'userIds': uids} for emoji, uids in reactions_by_comment.get(r[0], {}).items()],
         } for r in comment_rows]
         cur.close(); conn.close()
@@ -1207,6 +1208,43 @@ def handler(event: dict, context) -> dict:
         edited_at = cur.fetchone()[0]
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'editedAt': edited_at.isoformat() if edited_at else None, 'mentions': mentions})}
+
+    # Закрепить/открепить комментарий наверху списка обсуждения. Закреплять важные комментарии может
+    # тот, кто и так управляет ходом задачи — её автор, назначенный исполнитель или админ (та же
+    # логика прав, что у смены статуса деплоя в action=update), а не любой участник переписки.
+    # Закреплён единовременно только один комментарий на задачу — повторное закрепление другого
+    # автоматически снимает пометку с предыдущего, так что порядок в UI остаётся однозначным.
+    if action == 'comment_pin_toggle':
+        cid = body.get('id')
+        if not cid:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT task_id, pinned_at FROM {schema}.task_comments WHERE id = %s", (int(cid),))
+        crow = cur.fetchone()
+        if not crow:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        task_id = crow[0]
+        cur.execute(f"SELECT assignee_id, assignee_ids, created_by FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        own_ids = _task_assignee_ids({'assigneeId': own_row[0], 'assigneeIds': own_row[1]}) if own_row else []
+        is_creator = bool(own_row) and own_row[2] == me['id']
+        is_assignee = me['id'] in own_ids
+        if me['role'] != 'admin' and not is_creator and not is_assignee:
+            cur.close(); conn.close()
+            return _forbidden()
+        was_pinned = crow[1] is not None
+        # Снимаем закрепление со всех комментариев задачи — гарантирует «не более одного закреплённого».
+        cur.execute(f"UPDATE {schema}.task_comments SET pinned_at = NULL WHERE task_id = %s", (str(task_id),))
+        pinned_at = None
+        if not was_pinned:
+            cur.execute(
+                f"UPDATE {schema}.task_comments SET pinned_at = now() WHERE id = %s RETURNING pinned_at",
+                (int(cid),)
+            )
+            pinned_at = cur.fetchone()[0]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'pinnedAt': pinned_at.isoformat() if pinned_at else None})}
 
     # Удалить комментарий задачи (автор комментария или админ)
     if action == 'comment_delete':

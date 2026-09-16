@@ -23,6 +23,7 @@ export interface TaskComment {
   attachments: Attachment[];
   editedAt?: string | null;
   reactions?: CommentReaction[];
+  pinnedAt?: string | null;
 }
 
 export function renderMentionText(text: string, names: string[]) {

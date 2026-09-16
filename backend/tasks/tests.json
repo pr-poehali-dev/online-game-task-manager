@@ -74,6 +74,15 @@
       "expectedStatus": 401,
       "expectedBody": {"error": "unauthorized"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST comment_pin_toggle without token unauthorized",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "comment_pin_toggle", "id": 1},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
     }
   ]
 }
