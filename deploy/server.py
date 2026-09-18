@@ -118,18 +118,18 @@ async def health():
 # Внутренний задачник не открывает наружу описание задачи (см. backend/tasks/index.py,
 # action=og_meta — публично отдаёт ТОЛЬКО id и title, ничего больше). Заголовок вкладки/превью
 # формируется как "#{id} · {title}" — так сразу видно номер задачи, по которому её ищут в чате
-# команды, и её суть, без перехода по ссылке.
+# команды, и её суть, без перехода по ссылке. Описание намеренно НЕ показываем (см. _og_html) —
+# ни один из полей задачи наружу кроме id/title не отдаётся, а общая фраза-заглушка вроде
+# "ЭРА — внутренний задачник команды" не несёт пользы в превью конкретной задачи.
 _OG_SITE_TITLE = 'ЭРА'
-_OG_SITE_DESCRIPTION = 'ЭРА — внутренний задачник команды.'
 
 
-def _og_html(title: str, description: str, page_url: str) -> str:
+def _og_html(title: str, page_url: str) -> str:
     app_url = (os.environ.get('APP_URL') or '').rstrip('/')
     image_url = f'{app_url}/og-image.jpg' if app_url else '/og-image.jpg'
     # html.escape — заголовок задачи вставляется пользовательским текстом (title из БД),
     # без экранирования кавычки/угловые скобки в названии задачи сломали бы разметку страницы.
     t = html.escape(title)
-    d = html.escape(description)
     u = html.escape(page_url)
     i = html.escape(image_url)
     return f'''<!DOCTYPE html>
@@ -138,16 +138,13 @@ def _og_html(title: str, description: str, page_url: str) -> str:
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>{t}</title>
-<meta name="description" content="{d}"/>
 <meta name="robots" content="noindex, nofollow"/>
 <meta property="og:title" content="{t}"/>
-<meta property="og:description" content="{d}"/>
 <meta property="og:type" content="website"/>
 <meta property="og:url" content="{u}"/>
 <meta property="og:image" content="{i}"/>
 <meta name="twitter:card" content="summary_large_image"/>
 <meta name="twitter:title" content="{t}"/>
-<meta name="twitter:description" content="{d}"/>
 <meta name="twitter:image" content="{i}"/>
 <meta http-equiv="refresh" content="0; url={u}"/>
 </head>
@@ -168,7 +165,7 @@ async def og_task(task_id: str):
 
     handler = HANDLERS.get('tasks')
     if handler is None or not task_id.isdigit():
-        return HTMLResponse(_og_html(_OG_SITE_TITLE, _OG_SITE_DESCRIPTION, page_url))
+        return HTMLResponse(_og_html(_OG_SITE_TITLE, page_url))
 
     event = {
         'httpMethod': 'GET',
@@ -182,11 +179,11 @@ async def og_task(task_id: str):
     if result.get('statusCode') != 200:
         # Задача удалена/не существует — показываем общий заголовок сайта, а не ошибку: ссылка
         # всё равно открывает приложение по клику, просто без конкретики в превью.
-        return HTMLResponse(_og_html(_OG_SITE_TITLE, _OG_SITE_DESCRIPTION, page_url))
+        return HTMLResponse(_og_html(_OG_SITE_TITLE, page_url))
 
     try:
         data = json.loads(result.get('body') or '{}')
     except Exception:
         data = {}
     title = f"#{data.get('id')} · {data.get('title')}" if data.get('title') else _OG_SITE_TITLE
-    return HTMLResponse(_og_html(title, _OG_SITE_DESCRIPTION, page_url))
+    return HTMLResponse(_og_html(title, page_url))
