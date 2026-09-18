@@ -208,17 +208,21 @@
   margin: 0.5em 0;
   color: hsl(var(--muted-foreground));
 }
+/* Инлайн-код (одно слово в обратных кавычках) — увеличен и сделан белым по прямому замечанию
+   пользователя: раньше был мелким (0.82em) и янтарным (--primary), на фоне карточки/секции это
+   читалось плохо. Фон чуть светлее прежнего --secondary, чтобы белый текст не терялся. */
 .tiptap-editor .ProseMirror code {
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.82em;
-  color: hsl(var(--primary));
-  background: hsl(var(--secondary));
+  font-size: 0.95em;
+  color: hsl(0 0% 96%);
+  background: hsl(220 10% 26%);
   border-radius: calc(var(--radius) * 0.5);
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
-/* Блок кода раньше был почти того же цвета, что и фон страницы (18% против 16% светлоты) —
-   на тёмной теме подложка практически не читалась. Теперь фон заметно светлее страницы и
-   карточки, плюс тонкая рамка отделяет блок как самостоятельный элемент. */
+/* Блок кода (```код```) — фон заметно светлее страницы и карточки, плюс тонкая рамка, ОТДЕЛЬНО
+   от инлайн-кода выше. Подсветка синтаксиса по токенам (см. .hljs-* ниже) остаётся ЦВЕТНОЙ —
+   это намеренно другое решение, чем для инлайн-кода: пользователь попросил белым/крупным сделать
+   именно маленький инлайн-код, а размеченный по синтаксису блок оставить как есть. */
 .tiptap-editor .ProseMirror pre {
   background: hsl(220 14% 16%);
   border: 1px solid hsl(var(--border));
@@ -235,7 +239,7 @@
 /* Подсветка синтаксиса в блоках кода (CodeBlockLowlight, см. RichEditor.tsx) — lowlight
    расставляет классы hljs-* по токенам, здесь только красим их под общую палитру проекта.
    Цвета подобраны так, чтобы читаться на фоне hsl(220 14% 16%) блока pre и не спорить с
-   янтарным --primary, который уже держит инлайн-код (.ProseMirror code выше). */
+   белым инлайн-кодом (.ProseMirror code выше — у него теперь своя, отдельная типографика). */
 .tiptap-editor .ProseMirror pre .hljs-keyword,
 .tiptap-editor .ProseMirror pre .hljs-selector-tag,
 .tiptap-editor .ProseMirror pre .hljs-literal,
@@ -377,13 +381,14 @@
   margin: 0.7em 0;
   color: hsl(var(--muted-foreground));
 }
+/* Тот же выбор, что для .tiptap-editor .ProseMirror code выше: инлайн-код крупнее и белым. */
 .kb-content code {
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.85em;
-  color: hsl(var(--primary));
-  background: hsl(var(--secondary));
+  font-size: 0.95em;
+  color: hsl(0 0% 96%);
+  background: hsl(220 10% 26%);
   border-radius: calc(var(--radius) * 0.5);
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
 .kb-content pre {
   background: hsl(220 14% 16%);

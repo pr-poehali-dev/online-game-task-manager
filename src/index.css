@@ -208,44 +208,73 @@
   margin: 0.5em 0;
   color: hsl(var(--muted-foreground));
 }
+/* Инлайн-код (одно слово в обратных кавычках) — увеличен и сделан белым по прямому замечанию
+   пользователя: раньше был мелким (0.82em) и янтарным (--primary), на фоне карточки/секции это
+   читалось плохо. Фон чуть светлее прежнего --secondary, чтобы белый текст не терялся. */
 .tiptap-editor .ProseMirror code {
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.82em;
-  color: hsl(var(--primary));
-  background: hsl(var(--secondary));
+  font-size: 0.95em;
+  color: hsl(0 0% 96%);
+  background: hsl(220 10% 26%);
   border-radius: calc(var(--radius) * 0.5);
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
-/* Фон блока кода — заметно светлее страницы и карточки, чтобы читаться как самостоятельный
-   элемент, плюс тонкая рамка. Поднят ещё раз (16% → 22%) по замечанию пользователя: с более
-   тёмным фоном текст воспринимался мелким и трудночитаемым. */
+/* Блок кода (```код```) — фон заметно светлее страницы и карточки, плюс тонкая рамка, ОТДЕЛЬНО
+   от инлайн-кода выше. Подсветка синтаксиса по токенам (см. .hljs-* ниже) остаётся ЦВЕТНОЙ —
+   это намеренно другое решение, чем для инлайн-кода: пользователь попросил белым/крупным сделать
+   именно маленький инлайн-код, а размеченный по синтаксису блок оставить как есть. */
 .tiptap-editor .ProseMirror pre {
-  background: hsl(220 14% 22%);
+  background: hsl(220 14% 16%);
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 10px 14px;
   margin: 0.5em 0;
   overflow-x: auto;
 }
-/* Текст внутри блока кода — единым светлым цветом без цветной подсветки по токенам (раньше здесь
-   были разноцветные классы hljs-*, но пользователь попросил убрать раскраску и увеличить размер/
-   контраст: цветная мелкая пестрота читалась хуже одного крупного светлого текста). Размер и
-   межстрочный интервал заданы явно, а не унаследованы от инлайн-кода (.ProseMirror code выше,
-   font-size: 0.82em) — именно оттуда шла мелкая нечитаемая типографика в блоке. */
 .tiptap-editor .ProseMirror pre code {
-  color: hsl(0 0% 96%);
+  color: hsl(var(--foreground));
   background: none;
   padding: 0;
-  font-size: 0.95em;
-  line-height: 1.6;
 }
-/* CodeBlockLowlight (см. RichEditor.tsx) продолжает расставлять классы hljs-* по токенам — здесь
-   они принудительно приводятся к цвету текста вокруг, чтобы подсветка синтаксиса не возвращала
-   пёструю раскраску. */
-.tiptap-editor .ProseMirror pre [class^="hljs-"] {
-  color: inherit;
-  font-style: normal;
-  font-weight: inherit;
+/* Подсветка синтаксиса в блоках кода (CodeBlockLowlight, см. RichEditor.tsx) — lowlight
+   расставляет классы hljs-* по токенам, здесь только красим их под общую палитру проекта.
+   Цвета подобраны так, чтобы читаться на фоне hsl(220 14% 16%) блока pre и не спорить с
+   белым инлайн-кодом (.ProseMirror code выше — у него теперь своя, отдельная типографика). */
+.tiptap-editor .ProseMirror pre .hljs-keyword,
+.tiptap-editor .ProseMirror pre .hljs-selector-tag,
+.tiptap-editor .ProseMirror pre .hljs-literal,
+.tiptap-editor .ProseMirror pre .hljs-section,
+.tiptap-editor .ProseMirror pre .hljs-link {
+  color: hsl(330 70% 68%);
+}
+.tiptap-editor .ProseMirror pre .hljs-string,
+.tiptap-editor .ProseMirror pre .hljs-attr,
+.tiptap-editor .ProseMirror pre .hljs-regexp,
+.tiptap-editor .ProseMirror pre .hljs-addition {
+  color: hsl(100 45% 62%);
+}
+.tiptap-editor .ProseMirror pre .hljs-title,
+.tiptap-editor .ProseMirror pre .hljs-title.function_,
+.tiptap-editor .ProseMirror pre .hljs-name,
+.tiptap-editor .ProseMirror pre .hljs-built_in {
+  color: hsl(205 75% 65%);
+}
+.tiptap-editor .ProseMirror pre .hljs-number,
+.tiptap-editor .ProseMirror pre .hljs-type,
+.tiptap-editor .ProseMirror pre .hljs-meta {
+  color: hsl(38 88% 62%);
+}
+.tiptap-editor .ProseMirror pre .hljs-comment,
+.tiptap-editor .ProseMirror pre .hljs-quote,
+.tiptap-editor .ProseMirror pre .hljs-deletion {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+.tiptap-editor .ProseMirror pre .hljs-emphasis {
+  font-style: italic;
+}
+.tiptap-editor .ProseMirror pre .hljs-strong {
+  font-weight: 700;
 }
 .tiptap-editor .ProseMirror a {
   color: hsl(var(--primary));
@@ -352,19 +381,17 @@
   margin: 0.7em 0;
   color: hsl(var(--muted-foreground));
 }
+/* Тот же выбор, что для .tiptap-editor .ProseMirror code выше: инлайн-код крупнее и белым. */
 .kb-content code {
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.85em;
-  color: hsl(var(--primary));
-  background: hsl(var(--secondary));
+  font-size: 0.95em;
+  color: hsl(0 0% 96%);
+  background: hsl(220 10% 26%);
   border-radius: calc(var(--radius) * 0.5);
-  padding: 1px 5px;
+  padding: 2px 6px;
 }
-/* Фон/типографика — см. .tiptap-editor .ProseMirror pre выше (тот же выбор: без цветной
-   подсветки по токенам, светлый текст крупнее и светлее фон — по замечанию пользователя, что
-   цветной мелкий код было трудно читать). */
 .kb-content pre {
-  background: hsl(220 14% 22%);
+  background: hsl(220 14% 16%);
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
   padding: 12px 16px;
@@ -372,18 +399,48 @@
   overflow-x: auto;
 }
 .kb-content pre code {
-  color: hsl(0 0% 96%);
+  color: hsl(var(--foreground));
   background: none;
   padding: 0;
-  font-size: 0.95em;
-  line-height: 1.6;
 }
-/* CodeBlockLowlight продолжает расставлять классы hljs-* в сохранённом HTML — здесь они
-   принудительно приводятся к цвету текста вокруг, без цветной раскраски по токенам. */
-.kb-content pre [class^="hljs-"] {
-  color: inherit;
-  font-style: normal;
-  font-weight: inherit;
+/* Та же палитра подсветки, что в редакторе (см. .tiptap-editor .ProseMirror pre .hljs-* выше) —
+   готовая статья/задача/идея рендерит тот же HTML с классами hljs-*, который сохранил редактор,
+   поэтому классы должны совпасть, иначе после сохранения подсветка пропадала бы. */
+.kb-content pre .hljs-keyword,
+.kb-content pre .hljs-selector-tag,
+.kb-content pre .hljs-literal,
+.kb-content pre .hljs-section,
+.kb-content pre .hljs-link {
+  color: hsl(330 70% 68%);
+}
+.kb-content pre .hljs-string,
+.kb-content pre .hljs-attr,
+.kb-content pre .hljs-regexp,
+.kb-content pre .hljs-addition {
+  color: hsl(100 45% 62%);
+}
+.kb-content pre .hljs-title,
+.kb-content pre .hljs-title.function_,
+.kb-content pre .hljs-name,
+.kb-content pre .hljs-built_in {
+  color: hsl(205 75% 65%);
+}
+.kb-content pre .hljs-number,
+.kb-content pre .hljs-type,
+.kb-content pre .hljs-meta {
+  color: hsl(38 88% 62%);
+}
+.kb-content pre .hljs-comment,
+.kb-content pre .hljs-quote,
+.kb-content pre .hljs-deletion {
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+.kb-content pre .hljs-emphasis {
+  font-style: italic;
+}
+.kb-content pre .hljs-strong {
+  font-weight: 700;
 }
 .kb-content a {
   color: hsl(var(--primary));
