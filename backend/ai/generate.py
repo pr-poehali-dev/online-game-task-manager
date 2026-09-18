@@ -77,7 +77,7 @@ def handle_send_message(cur, conn, schema, me, body, qs):
 
     data, err = _aitunnel_request('/chat/completions', api_key, {
         'model': model, 'messages': messages, 'max_tokens': 4000,
-    })
+    }, timeout=90)
     if err:
         cur.close(); conn.close()
         status, payload = err
@@ -619,7 +619,7 @@ def handle_regenerate(cur, conn, schema, me, body, qs):
 
     data, err = _aitunnel_request('/chat/completions', api_key, {
         'model': model, 'messages': messages, 'max_tokens': 4000,
-    })
+    }, timeout=90)
     if err:
         cur.close(); conn.close()
         status, payload_err = err
