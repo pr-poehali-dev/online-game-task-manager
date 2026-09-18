@@ -108,9 +108,15 @@ Anthropic-style синтаксис — AI Tunnel сам конвертирует
 1. Скопируйте файлы поверх своих:
    - `backend/ai/common.py`, `backend/ai/chats.py`, `backend/ai/generate.py`
    - `backend/ai/stream.py` — **новый файл**, создайте папку/файл, если их ещё нет
-   - `deploy/server.py`, `deploy/nginx.conf`
+   - `deploy/server.py`
    - `src/pages/index/sharedHelpers.ts`, `src/pages/index/useAiSection.ts`,
      `src/pages/index/AiTypes.ts`, `src/pages/index/AiMessageList.tsx`
+   - ⚠️ **Nginx — НЕ шаблонный `deploy/nginx.conf`, а `deploy/nginx-forge-live.conf`** (лежит в
+     этой же папке патча): на вашем боевом сервере конфиг находится по пути
+     `/etc/nginx/sites-available/forge.la2era.com` и отличается от общего шаблона (SSL от certbot,
+     свой `location /files/` на отдельный сервер MinIO) — общий `deploy/nginx.conf` под вашу
+     структуру не подходит без правок. `nginx-forge-live.conf` — это ваш текущий боевой конфиг
+     один-в-один плюс добавленный блок `location /api/ai/stream`.
 2. Накатите миграцию:
    ```bash
    psql "$DATABASE_URL" -f db_migrations/V0103__ai_messages_reasoning.sql
@@ -120,7 +126,8 @@ Anthropic-style синтаксис — AI Tunnel сам конвертирует
    ```bash
    npm run build
    ```
-5. Обновите конфигурацию Nginx и перезапустите его:
+5. Скопируйте `deploy/nginx-forge-live.conf` поверх `/etc/nginx/sites-available/forge.la2era.com`,
+   затем проверьте и перезапустите Nginx:
    ```bash
    sudo nginx -t && sudo systemctl reload nginx
    ```
