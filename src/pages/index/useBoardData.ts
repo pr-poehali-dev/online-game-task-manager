@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { KNOWLEDGE_URL, kbAuthHeaders } from '@/components/KnowledgeBase';
 import type { KbArticleBrief } from '@/components/KnowledgeBase';
-import { authHeaders, AUTH_URL, TASKS_URL, SPRINTS_URL, PATCHES_URL, TOKEN_KEY } from './shared';
+import { authHeaders, AUTH_URL, TASKS_URL, SPRINTS_URL, PATCHES_URL, IDEAS_URL, TOKEN_KEY } from './shared';
 import type { TeamMember, Task, Sprint } from './shared';
 
 export function useBoardData() {
@@ -11,6 +11,10 @@ export function useBoardData() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [kbArticles, setKbArticles] = useState<KbArticleBrief[]>([]);
   const [tasksWithPatchFiles, setTasksWithPatchFiles] = useState<Set<string>>(new Set());
+  // Счётчик непрочитанных идей (см. idea_reads в backend/ideas) — живёт здесь, а не внутри
+  // Ideas.tsx, потому что бейдж в шапке (IndexTopbar) должен быть виден даже когда раздел
+  // «Идеи» ни разу не открывался за сессию (IndexMain монтирует его лениво, см. visited).
+  const [ideasUnreadCount, setIdeasUnreadCount] = useState(0);
 
   const loadTeam = useCallback(async () => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -86,15 +90,34 @@ export function useBoardData() {
     }
   }, []);
 
+  // Только счётчик — сам список идей грузит Ideas.tsx при открытии раздела. Дублирование
+  // запроса `list` небольшое (раз в 30с при неоткрытом разделе), backend уже отдаёт unread
+  // вместе со списком, второй эндпоинт заводить не пришлось.
+  const loadIdeasUnreadCount = useCallback(async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) { setIdeasUnreadCount(0); return; }
+    try {
+      const res = await fetch(IDEAS_URL, { method: 'GET', headers: authHeaders() });
+      if (res.ok) {
+        const data = await res.json();
+        setIdeasUnreadCount(data.unread || 0);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   useEffect(() => {
     loadTeam();
     loadTasks();
     loadKbArticles();
     loadSprints();
     loadTasksWithPatchFiles();
+    loadIdeasUnreadCount();
     const t = setInterval(loadTeam, 30000);
-    return () => clearInterval(t);
-  }, [loadTeam, loadTasks, loadKbArticles, loadSprints, loadTasksWithPatchFiles]);
+    const tIdeas = setInterval(loadIdeasUnreadCount, 30000);
+    return () => { clearInterval(t); clearInterval(tIdeas); };
+  }, [loadTeam, loadTasks, loadKbArticles, loadSprints, loadTasksWithPatchFiles, loadIdeasUnreadCount]);
 
   return {
     tasks,
@@ -106,5 +129,7 @@ export function useBoardData() {
     kbArticles,
     tasksWithPatchFiles,
     reloadTasksWithPatchFiles: loadTasksWithPatchFiles,
+    ideasUnreadCount,
+    reloadIdeasUnreadCount: loadIdeasUnreadCount,
   };
 }

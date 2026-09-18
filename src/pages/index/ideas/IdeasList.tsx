@@ -114,18 +114,30 @@ export default function IdeasList({
         <div className="space-y-2.5">
           {list.map((t) => {
             const sm = statusMeta[t.status];
+            // isRead приходит из backend только начиная с этого апдейта (см. idea_reads) — если
+            // поле вдруг отсутствует у объекта (устаревший кеш и т.п.), считаем идею прочитанной,
+            // чтобы никогда не подсвечивать лишнее по умолчанию.
+            const unread = t.isRead === false;
             return (
               <button
                 key={t.id}
                 onClick={() => onOpenTopic(t.id)}
-                className="w-full text-left rounded-xl border border-border bg-card px-4 py-3 hover:border-primary/50 transition-all group flex items-center gap-3"
+                className={`w-full text-left rounded-xl border bg-card px-4 py-3 hover:border-primary/50 transition-all group flex items-center gap-3 ${
+                  unread ? 'border-l-2 border-l-primary border-border' : 'border-border'
+                }`}
               >
+                {unread && (
+                  <span
+                    title="Новая идея — вы ещё не открывали её"
+                    className="h-2 w-2 rounded-full bg-primary shrink-0"
+                  />
+                )}
                 <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md shrink-0" style={{ background: `hsl(${sm.color} / 0.15)`, color: `hsl(${sm.color})` }}>
                   <Icon name={sm.icon} size={12} />
                   <span className="hidden sm:inline">{sm.label}</span>
                 </span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">{t.title}</div>
+                  <div className={`text-sm truncate ${unread ? 'font-semibold' : 'font-medium'}`}>{t.title}</div>
                   <div className="text-xs text-muted-foreground truncate">{authorName(t.authorId)} · {fmtDate(t.updatedAt)}</div>
                 </div>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground shrink-0">

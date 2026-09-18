@@ -8,11 +8,15 @@ import IdeaDetail from './ideas/IdeaDetail';
 import type { Author, TopicListItem, IdeaComment, IdeaStatus } from './ideas/shared';
 import { ideaCache } from './ideas/ideaCache';
 
-export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack }: {
+export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack, onUnreadChange }: {
   authors: Author[];
   initialTopicId?: string | null;
   onOpenTopicById: (id: string) => void;
   onBack: () => void;
+  // Дёргается после каждой загрузки списка и после открытия темы — держит счётчик на
+  // колокольчике/в шапке (см. IndexTopbar, useBoardData.ideasUnreadCount) в актуальном
+  // состоянии, не дожидаясь следующего фонового опроса раз в 30с.
+  onUnreadChange?: () => void;
 }) {
   const { user, isAdmin, can } = useAuth();
   const [list, setList] = useState<TopicListItem[]>([]);
@@ -41,12 +45,14 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
       if (res.ok) {
         const data = await res.json();
         setList(data.topics || []);
+        onUnreadChange?.();
       }
     } catch {
       /* ignore */
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { loadList(); }, [loadList]);
@@ -65,11 +71,17 @@ export default function Ideas({ authors, initialTopicId, onOpenTopicById, onBack
           ideaCache.set(id, { topic: data.topic, comments: loadedComments });
           setCurrent(data.topic);
           setComments(loadedComments);
+          // Открытие темы backend уже отметил прочитанной (action=get) — обновляем и локальный
+          // список (чтобы бейдж "непрочитано" в IdeasList пропал без повторного loadList), и
+          // счётчик в шапке.
+          setList((prev) => prev.map((t) => (t.id === id ? { ...t, isRead: true } : t)));
+          onUnreadChange?.();
         }
       }
     } catch {
       /* ignore */
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Открытие/закрытие темы синхронизировано с адресом в браузере (initialTopicId приходит из URL

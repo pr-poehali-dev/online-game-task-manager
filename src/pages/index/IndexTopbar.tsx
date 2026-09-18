@@ -47,6 +47,7 @@ export default function IndexTopbar({
   kbArticles,
   searchQuery,
   setSearchQuery,
+  ideasUnreadCount,
 }: {
   view: ViewId;
   setView: (v: ViewId) => void;
@@ -72,6 +73,7 @@ export default function IndexTopbar({
   kbArticles: KbArticleBrief[];
   searchQuery: string;
   setSearchQuery: (q: string) => void;
+  ideasUnreadCount: number;
 }) {
   const navigate = useNavigate();
   const { servers, categoryMeta } = useCatalog();
@@ -147,6 +149,14 @@ export default function IndexTopbar({
                 >
                   {restartCount}
                 </span>
+              )}
+              {/* Непрочитанные идеи (см. idea_reads в backend/ideas, useBoardData.ideasUnreadCount) —
+                  точка вместо числа: раздел "Идеи" — обсуждения, а не очередь на обработку, точный
+                  счётчик здесь менее важен, чем сам факт "там что-то новое, загляни". */}
+              {t.k === 'ideas' && ideasUnreadCount > 0 && (
+                <span
+                  className={`h-2 w-2 rounded-full shrink-0 ${view === 'ideas' ? 'bg-primary-foreground' : 'bg-primary'}`}
+                />
               )}
             </button>
           ))}
@@ -373,6 +383,9 @@ export default function IndexTopbar({
                     <span className="ml-auto min-w-4 h-4 px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold flex items-center justify-center">
                       {restartCount}
                     </span>
+                  )}
+                  {t.k === 'ideas' && ideasUnreadCount > 0 && (
+                    <span className="ml-auto h-2 w-2 rounded-full bg-primary shrink-0" />
                   )}
                 </button>
               ))}

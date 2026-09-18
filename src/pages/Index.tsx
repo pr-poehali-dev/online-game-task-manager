@@ -68,7 +68,7 @@ export default function Index() {
   const [patchesTaskId, setPatchesTaskId] = useState<string | null>(null);
   const [patchesServerId, setPatchesServerId] = useState<ServerId | null>(null);
 
-  const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles, tasksWithPatchFiles, reloadTasksWithPatchFiles } = useBoardData();
+  const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles, tasksWithPatchFiles, reloadTasksWithPatchFiles, ideasUnreadCount, reloadIdeasUnreadCount } = useBoardData();
 
   const {
     handleCreateSprint,
@@ -161,6 +161,7 @@ export default function Index() {
           kbArticles={kbArticles}
           searchQuery={searchQuery}
           setSearchQuery={setSearchQuery}
+          ideasUnreadCount={ideasUnreadCount}
         />
 
         <IndexMain
@@ -215,6 +216,7 @@ export default function Index() {
           patchesServerId={patchesServerId}
           onOpenPatchesForTask={(taskId, serverId) => { setPatchesTaskId(taskId); setPatchesServerId(serverId); closeOverlay(); setView('patches'); }}
           tasksWithPatchFiles={tasksWithPatchFiles}
+          reloadIdeasUnreadCount={reloadIdeasUnreadCount}
           reloadTasksWithPatchFiles={reloadTasksWithPatchFiles}
           handleSetLauncherUploaded={handleSetLauncherUploaded}
         />

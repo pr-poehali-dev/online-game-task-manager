@@ -18,6 +18,10 @@ export interface TopicListItem {
   updatedAt: string | null;
   commentsCount: number;
   attachments?: Attachment[];
+  // Прочитана ли идея текущим пользователем (см. таблицу idea_reads) — приходит только из
+  // action=list/get, отсутствует у объекта, который ещё не побывал в ответе backend (create до
+  // подстановки серверного ответа и т.п.), поэтому опционально.
+  isRead?: boolean;
 }
 
 export interface IdeaComment {

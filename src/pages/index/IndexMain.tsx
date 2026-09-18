@@ -78,6 +78,7 @@ export default function IndexMain({
   tasksWithPatchFiles,
   reloadTasksWithPatchFiles,
   handleSetLauncherUploaded,
+  reloadIdeasUnreadCount,
 }: {
   view: ViewId;
   filteredTasks: Task[];
@@ -132,6 +133,7 @@ export default function IndexMain({
   tasksWithPatchFiles: Set<string>;
   reloadTasksWithPatchFiles: () => void;
   handleSetLauncherUploaded: (id: string, uploaded: boolean) => void;
+  reloadIdeasUnreadCount: () => void;
 }) {
   // ВАЖНО: разделы раньше монтировались/размонтировались условно ({view === 'x' && <X/>}) — при
   // каждом переключении вкладки компонент создавался заново с нуля, что заново запускало ВСЕ его
@@ -250,6 +252,7 @@ export default function IndexMain({
                 name: `${m.first_name}${m.last_name ? ' ' + m.last_name : ''}`,
                 photo_url: m.photo_url,
               }))}
+              onUnreadChange={reloadIdeasUnreadCount}
             />
           </div>
         )}
