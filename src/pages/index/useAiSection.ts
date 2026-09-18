@@ -372,6 +372,10 @@ export function useAiSection() {
     const decoder = new TextDecoder();
     let buffer = '';
     let assistantText = '';
+    // assistantReasoning — накапливается ОТДЕЛЬНО от текста ответа: "думающие" модели присылают
+    // reasoningDelta РАНЬШЕ обычных delta (см. backend/ai/stream.py) — сначала ход рассуждений
+    // целиком, потом сам ответ. AiMessageList.tsx показывает его сворачиваемым блоком над текстом.
+    let assistantReasoning = '';
     let assistantTempId = tempId - 1;
     let gotFirstEvent = false;
 
@@ -385,6 +389,22 @@ export function useAiSection() {
         return [...prev, {
           id: assistantTempId, role: 'assistant', content: assistantText, attachments: null,
           model, costRub: null, jobStatus: 'done', createdAt: null, pinned: false,
+          reasoning: assistantReasoning || null,
+        }];
+      });
+    };
+
+    const appendReasoningChunk = (deltaText: string) => {
+      assistantReasoning += deltaText;
+      setMessages((prev) => {
+        const has = prev.some((m) => m.id === assistantTempId);
+        if (has) {
+          return prev.map((m) => (m.id === assistantTempId ? { ...m, reasoning: assistantReasoning } : m));
+        }
+        return [...prev, {
+          id: assistantTempId, role: 'assistant', content: '', attachments: null,
+          model, costRub: null, jobStatus: 'done', createdAt: null, pinned: false,
+          reasoning: assistantReasoning,
         }];
       });
     };
@@ -415,6 +435,10 @@ export function useAiSection() {
             if (evt.error !== 'limit_exceeded') setRetryAction(() => () => sendMessage(content, []));
             if (evt.spentRub != null) setUsage({ spentRub: evt.spentRub as number, limitRub: evt.limitRub as number });
             return 'done';
+          }
+          if (evt.reasoningDelta) {
+            appendReasoningChunk(evt.reasoningDelta as string);
+            continue;
           }
           if (evt.delta) {
             appendAssistantChunk(evt.delta as string);

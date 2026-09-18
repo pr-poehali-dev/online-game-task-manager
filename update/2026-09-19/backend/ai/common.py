@@ -90,7 +90,7 @@ MAX_UPLOAD_SIZE = 200 * 1024 * 1024  # 200 МБ на файл, загружае�
 def _s3_client():
     return boto3.client(
         's3',
-        endpoint_url=os.environ.get('S3_ENDPOINT', 'https://bucket.poehali.dev'),
+        endpoint_url=os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000'),
         aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
         aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
         config=Config(),
@@ -98,10 +98,15 @@ def _s3_client():
 
 
 def _public_url(key: str) -> str:
+    # приоритет: S3_PUBLIC_URL, потом CDN_BASE_URL
     base_url = (os.environ.get('S3_PUBLIC_URL') or os.environ.get('CDN_BASE_URL', '')).rstrip('/')
     if base_url:
+        # https://forge.la2era.com/files/<key>
         return f"{base_url}/{key}"
-    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+    # если ни одна переменная не задана — собираем адрес из настроек своего хранилища
+    endpoint = os.environ.get('S3_ENDPOINT', 'http://127.0.0.1:9000').rstrip('/')
+    bucket = os.environ.get('S3_BUCKET', 'files')
+    return f"{endpoint}/{bucket}/{key}"
 
 
 def _extract_key(url):

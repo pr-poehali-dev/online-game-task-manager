@@ -10,9 +10,18 @@ import uuid
 from common import (
     _cors_headers, _bad, _ok, _service_key, _get_or_create_usage, _current_month,
     _history_row_to_message, _aitunnel_request, _aitunnel_get, _upload_bytes, _register_file,
-    _check_file_limit, _validate_media_params,
+    _check_file_limit, _validate_media_params, _cacheable_system_message,
     AITUNNEL_BASE, MAX_HISTORY_MESSAGES, CODE_SYSTEM_PROMPT, TITLE_MODEL, TITLE_SYSTEM_PROMPT,
 )
+
+# Таймаут ожидания ответа /chat/completions — намеренно единый для ВСЕХ мест обычного текстового
+# чата (handle_send_message, handle_regenerate, backend/ai/stream.py) и заметно выше дефолта
+# _aitunnel_request (45с): "думающие" (reasoning) модели реально отвечают дольше обычных — токены
+# рассуждений генерируются ДО первого токена видимого ответа, а раньше запрос обрывался ошибкой
+# TimeoutError на боевом сервере. Значение подобрано на self-hosted окружении пользователя
+# (deploy/era-backend.service — таймаут gunicorn 180с, deploy/nginx.conf — proxy_read_timeout 180с
+# для /api/) — оставляет запас на сетевые накладные расходы поверх самого ожидания ответа модели.
+CHAT_TIMEOUT_SEC = 150
 
 
 def _bad_param_response(err, chat_id, user_msg_id):
@@ -73,12 +82,21 @@ def handle_send_message(cur, conn, schema, me, body, qs):
     history = list(reversed(cur.fetchall()))
     messages = [_history_row_to_message(role, text, atts) for role, text, atts in history]
     if mode == 'code':
-        messages = [{'role': 'system', 'content': CODE_SYSTEM_PROMPT}] + messages
+        # Кеширование промпта (см. common.py, _cacheable_system_message): CODE_SYSTEM_PROMPT —
+        # одинаковый текст на КАЖДОЕ сообщение режима «код» у каждого сотрудника, идеальный
+        # кэшируемый префикс — экономит на чтении при поддерживающих моделях (Claude/Qwen — явная
+        # точка, остальные кешируют такой стабильный префикс сами).
+        messages = [_cacheable_system_message(CODE_SYSTEM_PROMPT)] + messages
 
     data, err = _aitunnel_request('/chat/completions', api_key, {
         'model': model, 'messages': messages, 'max_tokens': 4000,
         'tools': [{'type': 'aitunnel:web_search'}],
-    }, timeout=150)
+        # session_id — привязывает диалог к ОДНОМУ провайдеру кеша промпта на всё время переписки
+        # (см. docs/ai-tunnel-api-reference.md, "Привязка к провайдеру"): без него привязка
+        # включается только ПОСЛЕ первого успешного попадания в кэш, с ним — с первого запроса.
+        # chatId стабилен для всего диалога, поэтому подходит как готовый ключ сессии.
+        'session_id': f'era-chat-{chat_id}',
+    }, timeout=CHAT_TIMEOUT_SEC)
     if err:
         cur.close(); conn.close()
         status, payload = err
@@ -87,15 +105,20 @@ def handle_send_message(cur, conn, schema, me, body, qs):
         return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload)}
 
     choice = (data.get('choices') or [{}])[0]
-    answer = ((choice.get('message') or {}).get('content') or '').strip()
+    message = choice.get('message') or {}
+    answer = (message.get('content') or '').strip()
+    # reasoning — цепочка мыслей "думающей" модели ДО итогового ответа (см. common.py,
+    # docs/ai-tunnel-api-reference.md, "Токены рассуждений") — не у всех моделей есть, у части
+    # (серия OpenAI o) модель думает, но текст мыслей не отдаёт вовсе.
+    reasoning = (message.get('reasoning') or '').strip() or None
     used_model = data.get('model') or model
     usage = data.get('usage') or {}
     cost_rub = usage.get('cost_rub') or 0
 
     cur.execute(
-        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub) "
-        f"VALUES (%s, 'assistant', %s, %s, %s) RETURNING id, created_at",
-        (chat_id, answer, used_model, cost_rub)
+        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub, reasoning) "
+        f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
+        (chat_id, answer, used_model, cost_rub, reasoning)
     )
     assistant_msg_id, assistant_created_at = cur.fetchone()
 
@@ -111,7 +134,7 @@ def handle_send_message(cur, conn, schema, me, body, qs):
         'userMessage': {'id': user_msg_id, 'role': 'user', 'content': content, 'attachments': attachments or None, 'createdAt': user_created_at.isoformat()},
         'assistantMessage': {
             'id': assistant_msg_id, 'role': 'assistant', 'content': answer, 'model': used_model,
-            'costRub': float(cost_rub), 'createdAt': assistant_created_at.isoformat(),
+            'costRub': float(cost_rub), 'createdAt': assistant_created_at.isoformat(), 'reasoning': reasoning,
         },
         'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
     })
@@ -616,27 +639,30 @@ def handle_regenerate(cur, conn, schema, me, body, qs):
         return _bad('nothing_to_regenerate')
     messages = [_history_row_to_message(role, text, atts) for role, text, atts in history]
     if mode == 'code':
-        messages = [{'role': 'system', 'content': CODE_SYSTEM_PROMPT}] + messages
+        messages = [_cacheable_system_message(CODE_SYSTEM_PROMPT)] + messages
 
     data, err = _aitunnel_request('/chat/completions', api_key, {
         'model': model, 'messages': messages, 'max_tokens': 4000,
         'tools': [{'type': 'aitunnel:web_search'}],
-    }, timeout=150)
+        'session_id': f'era-chat-{chat_id}',
+    }, timeout=CHAT_TIMEOUT_SEC)
     if err:
         cur.close(); conn.close()
         status, payload_err = err
         return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps(payload_err)}
 
     choice = (data.get('choices') or [{}])[0]
-    answer = ((choice.get('message') or {}).get('content') or '').strip()
+    message = choice.get('message') or {}
+    answer = (message.get('content') or '').strip()
+    reasoning = (message.get('reasoning') or '').strip() or None
     used_model = data.get('model') or model
     usage = data.get('usage') or {}
     cost_rub = usage.get('cost_rub') or 0
 
     cur.execute(
-        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub) "
-        f"VALUES (%s, 'assistant', %s, %s, %s) RETURNING id, created_at",
-        (chat_id, answer, used_model, cost_rub)
+        f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub, reasoning) "
+        f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
+        (chat_id, answer, used_model, cost_rub, reasoning)
     )
     new_msg_id, new_created_at = cur.fetchone()
     cur.execute(
@@ -649,7 +675,7 @@ def handle_regenerate(cur, conn, schema, me, body, qs):
         'replacedMessageId': old_msg_id,
         'assistantMessage': {
             'id': new_msg_id, 'role': 'assistant', 'content': answer, 'model': used_model,
-            'costRub': float(cost_rub), 'createdAt': new_created_at.isoformat(),
+            'costRub': float(cost_rub), 'createdAt': new_created_at.isoformat(), 'reasoning': reasoning,
         },
         'usage': {'spentRub': spent + float(cost_rub), 'limitRub': limit_},
     })

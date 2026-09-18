@@ -13,14 +13,18 @@
 
 Формат SSE-события для фронта (см. src/pages/index/useAiSection.ts, sendMessageStream):
   data: {"chatId": ..., "userMessageId": ..., "userCreatedAt": "..."}\n\n  — подтверждение старта
+  data: {"reasoningDelta": "кусочек мыслей"}\n\n                          — кусочек ХОДА РАССУЖДЕНИЙ
+                                                                            (только у thinking-моделей,
+                                                                            приходит РАНЬШЕ delta)
   data: {"delta": "кусочек текста"}\n\n                                    — очередной кусочек ответа
   data: {"error": "код", "message": "текст"}\n\n                          — ошибка
   data: {"done": true, "assistantMessageId": ..., "costRub": ..., ...}\n\n — поток завершён
 
 Дублирует часть логики handle_send_message (generate.py) — сохранение сообщений в БД, лимиты,
-историю диалога. Так и должно быть: SSE-генератор и обычный dict-handler — разные HTTP-контракты,
-объединять их ценой усложнения обоих не стоит. Поддерживает только режимы chat/code (как обычный
-чат) — заполнение документов, генерация изображений/видео по-прежнему идут обычным запросом.'''
+историю диалога, кеширование промпта, veb-поиск. Так и должно быть: SSE-генератор и обычный
+dict-handler — разные HTTP-контракты, объединять их ценой усложнения обоих не стоит. Поддерживает
+только режимы chat/code (как обычный чат) — заполнение документов, генерация изображений/видео
+по-прежнему идут обычным запросом.'''
 import json
 import traceback
 import urllib.error
@@ -28,8 +32,14 @@ import urllib.request
 
 from common import (
     _schema, _db, _current_user, _service_key, _get_or_create_usage, _current_month,
-    _history_row_to_message, _log_ai_error, MAX_HISTORY_MESSAGES, CODE_SYSTEM_PROMPT, AITUNNEL_BASE,
+    _history_row_to_message, _log_ai_error, _cacheable_system_message,
+    MAX_HISTORY_MESSAGES, CODE_SYSTEM_PROMPT, AITUNNEL_BASE,
 )
+
+# Единый таймаут с обычным (нестримовым) чатом — см. generate.py, CHAT_TIMEOUT_SEC. Значение
+# продублировано здесь (не импортировано), чтобы этот модуль оставался самодостаточным и не тянул
+# лишние зависимости из generate.py — но должно совпадать с CHAT_TIMEOUT_SEC при правках.
+CHAT_TIMEOUT_SEC = 150
 
 
 def _sse(payload: dict) -> bytes:
@@ -101,13 +111,19 @@ def stream_send_message(headers: dict, body: dict):
         history = list(reversed(cur.fetchall()))
         messages = [_history_row_to_message(role, text, atts) for role, text, atts in history]
         if mode == 'code':
-            messages = [{'role': 'system', 'content': CODE_SYSTEM_PROMPT}] + messages
+            # Кеширование промпта — тот же паттерн, что handle_send_message в generate.py (см.
+            # common.py, _cacheable_system_message): CODE_SYSTEM_PROMPT одинаков на каждое
+            # сообщение режима «код», выгодный кэшируемый префикс.
+            messages = [_cacheable_system_message(CODE_SYSTEM_PROMPT)] + messages
 
         yield _sse({'chatId': chat_id, 'userMessageId': user_msg_id, 'userCreatedAt': user_created_at.isoformat()})
 
         payload = json.dumps({
             'model': model, 'messages': messages, 'max_tokens': 4000, 'stream': True,
             'tools': [{'type': 'aitunnel:web_search'}],
+            # session_id — та же привязка к провайдеру кеша, что в обычном (нестримовом) запросе,
+            # см. generate.py handle_send_message.
+            'session_id': f'era-chat-{chat_id}',
         }).encode('utf-8')
         req = urllib.request.Request(
             f'{AITUNNEL_BASE}/chat/completions', data=payload, method='POST',
@@ -115,7 +131,7 @@ def stream_send_message(headers: dict, body: dict):
         )
 
         try:
-            resp = urllib.request.urlopen(req, timeout=150)
+            resp = urllib.request.urlopen(req, timeout=CHAT_TIMEOUT_SEC)
         except urllib.error.HTTPError as e:
             raw = e.read().decode('utf-8', 'ignore')
             try:
@@ -129,6 +145,7 @@ def stream_send_message(headers: dict, body: dict):
             return
 
         full_text = []
+        full_reasoning = []
         used_model = model
         cost_rub = 0
         stream_error = None
@@ -155,7 +172,15 @@ def stream_send_message(headers: dict, body: dict):
                         stream_error = parsed['error'].get('message') or 'Ошибка модели во время генерации'
                         break
                     choice = (parsed.get('choices') or [{}])[0]
-                    delta_text = (choice.get('delta') or {}).get('content') or ''
+                    delta = choice.get('delta') or {}
+                    # reasoning-дельты у "думающих" моделей приходят РАНЬШЕ, чем content — модель
+                    # сначала "думает" вслух, потом выдаёт итоговый ответ (см.
+                    # docs/ai-tunnel-api-reference.md, "Токены рассуждений", раздел "Стриминг").
+                    reasoning_delta = delta.get('reasoning') or ''
+                    if reasoning_delta:
+                        full_reasoning.append(reasoning_delta)
+                        yield _sse({'reasoningDelta': reasoning_delta})
+                    delta_text = delta.get('content') or ''
                     if delta_text:
                         full_text.append(delta_text)
                         yield _sse({'delta': delta_text})
@@ -170,15 +195,16 @@ def stream_send_message(headers: dict, body: dict):
             resp.close()
 
         answer = ''.join(full_text).strip()
+        reasoning = ''.join(full_reasoning).strip() or None
 
         if stream_error and not answer:
             yield _sse({'error': 'aitunnel_error', 'message': stream_error, 'userMessageId': user_msg_id, 'chatId': chat_id})
             return
 
         cur.execute(
-            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub) "
-            f"VALUES (%s, 'assistant', %s, %s, %s) RETURNING id, created_at",
-            (chat_id, answer, used_model, cost_rub)
+            f"INSERT INTO {schema}.ai_messages (chat_id, role, content, model, cost_rub, reasoning) "
+            f"VALUES (%s, 'assistant', %s, %s, %s, %s) RETURNING id, created_at",
+            (chat_id, answer, used_model, cost_rub, reasoning)
         )
         assistant_msg_id, assistant_created_at = cur.fetchone()
         cur.execute(
