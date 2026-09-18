@@ -310,7 +310,7 @@ def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, 
 
 
 def handler(event: dict, context) -> dict:
-    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. При ответе на комментарий или упоминании (@) участнику также приходит сообщение в Telegram, если он входил через бота. Создание/редактирование/смена статуса/удаление идеи пишется в журнал активности (activity_log). Доступно авторизованным участникам.'''
+    '''Раздел «Идеи»: треды-обсуждения с комментариями и статусами (открыт, решено не делать, отправлено на реализацию). Редактировать текст и вложения (action=update), закрывать топик может автор или админ. Загрузка изображений (upload_image) и файлов-вложений (upload_file) в S3/MinIO. При ответе на комментарий или упоминании (@) участнику также приходит сообщение в Telegram, если он входил через бота. Создание/редактирование/смена статуса/удаление идеи пишется в журнал активности (activity_log). Список идей (action=list) отмечает каждую идею признаком isRead и общим количеством непрочитанных для текущего пользователя (см. таблицу idea_reads) — открытие идеи (action=get) автоматически отмечает её прочитанной. Доступно авторизованным участникам.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -369,22 +369,33 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': status, 'headers': _cors_headers(), 'body': json.dumps({'error': err})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'attachment': attachment})}
 
-    # Список топиков (+ количество комментариев)
+    # Список топиков (+ количество комментариев + признак "прочитано ли мной", см. idea_reads,
+    # миграция V0102). Идея непрочитана, если для (me, topic) нет записи в idea_reads, либо её
+    # read_at старше idea_topics.updated_at (появилась активность после последнего просмотра).
     if action == 'list' or (method == 'GET' and not qs.get('id')):
         cur.execute(
             f"SELECT t.id, t.title, t.body, t.status, t.author_id, t.created_at, t.updated_at, "
-            f"(SELECT COUNT(*) FROM {schema}.idea_comments c WHERE c.topic_id = t.id) AS cnt "
-            f"FROM {schema}.idea_topics t ORDER BY t.updated_at DESC"
+            f"(SELECT COUNT(*) FROM {schema}.idea_comments c WHERE c.topic_id = t.id) AS cnt, "
+            f"(r.read_at IS NOT NULL AND r.read_at >= t.updated_at) AS is_read "
+            f"FROM {schema}.idea_topics t "
+            f"LEFT JOIN {schema}.idea_reads r ON r.topic_id = t.id AND r.user_id = %s "
+            f"ORDER BY t.updated_at DESC",
+            (me['id'],)
         )
         items = []
+        unread = 0
         for r in cur.fetchall():
             d = _topic_row(r[:7])
             d['commentsCount'] = r[7]
+            d['isRead'] = bool(r[8])
+            if not d['isRead']:
+                unread += 1
             items.append(d)
         cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topics': items})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topics': items, 'unread': unread})}
 
-    # Один топик с комментариями
+    # Один топик с комментариями — открытие темы отмечает её прочитанной для текущего пользователя
+    # (upsert в idea_reads с read_at = NOW(), см. миграцию V0102).
     if action == 'get' or (method == 'GET' and qs.get('id')):
         tid = body.get('id') or qs.get('id')
         cur.execute(f"SELECT {TOPIC_COLS} FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
@@ -395,6 +406,12 @@ def handler(event: dict, context) -> dict:
         topic = _topic_row(row)
         cur.execute(f"SELECT {COMMENT_COLS} FROM {schema}.idea_comments WHERE topic_id = %s ORDER BY created_at ASC", (int(tid),))
         comments = [_comment_row(c) for c in cur.fetchall()]
+        cur.execute(
+            f"INSERT INTO {schema}.idea_reads (user_id, topic_id, read_at) VALUES (%s, %s, NOW()) "
+            f"ON CONFLICT (user_id, topic_id) DO UPDATE SET read_at = NOW()",
+            (me['id'], int(tid))
+        )
+        topic['isRead'] = True
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic, 'comments': comments})}
 
@@ -414,6 +431,14 @@ def handler(event: dict, context) -> dict:
         )
         topic = _topic_row(cur.fetchone())
         _log_activity(cur, schema, me['id'], 'idea_create', 'idea', topic['id'], topic['title'])
+        # Автор сразу считается прочитавшим свою же идею — иначе она немедленно попала бы у него
+        # самого в "непрочитанные" (см. idea_reads, миграция V0102).
+        cur.execute(
+            f"INSERT INTO {schema}.idea_reads (user_id, topic_id, read_at) VALUES (%s, %s, NOW()) "
+            f"ON CONFLICT (user_id, topic_id) DO UPDATE SET read_at = NOW()",
+            (me['id'], int(topic['id']))
+        )
+        topic['isRead'] = True
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
@@ -443,6 +468,14 @@ def handler(event: dict, context) -> dict:
         )
         topic = _topic_row(cur.fetchone())
         _log_activity(cur, schema, me['id'], 'idea_update', 'idea', topic['id'], topic['title'])
+        # updated_at только что сдвинулся вперёд — без этого апдейта своя же правка немедленно
+        # пометила бы идею непрочитанной у самого редактировавшего (см. idea_reads, V0102).
+        cur.execute(
+            f"INSERT INTO {schema}.idea_reads (user_id, topic_id, read_at) VALUES (%s, %s, NOW()) "
+            f"ON CONFLICT (user_id, topic_id) DO UPDATE SET read_at = NOW()",
+            (me['id'], int(tid))
+        )
+        topic['isRead'] = True
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
@@ -464,6 +497,13 @@ def handler(event: dict, context) -> dict:
         )
         comment = _comment_row(cur.fetchone())
         cur.execute(f"UPDATE {schema}.idea_topics SET updated_at = NOW() WHERE id = %s", (int(tid),))
+        # updated_at идеи только что сдвинулся вперёд своим же комментарием — без этого апдейта
+        # идея немедленно стала бы непрочитанной у самого автора комментария (см. idea_reads, V0102).
+        cur.execute(
+            f"INSERT INTO {schema}.idea_reads (user_id, topic_id, read_at) VALUES (%s, %s, NOW()) "
+            f"ON CONFLICT (user_id, topic_id) DO UPDATE SET read_at = NOW()",
+            (me['id'], int(tid))
+        )
         cur.execute(f"SELECT author_id, title FROM {schema}.idea_topics WHERE id = %s", (int(tid),))
         trow = cur.fetchone()
         topic_title = trow[1] if trow else 'идея'
@@ -532,6 +572,14 @@ def handler(event: dict, context) -> dict:
         status_label = {'sent': 'Отправлено на реализацию', 'wont_do': 'Решено не делать', 'open': 'Переоткрыто'}.get(status, status)
         _add_notification(cur, schema, row[0], 'idea_status', f'Статус идеи: {status_label}', row[1], tid, me['id'])
         _log_activity(cur, schema, me['id'], 'idea_status', 'idea', tid, row[1], status_label)
+        # updated_at сдвинулся вперёд сменой статуса — без этого апдейта идея немедленно стала бы
+        # непрочитанной у самого сменившего статус (см. idea_reads, V0102).
+        cur.execute(
+            f"INSERT INTO {schema}.idea_reads (user_id, topic_id, read_at) VALUES (%s, %s, NOW()) "
+            f"ON CONFLICT (user_id, topic_id) DO UPDATE SET read_at = NOW()",
+            (me['id'], int(tid))
+        )
+        topic['isRead'] = True
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'topic': topic})}
 
