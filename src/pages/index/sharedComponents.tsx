@@ -163,14 +163,27 @@ export function ServerBadge({ id }: { id: ServerId }) {
   );
 }
 
-export function ModalOverlay({ onClose, children, wide }: { onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function ModalOverlay({ onClose, children, wide, confirmClose }: {
+  onClose: () => void;
+  children: ReactNode;
+  wide?: boolean;
+  // Если в окне есть несохранённые изменения — случайный клик мимо (мимо самого окна, по
+  // затемнённой подложке) не должен молча их стирать. Кнопки закрытия/отмены внутри окна
+  // по-прежнему закрывают его сразу — это осознанное действие пользователя, подтверждение
+  // нужно только на «промах мимо окна».
+  confirmClose?: boolean;
+}) {
+  function handleBackdropClick() {
+    if (confirmClose && !window.confirm('Закрыть окно? Несохранённые изменения будут потеряны.')) return;
+    onClose();
+  }
   return (
     <div
       // Подложка: глубже и с более заметным размытием — модальное окно должно читаться как
       // отдельный слой, а не как панель, приклеенная поверх страницы.
       className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-8 overflow-y-auto animate-fade-in"
       style={{ background: 'hsl(222 30% 2% / 0.72)', backdropFilter: 'blur(8px)' }}
-      onClick={onClose}
+      onClick={handleBackdropClick}
     >
       <div
         // Та же логика глубины, что у карточек доски: светлая грань сверху внутри + глубокая

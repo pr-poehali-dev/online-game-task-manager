@@ -116,7 +116,10 @@ export default function TaskModal({ task, team, kbArticles, onOpenArticle, onClo
   }
 
   return (
-    <ModalOverlay onClose={onClose} wide>
+    // confirmClose — в режиме редактирования случайный клик по подложке мимо окна больше не
+    // закрывает карточку молча: правки могли быть уже введены, но ещё не сохранены кнопкой
+    // "Сохранить" (см. handleSave).
+    <ModalOverlay onClose={onClose} wide confirmClose={isEditing}>
       <TaskModalHeader
         task={task}
         form={form}

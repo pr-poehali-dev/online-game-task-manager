@@ -74,6 +74,10 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   }
 
   const canCreate = Boolean(form.title.trim() && form.category);
+  // Есть ли что терять при случайном клике мимо окна: название/описание уже начали набирать,
+  // или добавили вложение/ссылку — во всех этих случаях закрытие по клику на подложку требует
+  // подтверждения (см. confirmClose у ModalOverlay).
+  const hasDraft = Boolean(form.title.trim() || form.description.trim() || attachments.length > 0 || links.length > 0);
 
   function handleCreate() {
     if (!canCreate) return;
@@ -87,7 +91,7 @@ export default function CreateTaskModal({ column, team, kbArticles, preset, onCl
   }
 
   return (
-    <ModalOverlay onClose={onClose} wide>
+    <ModalOverlay onClose={onClose} wide confirmClose={hasDraft}>
       <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-border">
         <h2 className="font-display tracking-wide text-lg">Новая задача</h2>
         <button onClick={onClose} className="h-8 w-8 flex items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-all duration-200 ease-premium">
