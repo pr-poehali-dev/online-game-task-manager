@@ -95,13 +95,10 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, desc
         return
     snippet = _snippet(description)
     notif_body = f'«{title}»' + (f'\n{snippet}' if snippet else '')
-    # Внутреннее уведомление в приложении — для всех назначенных
+    # Внутреннее уведомление в приложении — для всех назначенных. Через общий _add_notif, чтобы
+    # заодно применялась проверка notify_muted_types (см. его докстроку) — не дублируем SQL.
     for uid in targets:
-        cur.execute(
-            f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
-            f"VALUES (%s, 'task_assigned', %s, %s, 'task', %s, %s)",
-            (uid, 'Вам назначена задача', notif_body, str(task_id) if task_id else None, actor_id)
-        )
+        _add_notif(cur, schema, uid, 'task_assigned', 'Вам назначена задача', notif_body, 'task', task_id, actor_id)
     if column == 'hold':
         return
     # Telegram — только тем, кто вошёл через бота
@@ -112,13 +109,18 @@ def _notify_assignees(cur, schema, user_ids, title, actor_id, task_id=None, desc
 
 
 def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entity_id, actor_id):
-    '''Создаёт внутреннее уведомление (не самому себе).'''
+    '''Создаёт внутреннее уведомление (не самому себе). Не создаёт запись, если пользователь
+    отключил этот тип у себя в настройках (users.notify_muted_types, action=set_notify_prefs в
+    backend/auth) — типы упоминания/ответа (task_mention/task_reply) отключить нельзя, backend
+    там просто не даёт их сохранить в notify_muted_types, поэтому проверка ниже для них всегда
+    проходит.'''
     if not user_id or user_id == actor_id:
         return
     cur.execute(
         f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
-        f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id)
+        f"SELECT %s, %s, %s, %s, %s, %s, %s "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {schema}.users WHERE id = %s AND notify_muted_types @> to_jsonb(%s::text))",
+        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id, user_id, ntype)
     )
 
 

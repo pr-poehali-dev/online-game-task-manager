@@ -37,6 +37,17 @@ ALL_PERMISSIONS = [
     'team_manage',
 ]
 
+# Типы внутренних уведомлений (см. backend/notifications, backend/tasks/backend/ideas), которые
+# пользователь может отключить себе через action=set_notify_prefs. Личные типы — упоминание
+# (task_mention/idea_mention) и ответ на комментарий (task_reply/idea_reply) — намеренно НЕ входят
+# в список: их отключить нельзя, иначе именно те уведомления, которые пользователю сложнее всего
+# найти в общей ленте (см. фидбек, из-за которого появилась эта настройка), можно было бы случайно
+# выключить целиком.
+MUTABLE_NOTIFY_TYPES = [
+    'task_assigned', 'task_deploy_status', 'task_comment', 'idea_comment', 'idea_status',
+    'launcher_required', 'task_deadline_reminder', 'private_note',
+]
+
 
 def _effective_perms(role, raw):
     '''patch_edit/team_manage по умолчанию False даже для role == 'admin' (см.
@@ -128,7 +139,7 @@ def _verify_telegram(data: dict, bot_token: str) -> bool:
 
 
 def handler(event: dict, context) -> dict:
-    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа) и сохранение темы интерфейса (action=set_theme). Вход и выход записываются в журнал действий (activity_log).
+    '''Авторизация команды через Telegram Login Widget: проверка подписи, создание/поиск пользователя, выдача сессии. Также проверка текущей сессии (action=me), выход (action=logout), heartbeat активности (action=heartbeat, продлевает сессию на 24 часа), сохранение темы интерфейса (action=set_theme) и списка отключённых типов уведомлений (action=set_notify_prefs). Вход и выход записываются в журнал действий (activity_log).
     Пользователь может сам задать себе никнейм (action=set_nickname) и загрузить свою аватарку
     (action=upload_avatar, base64 в S3) или сбросить её (action=remove_avatar) прямо в личном
     кабинете — сохраняются в отдельные колонки nickname/avatar_url, которые имеют приоритет над
@@ -163,7 +174,7 @@ def handler(event: dict, context) -> dict:
             cur.close(); conn.close()
             return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_token'})}
         cur.execute(
-            f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.is_active, u.permissions, u.theme, u.nickname, u.avatar_url "
+            f"SELECT u.id, u.telegram_id, u.username, u.first_name, u.last_name, u.photo_url, u.role, u.member_id, u.tg_username, u.is_active, u.permissions, u.theme, u.nickname, u.avatar_url, u.notify_muted_types "
             f"FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
             f"WHERE s.token = %s AND s.expires_at > NOW()",
             (token,)
@@ -186,6 +197,7 @@ def handler(event: dict, context) -> dict:
             'tg_username': row[8], 'permissions': _effective_perms(row[6], row[10]), 'theme': row[11],
             'nickname': nickname, 'avatar_url': avatar_url,
             'tg_first_name': row[3], 'tg_last_name': row[4], 'tg_photo_url': row[5],
+            'notify_muted_types': row[14] or [],
         }
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'user': user})}
 
@@ -210,6 +222,35 @@ def handler(event: dict, context) -> dict:
         cur.execute(f"UPDATE {schema}.users SET theme = %s WHERE id = %s", (theme, urow[0]))
         cur.close(); conn.close()
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True})}
+
+    # Пользователь сам отключает отдельные типы внутренних уведомлений (колокольчик в шапке) —
+    # НЕ путать с tg_notify_muted (та настройка глушит пересылку в Telegram целиком). Личные типы
+    # (упоминание, ответ на комментарий) отключить нельзя — они всегда должны быть видны, поэтому
+    # список из тела запроса фильтруется по MUTABLE_NOTIFY_TYPES на backend, а не только на фронте.
+    if action == 'set_notify_prefs':
+        if not token:
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_token'})}
+        cur.execute(
+            f"SELECT u.id FROM {schema}.sessions s JOIN {schema}.users u ON u.id = s.user_id "
+            f"WHERE s.token = %s AND s.expires_at > NOW() AND u.is_active = true",
+            (token,)
+        )
+        urow = cur.fetchone()
+        if not urow:
+            cur.close(); conn.close()
+            return {'statusCode': 401, 'headers': _cors_headers(), 'body': json.dumps({'error': 'invalid_session'})}
+        muted = body.get('muted_types')
+        if not isinstance(muted, list):
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'bad_muted_types'})}
+        muted = [t for t in muted if t in MUTABLE_NOTIFY_TYPES]
+        cur.execute(
+            f"UPDATE {schema}.users SET notify_muted_types = %s WHERE id = %s",
+            (json.dumps(muted), urow[0])
+        )
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'ok': True, 'notify_muted_types': muted})}
 
     # Пользователь сам меняет своё отображаемое имя (никнейм) в личном кабинете — сохраняется в
     # отдельную колонку nickname и НЕ трогается при последующих входах через Telegram (в отличие
@@ -453,7 +494,7 @@ def handler(event: dict, context) -> dict:
     _log_activity(cur, schema, user_id, 'login', details='Telegram Login Widget')
 
     cur.execute(
-        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions, theme, nickname, avatar_url FROM {schema}.users WHERE id = %s",
+        f"SELECT id, telegram_id, username, first_name, last_name, photo_url, role, member_id, tg_username, permissions, theme, nickname, avatar_url, notify_muted_types FROM {schema}.users WHERE id = %s",
         (user_id,)
     )
     r = cur.fetchone()
@@ -467,6 +508,7 @@ def handler(event: dict, context) -> dict:
         'permissions': _effective_perms(r[6], r[9]), 'theme': r[10],
         'nickname': r_nickname, 'avatar_url': r_avatar_url,
         'tg_first_name': r[3], 'tg_last_name': r[4], 'tg_photo_url': r[5],
+        'notify_muted_types': r[13] or [],
     }
     return {
         'statusCode': 200,

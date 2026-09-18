@@ -54,9 +54,17 @@ def _row(r):
 
 COLS = "id, type, title, body, entity_type, entity_id, actor_id, is_read, created_at"
 
+# "Личные" типы — упоминание и прямой ответ на комментарий пользователя. Ради них появилась вкладка
+# «Упоминания» в панели уведомлений: пользователю сложно найти именно эти уведомления в общей ленте
+# среди статусов деплоя/лаунчера — см. фидбек, из-за которого добавлена эта фильтрация.
+MENTION_TYPES = ('task_mention', 'idea_mention', 'task_reply', 'idea_reply')
+
 
 def handler(event: dict, context) -> dict:
-    '''Внутренние уведомления пользователя: список, счётчик непрочитанных, отметка прочитанным. Доступно авторизованному пользователю только для своих уведомлений.'''
+    '''Внутренние уведомления пользователя: список (с фильтром по вкладке "Все"/"Упоминания",
+    action=list, параметр filter=mentions), отдельный счётчик непрочитанных упоминаний/ответов
+    (mentionsUnread) плюс общий счётчик (unread), отметка прочитанным. Доступно авторизованному
+    пользователю только для своих уведомлений.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -83,20 +91,35 @@ def handler(event: dict, context) -> dict:
     qs = event.get('queryStringParameters') or {}
     action = body.get('action') or qs.get('action') or ('list' if method == 'GET' else '')
 
-    # Список уведомлений + счётчик непрочитанных
+    # Список уведомлений (опционально только упоминания/ответы, filter=mentions) + оба счётчика
     if action == 'list' or method == 'GET':
-        cur.execute(
-            f"SELECT {COLS} FROM {schema}.notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
-            (me['id'],)
-        )
+        filt = body.get('filter') or qs.get('filter')
+        if filt == 'mentions':
+            cur.execute(
+                f"SELECT {COLS} FROM {schema}.notifications WHERE user_id = %s AND type = ANY(%s) "
+                f"ORDER BY created_at DESC LIMIT 50",
+                (me['id'], list(MENTION_TYPES))
+            )
+        else:
+            cur.execute(
+                f"SELECT {COLS} FROM {schema}.notifications WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
+                (me['id'],)
+            )
         items = [_row(r) for r in cur.fetchall()]
         cur.execute(
             f"SELECT COUNT(*) FROM {schema}.notifications WHERE user_id = %s AND is_read = false",
             (me['id'],)
         )
         unread = cur.fetchone()[0]
+        cur.execute(
+            f"SELECT COUNT(*) FROM {schema}.notifications WHERE user_id = %s AND is_read = false AND type = ANY(%s)",
+            (me['id'], list(MENTION_TYPES))
+        )
+        mentions_unread = cur.fetchone()[0]
         cur.close(); conn.close()
-        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'notifications': items, 'unread': unread})}
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({
+            'notifications': items, 'unread': unread, 'mentionsUnread': mentions_unread,
+        })}
 
     # Отметить одно уведомление прочитанным
     if action == 'mark_read':

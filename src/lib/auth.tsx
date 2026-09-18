@@ -45,6 +45,9 @@ export interface AuthUser {
   tg_first_name?: string;
   tg_last_name?: string | null;
   tg_photo_url?: string | null;
+  // Типы внутренних уведомлений, которые пользователь отключил себе (см. MUTABLE_NOTIFY_TYPES в
+  // backend/auth) — "личные" типы (упоминание/ответ на комментарий) в этот список попасть не могут.
+  notify_muted_types?: string[];
 }
 
 export interface TelegramAuthData {

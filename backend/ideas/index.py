@@ -294,13 +294,16 @@ COMMENT_COLS = "id, topic_id, author_id, text, created_at, parent_id, mentions, 
 
 
 def _add_notification(cur, schema, user_id, ntype, title, body_text, entity_id, actor_id):
-    '''Создаёт внутреннее уведомление (не для самого себя).'''
+    '''Создаёт внутреннее уведомление (не для самого себя). Пропускает создание, если пользователь
+    отключил этот тип у себя в настройках (users.notify_muted_types, action=set_notify_prefs в
+    backend/auth) — idea_mention/idea_reply отключить нельзя, backend не даёт их туда записать.'''
     if not user_id or user_id == actor_id:
         return
     cur.execute(
         f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
-        f"VALUES (%s, %s, %s, %s, 'idea', %s, %s)",
-        (user_id, ntype, title, body_text, str(entity_id) if entity_id else None, actor_id)
+        f"SELECT %s, %s, %s, %s, 'idea', %s, %s "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {schema}.users WHERE id = %s AND notify_muted_types @> to_jsonb(%s::text))",
+        (user_id, ntype, title, body_text, str(entity_id) if entity_id else None, actor_id, user_id, ntype)
     )
 
 

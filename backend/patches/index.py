@@ -266,12 +266,15 @@ def _task_url(task_id=None):
 
 
 def _add_notif(cur, schema, user_id, ntype, title, body_text, entity_type, entity_id, actor_id):
+    '''Пропускает создание, если пользователь отключил этот тип у себя в настройках
+    (users.notify_muted_types, action=set_notify_prefs в backend/auth).'''
     if not user_id or user_id == actor_id:
         return
     cur.execute(
         f"INSERT INTO {schema}.notifications (user_id, type, title, body, entity_type, entity_id, actor_id) "
-        f"VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id)
+        f"SELECT %s, %s, %s, %s, %s, %s, %s "
+        f"WHERE NOT EXISTS (SELECT 1 FROM {schema}.users WHERE id = %s AND notify_muted_types @> to_jsonb(%s::text))",
+        (user_id, ntype, title, body_text, entity_type, str(entity_id) if entity_id else None, actor_id, user_id, ntype)
     )
 
 

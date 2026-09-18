@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
 import func2url from '../../../backend/func2url.json';
@@ -11,6 +12,21 @@ const TOKEN_KEY = 'era_auth_token';
 function authHeaders(): Record<string, string> {
   return { 'Content-Type': 'application/json', 'X-Auth-Token': localStorage.getItem(TOKEN_KEY) || '' };
 }
+
+// Те же типы и подписи, что в MUTABLE_NOTIFY_TYPES (backend/auth) — держать в синхроне вручную,
+// backend всё равно фильтрует список на сохранении, так что рассинхрон не поломает данные, только
+// покажет тип, который сервер потом молча откинет. "Личные" типы (упоминание, ответ на комментарий)
+// сюда не входят — их отключить нельзя, см. комментарий у MUTABLE_NOTIFY_TYPES.
+const NOTIFY_TYPE_LABELS: { type: string; label: string; hint: string }[] = [
+  { type: 'task_assigned', label: 'Назначение задачи', hint: 'Когда вам назначают задачу' },
+  { type: 'task_comment', label: 'Комментарии к задачам', hint: 'Новый комментарий в задаче, где вы автор или исполнитель' },
+  { type: 'task_deploy_status', label: 'Статус деплоя', hint: 'Изменение статуса деплоя задачи' },
+  { type: 'launcher_required', label: 'Требуется залить в лаунчер', hint: 'Патч готов к заливке в лаунчер' },
+  { type: 'task_deadline_reminder', label: 'Напоминания о сроках', hint: 'Приближается срок выполнения задачи' },
+  { type: 'private_note', label: 'Приватные заметки', hint: 'Вам оставили приватную заметку в задаче' },
+  { type: 'idea_comment', label: 'Комментарии к идеям', hint: 'Новый комментарий к вашей идее' },
+  { type: 'idea_status', label: 'Статус идеи', hint: 'Изменение статуса вашей идеи' },
+];
 
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve) => {
@@ -29,6 +45,29 @@ export default function CabinetProfile({ user }: { user: AuthUser }) {
   const [savingNickname, setSavingNickname] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [removingAvatar, setRemovingAvatar] = useState(false);
+  const [mutedTypes, setMutedTypes] = useState<string[]>(user.notify_muted_types || []);
+  const [savingNotify, setSavingNotify] = useState<string | null>(null);
+
+  async function toggleNotifyType(type: string, enabled: boolean) {
+    // enabled=true — уведомление ВКЛЮЧЕНО, значит его нужно убрать из списка отключённых.
+    const next = enabled ? mutedTypes.filter((t) => t !== type) : [...mutedTypes, type];
+    setMutedTypes(next);
+    setSavingNotify(type);
+    try {
+      const res = await fetch(AUTH_URL, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ action: 'set_notify_prefs', muted_types: next }),
+      });
+      if (!res.ok) throw new Error();
+      await refreshUser();
+    } catch {
+      setMutedTypes(mutedTypes);
+      toast.error('Не удалось сохранить настройку');
+    } finally {
+      setSavingNotify(null);
+    }
+  }
 
   async function saveNickname() {
     const value = nicknameInput.trim();
@@ -209,6 +248,33 @@ export default function CabinetProfile({ user }: { user: AuthUser }) {
           </div>
         </div>
       )}
+
+      <div className="mt-6">
+        <h2 className="text-sm font-semibold mb-1">Уведомления в приложении</h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Упоминания и ответы на ваши комментарии отключить нельзя — остальные типы можно приглушить,
+          если они отвлекают.
+        </p>
+        <div className="rounded-2xl border border-border bg-card divide-y divide-border">
+          {NOTIFY_TYPE_LABELS.map(({ type, label, hint }) => {
+            const enabled = !mutedTypes.includes(type);
+            return (
+              <div key={type} className="flex items-center justify-between gap-3 px-4 py-3">
+                <div className="min-w-0">
+                  <div className="text-sm">{label}</div>
+                  <div className="text-xs text-muted-foreground">{hint}</div>
+                </div>
+                <Switch
+                  checked={enabled}
+                  disabled={savingNotify === type}
+                  onCheckedChange={(v) => toggleNotifyType(type, v)}
+                  className="shrink-0"
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
