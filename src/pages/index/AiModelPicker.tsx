@@ -60,6 +60,10 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const [tab, setTab] = useState<Tab>('recommended');
+  // webSearchOnly — переключатель "С веб-поиском", накладывается ПОВЕРХ любой из трёх вкладок
+  // выше (а не отдельная четвёртая вкладка): так можно одновременно смотреть, например,
+  // "Дешёвые" и только те из них, что умеют искать в интернете.
+  const [webSearchOnly, setWebSearchOnly] = useState(false);
 
   // costsSorted — цены ВСЕХ моделей текущей группы (chat/images/videos), нужны для относительных
   // перцентилей категории "Дешёвые"/"Продвинутые" (modelPriceTierRelative в AiTypes.ts) —
@@ -89,6 +93,9 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
       const tier = modelPriceTierRelative(cost, costsSorted);
       if (tab === 'cheap' && tier !== 'cheap') continue;
       if (tab === 'advanced' && tier !== 'premium') continue;
+      // webSearchOnly — НЕ отдельная вкладка, а фильтр НАКЛАДЫВАЕТСЯ поверх любой из трёх вкладок
+      // выше (можно смотреть "Дешёвые + с веб-поиском" и т.п.), см. переключатель под вкладками.
+      if (webSearchOnly && info.web_search_cost == null) continue;
       // 'recommended' — показываем все, кроме явно устаревших моделей (их видно на вкладке
       // "Продвинутые"/"Дешёвые", если они туда попадают по цене, но с плашкой).
       const key = info.provider || 'other';
@@ -107,7 +114,7 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
         }),
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [models, tab, costsSorted, legacyOf]);
+  }, [models, tab, costsSorted, legacyOf, webSearchOnly]);
 
   const current = models[value];
 
@@ -163,6 +170,21 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
               </button>
             ))}
           </div>
+          {/* webSearchOnly — дополнительный фильтр, НАКЛАДЫВАЕТСЯ поверх выбранной вкладки выше
+              (не отдельная четвёртая вкладка): можно сузить, например, "Дешёвые" до только тех,
+              что умеют искать в интернете, вместо жёсткого выбора "или/или". */}
+          <button
+            onClick={() => setWebSearchOnly((v) => !v)}
+            className={`mb-2 flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-xs font-medium transition-colors ${
+              webSearchOnly
+                ? 'bg-sky-500/15 border-sky-500/40 text-sky-600 dark:text-sky-400'
+                : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'
+            }`}
+          >
+            <Icon name="Globe" size={12} />
+            Только с веб-поиском
+            {webSearchOnly && <Icon name="Check" size={12} />}
+          </button>
         </div>
         <Command>
           <CommandInput placeholder="Поиск модели или провайдера..." />
