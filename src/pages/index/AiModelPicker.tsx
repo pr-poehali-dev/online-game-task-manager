@@ -201,6 +201,15 @@ export default function AiModelPicker({ models, modelsLoading, value, onChange, 
                               выделенном пункте — иначе он терял контраст (см. комментарий в
                               command.tsx про смену --accent на --secondary для фона выделения). */}
                           <span className={`flex-1 truncate font-mono text-xs ${legacy ? 'text-muted-foreground group-data-[selected=true]:text-foreground/70' : ''}`}>{id}</span>
+                          {info.web_search_cost != null && (
+                            <span
+                              title="Модель умеет искать в интернете — подключается автоматически, когда это нужно для ответа"
+                              className="shrink-0 flex items-center gap-0.5 text-[10px] font-medium px-1.5 py-0.5 rounded-full bg-sky-500/15 text-sky-600 dark:text-sky-400"
+                            >
+                              <Icon name="Globe" size={10} />
+                              Веб-поиск
+                            </span>
+                          )}
                           {legacy && (
                             <span
                               title={`Есть более новая и не более дорогая модель: ${legacyOf.get(id)}`}

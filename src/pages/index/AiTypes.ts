@@ -86,6 +86,11 @@ export interface AiModelInfo {
   // generate_audio: true — звук можно переключать, false — модель никогда не делает звук
   // (передача параметра = ошибка 400), null/нет поля — переключатель не документирован.
   generate_audio?: boolean | null;
+  // web_search_cost — цена (₽ за 1000 запросов инструмента) присутствует в каталоге ТОЛЬКО у
+  // моделей, которые реально умеют пользоваться серверным инструментом aitunnel:web_search (см.
+  // backend/ai/generate.py — он подключается ко ВСЕМ сообщениям обычного чата, но модели без
+  // этого поля его просто проигнорируют). Поля нет = модель поиском не пользуется.
+  web_search_cost?: number;
 }
 
 export type AiModelsMap = Record<string, AiModelInfo>;
