@@ -8,6 +8,7 @@ import { AuthProvider } from "@/lib/auth";
 import { CatalogProvider } from "@/lib/catalog";
 import { ThemeProvider } from "@/lib/theme";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import PreviewGate from "@/components/PreviewGate";
 import Icon from "@/components/ui/icon";
 
 const Index = lazy(() => import("./pages/Index"));
@@ -28,6 +29,7 @@ function PageFallback() {
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <PreviewGate>
       <BrowserRouter>
         <AuthProvider>
           <CatalogProvider>
@@ -57,6 +59,7 @@ const App = () => (
           </CatalogProvider>
         </AuthProvider>
       </BrowserRouter>
+      </PreviewGate>
     </TooltipProvider>
   </QueryClientProvider>
 );
