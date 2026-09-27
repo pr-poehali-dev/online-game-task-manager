@@ -610,7 +610,10 @@ export function useAiSection() {
   // Перегенерация последнего ответа ассистента — старый ответ заменяется новым по той же
   // истории. Модель берётся ТЕКУЩАЯ из шапки, поэтому переключив её перед нажатием, можно
   // сравнить, как на тот же вопрос ответит другая модель (см. backend action=regenerate).
-  async function handleRegenerate() {
+  // useCallback обязателен: без него функция пересоздавалась бы на каждый рендер хука (в т.ч.
+  // на каждый символ, набираемый в поле ввода) и ломала бы memo на AiMessageList — лента заново
+  // перерисовывалась бы целиком при каждом keystroke.
+  const handleRegenerate = useCallback(async function handleRegenerate() {
     if (!activeChatId || sending) return;
     setSending(true);
     setSendError('');
@@ -642,7 +645,7 @@ export function useAiSection() {
     } finally {
       setSending(false);
     }
-  }
+  }, [activeChatId, sending, model]);
 
   // Поиск по содержимому всех диалогов (backend action=search_messages). useCallback обязателен:
   // AiChatList запускает поиск в useEffect по изменению этой функции — без мемоизации он бы
@@ -653,29 +656,31 @@ export function useAiSection() {
     return res.ok ? (data.results || []) : [];
   }, []);
 
-  async function handleRenameChat(chatId: number, title: string) {
+  const handleRenameChat = useCallback(async (chatId: number, title: string) => {
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, title } : c)));
     await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'rename_chat', chatId, title }) });
-  }
+  }, []);
 
-  async function handleTogglePinned(chatId: number, pinned: boolean) {
+  const handleTogglePinned = useCallback(async (chatId: number, pinned: boolean) => {
     setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, pinned } : c)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0)));
     await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'set_pinned', chatId, pinned }) });
     loadChats();
-  }
+  }, [loadChats]);
 
-  async function handleDeleteChat(chatId: number) {
+  const handleDeleteChat = useCallback(async (chatId: number) => {
     setChats((prev) => prev.filter((c) => c.id !== chatId));
     if (activeChatId === chatId) { setActiveChatId(null); setMessages([]); }
     await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'delete_chat', chatId }) });
-  }
+  }, [activeChatId]);
 
   // Закрепление ОДНОГО сообщения ассистента внутри текущего диалога — для быстрого поиска
   // полезного ответа в длинной переписке (см. backend/ai/index.py, action=set_message_pinned).
-  async function handleTogglePinnedMessage(messageId: number, pinned: boolean) {
+  // useCallback (как и у handleRegenerate выше) — иначе на каждый символ в поле ввода функция
+  // пересоздавалась бы заново и сводила на нет memo у AiMessageList.
+  const handleTogglePinnedMessage = useCallback(async (messageId: number, pinned: boolean) => {
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, pinned } : m)));
     await fetch(AI_URL, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ action: 'set_message_pinned', messageId, pinned }) });
-  }
+  }, []);
 
   const limitExceeded = !!usage && usage.spentRub >= usage.limitRub;
   const activeChatTitle = chats.find((c) => c.id === activeChatId)?.title;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Icon from '@/components/ui/icon';
@@ -326,7 +326,16 @@ function PinnedPanel({ pinnedMessages, chatTitle, onJump }: { pinnedMessages: Ai
   );
 }
 
-export default function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate, onPickDocumentHint }: AiMessageListProps) {
+// memo — печать текста в поле ввода (AiComposer.tsx) меняет только input в useAiSection.ts,
+// который в этот компонент вообще не передаётся. Без memo React всё равно перерисовывал бы всю
+// ленту (включая ReactMarkdown/подсветку кода в каждом сообщении) на КАЖДЫЙ символ, потому что
+// перерисовывался родитель AiChatPane — отсюда была заметная задержка набора текста в длинных
+// диалогах. Пропсы-функции (onTogglePinned и т.п.) не мемоизированы в useAiSection специально:
+// они меняют %ССЫЛКУ% только когда меняется реально нужная им замыканию величина (activeChatId
+// и т.п.), а не на каждый рендер — обычные function-объявления в хуке пересоздаются при КАЖДОМ
+// рендере useAiSection, поэтому дополнительно завёрнуты через useCallback ниже по стеку, где это
+// важно (см. handleSearchMessages). Для остальных ре-рендер по смене чата/сообщений — не проблема.
+export default memo(function AiMessageList({ messages, sending, error, mode, chatTitle, onTogglePinned, onRetry, onRegenerate, onPickDocumentHint }: AiMessageListProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [highlightedId, setHighlightedId] = useState<number | null>(null);
@@ -511,4 +520,4 @@ export default function AiMessageList({ messages, sending, error, mode, chatTitl
       )}
     </div>
   );
-}
+});
