@@ -127,7 +127,7 @@ export function useTaskActions(
   }
 
   async function handleToRestart(id: string) {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'restart', restartDone: false } : t)));
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, column: 'restart', restartDone: false, restartDoneServers: {} } : t)));
     try {
       await fetch(TASKS_URL, {
         method: 'POST',
@@ -152,13 +152,22 @@ export function useTaskActions(
     }
   }
 
-  async function handleToggleRestartDone(id: string, done: boolean) {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, restartDone: done } : t)));
+  // handleToggleRestartDone — отметка «Готово» ОТДЕЛЬНО для одного сервера задачи (serverId
+  // обязателен): задача может относиться сразу к нескольким серверам, и закрытие на одном не должно
+  // затрагивать остальные. См. таблицу restart_done_servers в backend/tasks/index.py.
+  async function handleToggleRestartDone(id: string, serverId: string, done: boolean) {
+    setTasks((prev) => prev.map((t) => {
+      if (t.id !== id) return t;
+      const restartDoneServers = { ...(t.restartDoneServers || {}), [serverId]: done };
+      const servers = t.servers && t.servers.length > 0 ? t.servers : (t.server ? [t.server] : []);
+      const allDone = servers.length > 0 && servers.every((sid) => !!restartDoneServers[sid]);
+      return { ...t, restartDoneServers, restartDone: allDone };
+    }));
     try {
       await fetch(TASKS_URL, {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ action: 'set_restart_done', id, done }),
+        body: JSON.stringify({ action: 'set_restart_done', id, serverId, done }),
       });
     } catch {
       /* ignore */

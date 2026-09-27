@@ -106,7 +106,7 @@ export default function IndexMain({
   tasks: Task[];
   handleToRestart: (id: string) => void;
   handleFromRestart: (id: string) => void;
-  handleToggleRestartDone: (id: string, done: boolean) => void;
+  handleToggleRestartDone: (id: string, serverId: string, done: boolean) => void;
   openTopicId: string | null;
   selectedTask: Task | null;
   kbArticles: KbArticleBrief[];

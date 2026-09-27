@@ -290,6 +290,8 @@ def _record_assignments(cur, schema, task_id, user_ids, assigned_by):
 
 
 def _row_to_task(r):
+    servers = r[22] if r[22] is not None else ([r[6]] if r[6] else [])
+    restart_done_servers = _restart_done_map(r[26], servers)
     return {
         'id': str(r[0]),
         'title': r[1],
@@ -298,7 +300,7 @@ def _row_to_task(r):
         'priority': r[4],
         'version': r[5],
         'server': r[6],
-        'servers': r[22] if r[22] is not None else ([r[6]] if r[6] else []),
+        'servers': servers,
         'category': r[7],
         'sprintId': r[8],
         # Спринты задачи: новый список sprint_ids, а для задач, созданных до его появления, —
@@ -311,7 +313,13 @@ def _row_to_task(r):
         'outcome': r[13],
         'assigneeIds': r[14] if r[14] is not None else [],
         'kbArticleIds': r[15] if r[15] is not None else [],
-        'restartDone': bool(r[16]),
+        # restartDone — устаревшее сводное поле (совместимость со старыми клиентами/местами кода):
+        # true, если задача целиком готова к архивации, т.е. отмечены ВСЕ серверы. Реальный источник
+        # истины — restartDoneServers, отметка отдельно на каждый привязанный сервер (см. V0105,
+        # действие set_restart_done ниже: раньше одно поле restart_done было общим на всю задачу, и
+        # закрытие на одном сервере ошибочно закрывало её сразу на всех).
+        'restartDone': _restart_all_done(restart_done_servers, servers),
+        'restartDoneServers': restart_done_servers,
         'createdAt': r[17].isoformat() if r[17] else None,
         'creatorId': r[18],
         'attachments': r[19] if r[19] is not None else [],
@@ -326,7 +334,7 @@ def _row_to_task(r):
 
 TASK_COLUMNS = (
     "id, title, column_id, assignee_id, priority, version, server, category, "
-    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded, servers, closed_by, archived_at, sprint_ids"
+    "sprint_id, deploy_status, description, links, archived, outcome, assignee_ids, kb_article_ids, restart_done, created_at, created_by, attachments, deadline, launcher_uploaded, servers, closed_by, archived_at, sprint_ids, restart_done_servers"
 )
 
 MAX_FILE_SIZE = 300 * 1024 * 1024  # 300 МБ на файл
@@ -440,6 +448,22 @@ def _task_assignee_ids(d):
     if ids:
         return ids
     return [d['assigneeId']] if d.get('assigneeId') is not None else []
+
+
+def _restart_done_map(raw, servers):
+    '''Приводит restart_done_servers к словарю {serverId: bool} строго по текущему списку серверов
+    задачи — так после отвязки сервера от задачи его старая отметка не проступает случайно, если
+    к задаче позже привяжут сервер с тем же id повторно.'''
+    raw = raw or {}
+    return {srv: bool(raw.get(srv)) for srv in servers}
+
+
+def _restart_all_done(restart_done_servers, servers):
+    '''Готова ли задача целиком к архивации из раздела «На лайв» — да, только когда отметка
+    «Готово» стоит у КАЖДОГО привязанного сервера (см. action=archive ниже).'''
+    if not servers:
+        return False
+    return all(bool(restart_done_servers.get(srv)) for srv in servers)
 
 
 def _norm_servers(body, fallback=None):
@@ -896,8 +920,10 @@ def handler(event: dict, context) -> dict:
             if me['id'] not in own_ids and own_row[2] != me['id']:
                 cur.close(); conn.close()
                 return _forbidden()
+        # restart_done_servers сбрасывается в пустой объект — все привязанные сервера снова
+        # требуют отдельной отметки «Готово» при повторном заходе в раздел «На лайв».
         cur.execute(
-            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET column_id = 'restart', restart_done = false, restart_done_servers = '{{}}'::jsonb, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
             (int(task_id),)
         )
@@ -942,20 +968,40 @@ def handler(event: dict, context) -> dict:
             return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'task': _row_to_task(row)})}
 
-    # Отметка задачи «На лайв» выполненной / снятие отметки — только администратор
+    # Отметка задачи «На лайв» выполненной / снятие отметки — ОТДЕЛЬНО для каждого привязанного
+    # сервера (обязателен serverId в теле запроса). Раньше restart_done было одним булевым полем на
+    # всю задачу — если задача относилась к нескольким серверам, отметка «Готово» на одном сервере
+    # автоматически считалась готовностью для всех остальных, хотя реально применена была только на
+    # одном. Только администратор.
     if action == 'set_restart_done':
         if me['role'] != 'admin':
             cur.close(); conn.close()
             return _forbidden()
         task_id = body.get('id')
+        server_id = body.get('serverId')
         done = bool(body.get('done', True))
-        if not task_id:
+        if not task_id or not server_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        cur.execute(f"SELECT server, servers, restart_done_servers FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        own_row = cur.fetchone()
+        if not own_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        servers = own_row[1] if own_row[1] is not None else ([own_row[0]] if own_row[0] else [])
+        if server_id not in servers:
+            cur.close(); conn.close()
+            return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'server_not_linked'})}
+        restart_done_servers = _restart_done_map(own_row[2], servers)
+        restart_done_servers[server_id] = done
+        # Сводное restart_done тоже обновляем — задача считается полностью готовой, только когда
+        # отмечены ВСЕ её сервера (см. _restart_all_done), это нужно для старых мест кода, ещё не
+        # перешедших на per-server restartDoneServers.
+        all_done = _restart_all_done(restart_done_servers, servers)
         cur.execute(
-            f"UPDATE {schema}.tasks SET restart_done = %s, updated_at = NOW() "
+            f"UPDATE {schema}.tasks SET restart_done_servers = %s, restart_done = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",
-            (done, int(task_id))
+            (json.dumps(restart_done_servers), all_done, int(task_id))
         )
         row = cur.fetchone()
         cur.close(); conn.close()
@@ -1013,6 +1059,20 @@ def handler(event: dict, context) -> dict:
         if not task_id:
             cur.close(); conn.close()
             return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'no_id'})}
+        # Задачу из раздела «На лайв» с несколькими серверами нельзя закрыть в архив, пока «Готово»
+        # не отмечено на КАЖДОМ из них — иначе часть серверов осталась бы без правки, но задача уже
+        # считалась бы выполненной. На фронте кнопка «В архив» и так скрыта до полной готовности
+        # (см. Restart.tsx), эта проверка — защита от прямого вызова API в обход интерфейса.
+        cur.execute(f"SELECT column_id, server, servers, restart_done_servers FROM {schema}.tasks WHERE id = %s", (int(task_id),))
+        pre_row = cur.fetchone()
+        if not pre_row:
+            cur.close(); conn.close()
+            return {'statusCode': 404, 'headers': _cors_headers(), 'body': json.dumps({'error': 'not_found'})}
+        if pre_row[0] == 'restart':
+            pre_servers = pre_row[2] if pre_row[2] is not None else ([pre_row[1]] if pre_row[1] else [])
+            if not _restart_all_done(_restart_done_map(pre_row[3], pre_servers), pre_servers):
+                cur.close(); conn.close()
+                return {'statusCode': 400, 'headers': _cors_headers(), 'body': json.dumps({'error': 'restart_not_done'})}
         cur.execute(
             f"UPDATE {schema}.tasks SET archived = true, outcome = %s, archived_at = NOW(), closed_by = %s, updated_at = NOW() "
             f"WHERE id = %s RETURNING {TASK_COLUMNS}",

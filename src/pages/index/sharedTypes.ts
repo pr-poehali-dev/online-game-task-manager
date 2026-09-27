@@ -93,7 +93,13 @@ export interface Task {
   archived?: boolean;
   outcome?: TaskOutcome | null;
   kbArticleIds?: number[];
+  // restartDone — устаревшее сводное поле: true, только когда «Готово» отмечено на ВСЕХ серверах
+  // задачи. Держится для обратной совместимости, актуальный источник — restartDoneServers.
   restartDone?: boolean;
+  // restartDoneServers — отметка «Готово» в разделе «На лайв» ОТДЕЛЬНО для каждого привязанного
+  // сервера (см. taskServerIds). Задача с несколькими серверами закрывается на каждом независимо —
+  // закрытие на одном не должно автоматически закрывать остальные.
+  restartDoneServers?: Record<string, boolean>;
   createdAt?: string | null;
   creatorId?: number | null;
   attachments?: Attachment[];

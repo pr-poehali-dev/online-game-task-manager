@@ -27,7 +27,7 @@ export default function Restart({
   onAddClick: () => void;
   onToRestart: (id: string) => void;
   onFromRestart: (id: string) => void;
-  onToggleDone: (id: string, done: boolean) => void;
+  onToggleDone: (id: string, serverId: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   isAdmin: boolean;
   can: (key: PermissionKey) => boolean;
@@ -137,6 +137,7 @@ export default function Restart({
                     <RestartTaskCard
                       key={t.id}
                       task={t}
+                      serverId={srv.id}
                       team={team}
                       isAdmin={isAdmin}
                       canArchive={canArchive}
@@ -160,6 +161,7 @@ export default function Restart({
 
 function RestartTaskCard({
   task: t,
+  serverId,
   team,
   isAdmin,
   canArchive,
@@ -172,6 +174,7 @@ function RestartTaskCard({
   hasPatchFiles,
 }: {
   task: Task;
+  serverId: string;
   team: TeamMember[];
   isAdmin: boolean;
   canArchive: boolean;
@@ -179,12 +182,18 @@ function RestartTaskCard({
   setArchiveMenu: (id: string | null) => void;
   onCardClick: (t: Task) => void;
   onFromRestart: (id: string) => void;
-  onToggleDone: (id: string, done: boolean) => void;
+  onToggleDone: (id: string, serverId: string, done: boolean) => void;
   onArchive: (id: string, outcome: TaskOutcome) => void;
   hasPatchFiles: boolean;
 }) {
   const assignees = taskAssigneeIds(t);
-  const done = !!t.restartDone;
+  // done — готовность ИМЕННО текущего сервера этой карточки (карточка рендерится отдельно под
+  // каждым сервером задачи, см. группировку в Restart.tsx выше). allServersDone — готовы ли ВСЕ
+  // сервера задачи разом, от этого зависит доступность кнопки «В архив»: закрыть задачу целиком
+  // можно только после того, как правка применена везде, куда она предназначалась.
+  const done = !!t.restartDoneServers?.[serverId];
+  const allServers = taskServerIds(t);
+  const allServersDone = allServers.length > 0 && allServers.every((sid) => !!t.restartDoneServers?.[sid]);
   const showLauncherBadge = needsLauncherUpload(t, hasPatchFiles);
   return (
     <div
@@ -208,22 +217,35 @@ function RestartTaskCard({
           {showLauncherBadge && <LauncherBadge uploaded={false} />}
         </div>
       ) : null}
-      <div className="flex items-center gap-2 mb-3">
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
         <AssigneeStack ids={assignees} team={team} size={24} />
-        {taskServerIds(t).map((sid) => <ServerBadge key={sid} id={sid} />)}
+        {allServers.map((sid) => (
+          <div key={sid} className="relative">
+            <ServerBadge id={sid} />
+            {/* Точка-индикатор готовности КОНКРЕТНОГО сервера — видна только если серверов
+                несколько, иначе она дублировала бы галочку в заголовке карточки. */}
+            {allServers.length > 1 && (
+              <span
+                title={t.restartDoneServers?.[sid] ? 'Готово на этом сервере' : 'Ещё не готово на этом сервере'}
+                className="absolute -top-1 -right-1 h-2 w-2 rounded-full border border-card"
+                style={{ background: t.restartDoneServers?.[sid] ? 'hsl(152 55% 45%)' : 'hsl(215 15% 50%)' }}
+              />
+            )}
+          </div>
+        ))}
       </div>
       {(isAdmin || canArchive) && (
         <div className="flex items-center gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
           {done ? (
             <>
               <button
-                onClick={() => onToggleDone(t.id, false)}
+                onClick={() => onToggleDone(t.id, serverId, false)}
                 className="h-8 px-3 rounded-lg border border-border text-xs text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors flex items-center gap-1.5"
               >
                 <Icon name="Undo2" size={13} />
                 Вернуть
               </button>
-              {canArchive && (
+              {canArchive && allServersDone && (
               <div className="relative ml-auto">
                 <button
                   onClick={() => setArchiveMenu(archiveMenu === t.id ? null : t.id)}
@@ -251,10 +273,17 @@ function RestartTaskCard({
                 )}
               </div>
               )}
+              {/* Все сервера ещё не готовы — поясняем, почему кнопки «В архив» пока нет вместо
+                  того, чтобы она молча пропадала без объяснений. */}
+              {canArchive && !allServersDone && (
+                <span className="ml-auto text-[11px] text-muted-foreground">
+                  В архив — после «Готово» на всех серверах
+                </span>
+              )}
             </>
           ) : (
             <button
-              onClick={() => onToggleDone(t.id, true)}
+              onClick={() => onToggleDone(t.id, serverId, true)}
               className="h-8 px-3 rounded-lg border border-border text-xs font-medium text-muted-foreground hover:text-foreground hover:border-[hsl(152_55%_45%)]/50 hover:bg-[hsl(152_55%_45%)]/10 hover:text-[hsl(152_55%_55%)] transition-colors flex items-center gap-1.5"
             >
               <Icon name="Check" size={14} />
