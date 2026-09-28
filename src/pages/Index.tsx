@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
+import Icon from '@/components/ui/icon';
 import {
   taskAssigneeIds,
   taskServerIds,
@@ -131,7 +132,7 @@ export default function Index() {
       {/* Дайджест дня — рендерится ПОВЕРХ всего остального интерфейса (z-[100], см.
           DailyDigestModal.tsx), не закрывается кликом по фону/Escape. Пока сотрудник не нажмёт
           «Ознакомлен», доска под ним видна, но не кликабельна — попап перекрывает весь экран. */}
-      {digest.shouldShow && digest.counts && (
+      {digest.shouldShow && digest.counts && !digest.minimized && (
         <DailyDigestModal
           counts={digest.counts}
           prefs={digest.prefs}
@@ -139,8 +140,22 @@ export default function Index() {
           periodEnd={digest.periodEnd}
           acknowledging={digest.acknowledging}
           onAcknowledge={digest.acknowledge}
-          onNavigate={(v) => { digest.acknowledge(); changeView(v); }}
+          onMinimize={digest.minimize}
+          onNavigate={(v) => changeView(v)}
         />
+      )}
+      {/* Дайджест свёрнут (перешли по пункту посмотреть раздел) — пока НЕ подтверждён кнопкой
+          «Ознакомлен», плавающая кнопка напоминает вернуться к нему и не даёт забыть про попап. */}
+      {digest.shouldShow && digest.counts && digest.minimized && (
+        <button
+          onClick={digest.restore}
+          className="fixed bottom-5 right-5 z-[100] flex items-center gap-2 h-11 pl-3.5 pr-4 rounded-full bg-card border border-border/70 shadow-[0_16px_40px_-12px_hsl(222_30%_2%/0.6)] hover:border-primary/50 transition-colors animate-scale-in"
+        >
+          <div className="h-6 w-6 rounded-full bg-primary/15 flex items-center justify-center text-primary shrink-0">
+            <Icon name="Newspaper" size={13} />
+          </div>
+          <span className="text-sm font-medium">Дайджест дня</span>
+        </button>
       )}
       <IndexSidebar
         view={view}

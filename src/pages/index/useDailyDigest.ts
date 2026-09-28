@@ -29,6 +29,13 @@ export function useDailyDigest(enabled: boolean) {
   const [periodStart, setPeriodStart] = useState<string | null>(null);
   const [periodEnd, setPeriodEnd] = useState<string | null>(null);
   const [acknowledging, setAcknowledging] = useState(false);
+  // minimized — попап временно свёрнут кликом по пункту (перешли посмотреть раздел), но ЕЩЁ НЕ
+  // подтверждён кнопкой «Ознакомлен». Раньше переход по любому пункту сразу вызывал acknowledge()
+  // и закрывал дайджест целиком — сотрудник не успевал посмотреть остальные пункты и нажать
+  // «Ознакомлен» осознанно. Теперь переход только сворачивает попап в маленькую плавающую кнопку
+  // (см. DailyDigestBadge в Index.tsx), а сам дайджест остаётся неподтверждённым, пока сотрудник
+  // явно не нажмёт «Ознакомлен».
+  const [minimized, setMinimized] = useState(false);
 
   const check = useCallback(async () => {
     if (!DIGEST_URL) return;
@@ -41,6 +48,7 @@ export function useDailyDigest(enabled: boolean) {
       setPrefs(data.prefs || null);
       setPeriodStart(data.periodStart || null);
       setPeriodEnd(data.periodEnd || null);
+      setMinimized(false);
     } catch {
       /* ignore — попап дайджеста не должен ронять весь заход в приложение при сбое сети */
     }
@@ -59,6 +67,7 @@ export function useDailyDigest(enabled: boolean) {
         body: JSON.stringify({ action: 'acknowledge' }),
       });
       setShouldShow(false);
+      setMinimized(false);
     } catch {
       /* ignore */
     } finally {
@@ -66,5 +75,8 @@ export function useDailyDigest(enabled: boolean) {
     }
   }, []);
 
-  return { shouldShow, counts, prefs, periodStart, periodEnd, acknowledging, acknowledge };
+  const minimize = useCallback(() => setMinimized(true), []);
+  const restore = useCallback(() => setMinimized(false), []);
+
+  return { shouldShow, counts, prefs, periodStart, periodEnd, acknowledging, acknowledge, minimized, minimize, restore };
 }

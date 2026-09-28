@@ -37,6 +37,7 @@ export default function DailyDigestModal({
   periodEnd,
   acknowledging,
   onAcknowledge,
+  onMinimize,
   onNavigate,
 }: {
   counts: DigestCounts;
@@ -45,6 +46,10 @@ export default function DailyDigestModal({
   periodEnd: string | null;
   acknowledging: boolean;
   onAcknowledge: () => void;
+  // onMinimize — переход по пункту сворачивает попап, НЕ подтверждая дайджест (см. useDailyDigest,
+  // minimized) — сотрудник должен нажать «Ознакомлен» осознанно, а не случайно закрыть весь
+  // дайджест первым же кликом по ссылке.
+  onMinimize: () => void;
   onNavigate: (view: ViewId) => void;
 }) {
   const visibleRows = ROWS.filter((r) => prefs?.[r.enabledKey] !== false);
@@ -79,7 +84,7 @@ export default function DailyDigestModal({
                 return (
                   <button
                     key={r.key}
-                    onClick={() => onNavigate(r.view)}
+                    onClick={() => { onMinimize(); onNavigate(r.view); }}
                     disabled={value === 0}
                     className={`w-full flex items-center gap-3 rounded-xl px-3.5 py-3 text-left transition-colors ${
                       value > 0 ? 'hover:bg-secondary/60 cursor-pointer' : 'opacity-50 cursor-default'
