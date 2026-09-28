@@ -8,6 +8,7 @@ export const SPRINTS_URL = (func2url as Record<string, string>).sprints;
 export const IDEAS_URL = (func2url as Record<string, string>).ideas;
 export const NOTIFICATIONS_URL = (func2url as Record<string, string>).notifications;
 export const PATCHNOTES_URL = (func2url as Record<string, string>).patchnotes;
+export const DIGEST_URL = (func2url as Record<string, string>).digest;
 export const PATCHES_URL = (func2url as Record<string, string>).patches;
 export const LOGS_URL = (func2url as Record<string, string>).logs;
 export const AI_URL = (func2url as Record<string, string>).ai;

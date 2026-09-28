@@ -4,6 +4,7 @@ import Icon from '@/components/ui/icon';
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import type { AuthUser } from '@/lib/auth';
+import DigestPrefsSection from './DigestPrefsSection';
 import func2url from '../../../backend/func2url.json';
 
 const AUTH_URL = (func2url as Record<string, string>).auth;
@@ -275,6 +276,8 @@ export default function CabinetProfile({ user }: { user: AuthUser }) {
           })}
         </div>
       </div>
+
+      <DigestPrefsSection />
     </div>
   );
 }

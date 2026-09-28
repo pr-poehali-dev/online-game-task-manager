@@ -22,6 +22,8 @@ import { useBoardData } from './index/useBoardData';
 import { useSprintActions } from './index/useSprintActions';
 import { useTaskActions } from './index/useTaskActions';
 import { useDeepLinks } from './index/useDeepLinks';
+import { useDailyDigest } from './index/useDailyDigest';
+import DailyDigestModal from './index/DailyDigestModal';
 
 export default function Index() {
   const { user, isAdmin, can } = useAuth();
@@ -69,6 +71,10 @@ export default function Index() {
   const [patchesServerId, setPatchesServerId] = useState<ServerId | null>(null);
 
   const { tasks, setTasks, sprints, setSprints, team, tasksLoading, kbArticles, tasksWithPatchFiles, reloadTasksWithPatchFiles, ideasUnreadCount, reloadIdeasUnreadCount } = useBoardData();
+
+  // Дайджест дня — блокирующий попап со сводкой событий, проверяется один раз при заходе
+  // авторизованного сотрудника (см. useDailyDigest.ts, backend/digest/index.py).
+  const digest = useDailyDigest(!!user);
 
   const {
     handleCreateSprint,
@@ -122,6 +128,20 @@ export default function Index() {
 
   return (
     <div className="h-screen grid-bg text-foreground flex overflow-hidden">
+      {/* Дайджест дня — рендерится ПОВЕРХ всего остального интерфейса (z-[100], см.
+          DailyDigestModal.tsx), не закрывается кликом по фону/Escape. Пока сотрудник не нажмёт
+          «Ознакомлен», доска под ним видна, но не кликабельна — попап перекрывает весь экран. */}
+      {digest.shouldShow && digest.counts && (
+        <DailyDigestModal
+          counts={digest.counts}
+          prefs={digest.prefs}
+          periodStart={digest.periodStart}
+          periodEnd={digest.periodEnd}
+          acknowledging={digest.acknowledging}
+          onAcknowledge={digest.acknowledge}
+          onNavigate={(v) => { digest.acknowledge(); changeView(v); }}
+        />
+      )}
       <IndexSidebar
         view={view}
         category={category}
