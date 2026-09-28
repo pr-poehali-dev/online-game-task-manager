@@ -5,8 +5,8 @@ import { Calendar } from '@/components/ui/calendar';
 import type { DateRange } from 'react-day-picker';
 import type { AuthUser } from '@/lib/auth';
 import { authFetch, fmtDuration, fmtDay } from '../admin/adminShared';
-import type { TeamUser, UserStats, AiUsageSummaryItem } from '../admin/adminShared';
-import { AI_URL, authHeaders } from '../index/shared';
+import type { TeamUser, UserStats, AiUsageSummaryItem, DigestSummaryItem } from '../admin/adminShared';
+import { AI_URL, authHeaders, formatMskDateTime } from '../index/shared';
 
 function defaultRange(): DateRange {
   const to = new Date();
@@ -158,6 +158,68 @@ function AiUsageSection({ hasTeamAccess }: { hasTeamAccess: boolean }) {
   );
 }
 
+// "Давно не заходил" — порог в календарных сутках, после которого дата подсвечивается как
+// требующая внимания (сотрудник пропустил несколько дней дайджестов подряд).
+const STALE_DAYS = 2;
+
+function DigestSummarySection({ hasTeamAccess }: { hasTeamAccess: boolean }) {
+  const [items, setItems] = useState<DigestSummaryItem[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!hasTeamAccess) return;
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const res = await authFetch({ action: 'digest_summary' });
+      if (cancelled) return;
+      if (res.ok) {
+        const data = await res.json();
+        setItems(data.items || []);
+      }
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [hasTeamAccess]);
+
+  if (!hasTeamAccess) return null;
+
+  function isStale(iso: string | null): boolean {
+    if (!iso) return true;
+    return Date.now() - new Date(iso).getTime() > STALE_DAYS * 24 * 60 * 60 * 1000;
+  }
+
+  return (
+    <div className="pt-6 border-t border-border">
+      <h2 className="text-base font-semibold mb-1 flex items-center gap-1.5">
+        <Icon name="Newspaper" size={15} className="text-primary" />
+        Дайджест дня
+      </h2>
+      <p className="text-sm text-muted-foreground mb-4">Когда каждый сотрудник последний раз нажимал «Ознакомлен».</p>
+      {loading ? (
+        <div className="flex justify-center py-8"><Icon name="Loader2" size={20} className="animate-spin text-primary" /></div>
+      ) : !items || items.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-4">Нет данных.</p>
+      ) : (
+        <div className="rounded-2xl border border-border bg-card divide-y divide-border">
+          {items.map((it) => {
+            const stale = isStale(it.lastAckAt);
+            return (
+              <div key={it.userId} className="flex items-center justify-between gap-3 px-4 py-3">
+                <span className="text-sm truncate">{it.name}</span>
+                <span className={`text-xs shrink-0 flex items-center gap-1.5 ${stale ? 'text-amber-500' : 'text-muted-foreground'}`}>
+                  {stale && <Icon name="AlertTriangle" size={12} />}
+                  {it.lastAckAt ? formatMskDateTime(it.lastAckAt) : 'Ещё ни разу'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CabinetStats({
   user,
   hasTeamAccess,
@@ -240,6 +302,7 @@ export default function CabinetStats({
       )}
 
       <AiUsageSection hasTeamAccess={hasTeamAccess} />
+      <DigestSummarySection hasTeamAccess={hasTeamAccess} />
     </div>
   );
 }

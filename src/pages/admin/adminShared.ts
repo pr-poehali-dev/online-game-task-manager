@@ -153,6 +153,15 @@ export interface AiUsageSummaryItem {
   limitRub: number;
 }
 
+// Сводка по "Дайджесту дня" (action=digest_summary в backend/admin/index.py) — когда каждый
+// сотрудник последний раз нажимал «Ознакомлен» (backend/digest/index.py). lastAckAt === null
+// означает, что сотрудник ещё ни разу не подтверждал дайджест после введения фичи.
+export interface DigestSummaryItem {
+  userId: number;
+  name: string;
+  lastAckAt: string | null;
+}
+
 export interface SessionInfo {
   id: number;
   created_at: string | null;

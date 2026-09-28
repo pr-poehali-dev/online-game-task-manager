@@ -190,7 +190,7 @@ ADMIN_ONLY_ACTIONS = {'impersonate', 'set_permissions', 'set_role'}
 
 
 def handler(event: dict, context) -> dict:
-    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit) и ЕДИНСТВЕННЫЙ лимит на файлы — суммарный объём в МБ (action=set_ai_size_limit — users.ai_size_limit_mb, см. db_migrations V0083), считается по ВСЕМ файлам сотрудника, включая сгенерированные; список GET отдаёт лимит вместе с текущим расходом (ai_files_used, ai_size_used_mb), сводка занятого места всей командой (action=ai_storage_summary — кто сколько занимает в хранилище AI) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
+    '''Управление пользователями команды: список, выдача/снятие прав доступа и роли admin, индивидуальные права, статистика активности, тестовый вход под участником (action=impersonate), видимость в списке команды (action=set_show_in_team), изменение имени/фамилии (action=set_name), скрытие переписки бота в Telegram участнику (action=set_tg_muted), скрытие кнопки "написать в Telegram" в списке команды (action=set_show_tg_contact). Просмотр и закрытие сессий: список сессий участника (action=sessions), закрыть одну сессию (action=revoke_session), закрыть все активные сессии кроме последней (action=revoke_sessions). Управление залитыми файлами: список всех вложений по разделам база знаний/идеи/задачи вместе со статистикой занятого/свободного места на диске VPS, где физически развёрнут backend (action=files_list), и удаление файлов из хранилища S3/MinIO (action=file_delete). Просмотр общего журнала действий команды за последние 7 дней (action=activity_log). Месячный лимит трат сотрудника на раздел "AI" (action=set_ai_limit) и ЕДИНСТВЕННЫЙ лимит на файлы — суммарный объём в МБ (action=set_ai_size_limit — users.ai_size_limit_mb, см. db_migrations V0083), считается по ВСЕМ файлам сотрудника, включая сгенерированные; список GET отдаёт лимит вместе с текущим расходом (ai_files_used, ai_size_used_mb), сводка занятого места всей командой (action=ai_storage_summary — кто сколько занимает в хранилище AI) и сводка трат всей команды за текущий месяц (action=ai_usage_summary, см. AI_MANAGER_PLAN.md Этап 5) — список пользователей (GET) дополнительно возвращает поле ai_limit_rub каждому. Сводка по "Дайджесту дня" — когда каждый сотрудник последний раз нажимал «Ознакомлен» (action=digest_summary, см. backend/digest/index.py). Доступно администраторам, а также любому участнику с точечным правом team_manage — КРОМЕ действий из ADMIN_ONLY_ACTIONS (impersonate/set_permissions/set_role), которые остаются исключительно для role == admin, т.к. могут привести к получению полного административного доступа.'''
     method = event.get('httpMethod', 'GET')
     if method == 'OPTIONS':
         return {'statusCode': 200, 'headers': _cors_headers(), 'body': ''}
@@ -527,6 +527,26 @@ def handler(event: dict, context) -> dict:
             'totalMb': round(int(total_bytes or 0) / mb, 2),
             'allowedMb': allowed_mb,
         })}
+
+    if action == 'digest_summary':
+        # Сводка по "Дайджесту дня" (см. backend/digest/index.py): когда каждый сотрудник в
+        # последний раз нажимал «Ознакомлен» (employee_digest_state.last_ack_at) — видно, кто
+        # реально читает ежедневную сводку, а кто отстаёт на несколько дней. Отсутствие строки в
+        # employee_digest_state означает, что сотрудник ещё ни разу не заходил после введения
+        # фичи (see V0106/V0107) — фронт показывает это как "ещё ни разу", а не путает с ошибкой.
+        # Доступно только has_team_access (общий guard выше уже это обеспечил).
+        cur.execute(
+            f"SELECT u.id, u.first_name, u.last_name, u.nickname, d.last_ack_at "
+            f"FROM {schema}.users u LEFT JOIN {schema}.employee_digest_state d ON d.user_id = u.id "
+            f"WHERE u.is_hidden = false ORDER BY d.last_ack_at DESC NULLS LAST, u.first_name ASC"
+        )
+        items = [{
+            'userId': r[0],
+            'name': r[3] or f"{r[1]}{(' ' + r[2]) if r[2] else ''}",
+            'lastAckAt': r[4].isoformat() if r[4] else None,
+        } for r in cur.fetchall()]
+        cur.close(); conn.close()
+        return {'statusCode': 200, 'headers': _cors_headers(), 'body': json.dumps({'items': items})}
 
     if action == 'stats':
         # Статистика по одному участнику за период: создано / закрыто / получено задач + время в
