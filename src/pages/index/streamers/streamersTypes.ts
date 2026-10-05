@@ -35,6 +35,31 @@ export interface DefaultRule {
   keywords: string[];
 }
 
+export interface StreamSession {
+  id: number;
+  streamerId: number;
+  displayName: string;
+  channelSlug: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationSeconds: number;
+  peakViewers: number;
+  avgViewers: number;
+  minutesTotal: number;
+  minutesMatched: number;
+  matchShare: number | null;
+  title: string;
+  reviewStatus: 'auto' | 'confirmed' | 'disputed';
+}
+
+export type SessionSortKey = 'streamer' | 'started' | 'duration' | 'peak' | 'avg' | 'share';
+
+export interface SessionFilters {
+  streamerId: string;
+  dateFrom: string;
+  dateTo: string;
+}
+
 export const ERROR_TEXTS: Record<string, string> = {
   bad_link: 'Не удалось разобрать ссылку. Нужен адрес вида https://kick.com/ник',
   exists: 'Этот стример уже добавлен',
@@ -43,4 +68,6 @@ export const ERROR_TEXTS: Record<string, string> = {
   no_keys: 'Не заданы ключи Kick. Обратитесь к администратору проекта',
   forbidden: 'Недостаточно прав для этого действия',
   unauthorized: 'Нужно войти заново',
+  bad_date: 'Дата указана неверно',
+  bad_params: 'Не удалось применить фильтры',
 };

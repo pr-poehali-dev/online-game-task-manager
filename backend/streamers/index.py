@@ -2,6 +2,7 @@ import json
 import os
 import re
 import threading
+from datetime import datetime, timedelta, timezone
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -10,6 +11,18 @@ import psycopg2
 
 KICK_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 SLUG_RE = re.compile(r'^[A-Za-z0-9_\-]{2,60}$')
+DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+MSK = timezone(timedelta(hours=3))
+SESSION_DURATION = "EXTRACT(EPOCH FROM (COALESCE(ss.ended_at, NOW()) - ss.started_at))"
+SESSION_SHARE = "(ss.minutes_matched::numeric / NULLIF(ss.minutes_total, 0))"
+SESSION_SORTS = {
+    'streamer': 's.display_name',
+    'started': 'ss.started_at',
+    'duration': SESSION_DURATION,
+    'peak': 'ss.peak_viewers',
+    'avg': 'ss.avg_viewers',
+    'share': SESSION_SHARE,
+}
 
 
 def _cors_headers():
@@ -163,6 +176,19 @@ def _row_to_streamer(r):
     }
 
 
+def _valid_date(value):
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+        return True
+    except ValueError:
+        return False
+
+
+def _msk_day_start(value):
+    '''Начало календарного дня по Москве (UTC+3, без перехода на летнее время).'''
+    return datetime.strptime(value, '%Y-%m-%d').replace(tzinfo=MSK)
+
+
 def _clean_keywords(raw):
     result = []
     for v in raw or []:
@@ -208,7 +234,7 @@ def handler(event: dict, context) -> dict:
 
         can_view = me['perms'].get('streamers_view') or me['perms'].get('streamers_edit')
         can_edit = me['perms'].get('streamers_edit')
-        read_actions = {'list', 'rules_get', 'health'}
+        read_actions = {'list', 'rules_get', 'health', 'sessions'}
         if action in read_actions and not can_view:
             return _resp(403, {'error': 'forbidden'})
         if action not in read_actions and not can_edit:
@@ -360,6 +386,55 @@ def handler(event: dict, context) -> dict:
                 return _resp(400, {'error': 'id_required', 'message': 'Правило по умолчанию сбросить нельзя, его можно только изменить'})
             cur.execute(f"DELETE FROM {schema}.streamer_rules WHERE streamer_id = %s", (sid,))
             return _resp(200, {'ok': True})
+
+        if action == 'sessions':
+            where, params = [], []
+            sid = body.get('streamerId')
+            if sid:
+                try:
+                    where.append('ss.streamer_id = %s'); params.append(int(sid))
+                except (TypeError, ValueError):
+                    return _resp(400, {'error': 'bad_params'})
+            date_from, date_to = body.get('dateFrom'), body.get('dateTo')
+            if date_from:
+                if not DATE_RE.match(str(date_from)) or not _valid_date(date_from):
+                    return _resp(400, {'error': 'bad_date'})
+                where.append('ss.started_at >= %s'); params.append(_msk_day_start(date_from))
+            if date_to:
+                if not DATE_RE.match(str(date_to)) or not _valid_date(date_to):
+                    return _resp(400, {'error': 'bad_date'})
+                where.append('ss.started_at < %s'); params.append(_msk_day_start(date_to) + timedelta(days=1))
+            where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
+            sort_sql = SESSION_SORTS.get(body.get('sort') or 'started', SESSION_SORTS['started'])
+            direction = 'ASC' if body.get('dir') == 'asc' else 'DESC'
+            try:
+                page = max(1, int(body.get('page') or 1))
+            except (TypeError, ValueError):
+                return _resp(400, {'error': 'bad_params'})
+            page_size = 25
+            cur.execute(
+                f"SELECT COUNT(*) FROM {schema}.stream_sessions ss {where_sql}", params
+            )
+            total = cur.fetchone()[0]
+            cur.execute(
+                f"SELECT ss.id, ss.streamer_id, s.display_name, s.channel_slug, ss.started_at, ss.ended_at, "
+                f"{SESSION_DURATION}::int, ss.peak_viewers, ss.avg_viewers, ss.minutes_total, ss.minutes_matched, "
+                f"ss.last_title, ss.review_status "
+                f"FROM {schema}.stream_sessions ss JOIN {schema}.streamers s ON s.id = ss.streamer_id "
+                f"{where_sql} ORDER BY {sort_sql} {direction} NULLS LAST, ss.id DESC LIMIT %s OFFSET %s",
+                params + [page_size, (page - 1) * page_size]
+            )
+            items = []
+            for r in cur.fetchall():
+                items.append({
+                    'id': r[0], 'streamerId': r[1], 'displayName': r[2], 'channelSlug': r[3],
+                    'startedAt': r[4].isoformat(), 'endedAt': r[5].isoformat() if r[5] else None,
+                    'durationSeconds': r[6], 'peakViewers': r[7], 'avgViewers': float(r[8] or 0),
+                    'minutesTotal': r[9], 'minutesMatched': r[10],
+                    'matchShare': (r[10] / r[9]) if r[9] else None,
+                    'title': r[11], 'reviewStatus': r[12],
+                })
+            return _resp(200, {'sessions': items, 'total': total, 'page': page, 'pageSize': page_size})
 
         if action == 'health':
             cur.execute(

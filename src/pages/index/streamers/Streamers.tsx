@@ -1,6 +1,8 @@
+import { useState } from 'react';
 import Icon from '@/components/ui/icon';
 import AddStreamerForm from './AddStreamerForm';
 import StreamerCard from './StreamerCard';
+import StreamSessions from './StreamSessions';
 import { useStreamers } from './useStreamers';
 import type { CollectorHealth } from './streamersTypes';
 
@@ -20,6 +22,7 @@ function healthText(h: CollectorHealth | null): { text: string; ok: boolean } {
 }
 
 export default function Streamers({ active, canEdit }: Props) {
+  const [tab, setTab] = useState<'list' | 'history'>('list');
   const { streamers, health, defaultRule, loading, error, add, update, remove } = useStreamers(active);
   const liveCount = streamers.filter((s) => s.live).length;
   const status = healthText(health);
@@ -46,9 +49,26 @@ export default function Streamers({ active, canEdit }: Props) {
       )}
       {!keywords && <div className="mb-4" />}
 
-      {canEdit && <AddStreamerForm onAdd={add} />}
+      <div className="flex gap-1 bg-secondary/40 p-1 rounded-lg border border-border/40 w-fit mb-4">
+        {([['list', 'Список', 'Users'], ['history', 'История эфиров', 'History']] as const).map(([k, label, icon]) => (
+          <button
+            key={k}
+            onClick={() => setTab(k)}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tab === k ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+            }`}
+          >
+            <Icon name={icon} size={14} />
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {loading ? (
+      {tab === 'history' && <StreamSessions active={active && tab === 'history'} streamers={streamers} />}
+
+      {tab === 'list' && canEdit && <AddStreamerForm onAdd={add} />}
+
+      {tab !== 'list' ? null : loading ? (
         <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
           <Icon name="Loader2" size={16} className="animate-spin" />
           Загрузка…
