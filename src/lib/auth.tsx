@@ -23,6 +23,8 @@ export type PermissionKey =
   | 'patch_delete_files'
   | 'logs_view'
   | 'ai_access'
+  | 'streamers_view'
+  | 'streamers_edit'
   | 'team_manage';
 
 export interface AuthUser {

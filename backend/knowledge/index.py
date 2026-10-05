@@ -44,6 +44,7 @@ ALL_PERMISSIONS = [
     'kb_create', 'kb_edit',
     'sprint_create', 'sprint_edit',
     'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
+    'streamers_view', 'streamers_edit',
     'team_manage',
 ]
 

@@ -29,6 +29,7 @@ ALL_PERMISSIONS = [
     'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
     'logs_view',
     'ai_access',
+    'streamers_view', 'streamers_edit',
     'team_manage',
 ]
 

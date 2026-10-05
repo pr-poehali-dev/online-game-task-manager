@@ -235,6 +235,7 @@ ALL_PERMISSIONS = [
     'launcher_notify',
     'private_notes_view_others',
     'patch_edit', 'patch_launcher_upload', 'patch_delete_files',
+    'streamers_view', 'streamers_edit',
     'team_manage',
 ]
 

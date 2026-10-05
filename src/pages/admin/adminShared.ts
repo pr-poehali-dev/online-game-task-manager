@@ -93,6 +93,14 @@ export const OWNER_ONLY_PERMISSION_GROUPS: PermissionGroup[] = [
     ],
   },
   {
+    title: 'Стримеры',
+    icon: 'Radio',
+    items: [
+      { key: 'streamers_view', label: 'Просмотр раздела «Стримеры» (кто в эфире, история трансляций, статистика)' },
+      { key: 'streamers_edit', label: 'Управление стримерами (добавление по ссылке, пауза, правила проверки слов в названии, подтверждение сессий)' },
+    ],
+  },
+  {
     title: 'AI',
     icon: 'Sparkles',
     items: [
