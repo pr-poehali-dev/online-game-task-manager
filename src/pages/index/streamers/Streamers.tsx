@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import AddStreamerForm from './AddStreamerForm';
 import StreamerCard from './StreamerCard';
 import StreamSessions from './StreamSessions';
+import StreamerRulesTab from './StreamerRulesTab';
 import { useStreamers } from './useStreamers';
 import type { CollectorHealth } from './streamersTypes';
 
@@ -22,8 +23,8 @@ function healthText(h: CollectorHealth | null): { text: string; ok: boolean } {
 }
 
 export default function Streamers({ active, canEdit }: Props) {
-  const [tab, setTab] = useState<'list' | 'history'>('list');
-  const { streamers, health, defaultRule, loading, error, add, update, remove } = useStreamers(active);
+  const [tab, setTab] = useState<'list' | 'history' | 'rules'>('list');
+  const { streamers, health, defaultRule, loading, error, reload, add, update, remove } = useStreamers(active);
   const liveCount = streamers.filter((s) => s.live).length;
   const status = healthText(health);
   const keywords = defaultRule?.keywords?.length ? defaultRule.keywords.join(', ') : null;
@@ -44,13 +45,13 @@ export default function Streamers({ active, canEdit }: Props) {
       {keywords && (
         <div className="flex items-start gap-2 text-xs text-muted-foreground mb-4">
           <Icon name="Search" size={13} className="mt-0.5 shrink-0" />
-          <span>Ищем в названии трансляции: <span className="text-foreground font-medium">{keywords}</span></span>
+          <span>Общее правило, ищем в названии: <span className="text-foreground font-medium">{keywords}</span>{defaultRule?.matchMode === 'all' ? ' (нужны все слова)' : ''}</span>
         </div>
       )}
       {!keywords && <div className="mb-4" />}
 
       <div className="flex gap-1 bg-secondary/40 p-1 rounded-lg border border-border/40 w-fit mb-4">
-        {([['list', 'Список', 'Users'], ['history', 'История эфиров', 'History']] as const).map(([k, label, icon]) => (
+        {([['list', 'Список', 'Users'], ['history', 'История эфиров', 'History'], ['rules', 'Правила', 'SlidersHorizontal']] as const).map(([k, label, icon]) => (
           <button
             key={k}
             onClick={() => setTab(k)}
@@ -65,6 +66,8 @@ export default function Streamers({ active, canEdit }: Props) {
       </div>
 
       {tab === 'history' && <StreamSessions active={active && tab === 'history'} streamers={streamers} />}
+
+      {tab === 'rules' && <StreamerRulesTab active={active && tab === 'rules'} canEdit={canEdit} streamers={streamers} onChanged={reload} />}
 
       {tab === 'list' && canEdit && <AddStreamerForm onAdd={add} />}
 

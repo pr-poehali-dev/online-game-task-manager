@@ -31,9 +31,17 @@ export interface CollectorHealth {
   healthy: boolean;
 }
 
-export interface DefaultRule {
+export type MatchMode = 'any' | 'all';
+
+export interface Rule {
+  streamerId: number | null;
   keywords: string[];
+  matchMode: MatchMode;
+  checkTitle: boolean;
+  checkTags: boolean;
 }
+
+export type DefaultRule = Rule;
 
 export interface StreamSession {
   id: number;
