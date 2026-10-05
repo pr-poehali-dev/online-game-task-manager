@@ -7,6 +7,7 @@ import Ideas from './Ideas';
 import Patchnotes from './Patchnotes';
 import Patches from './Patches';
 import Logs from './Logs';
+import Streamers from './streamers/Streamers';
 import Ai from './Ai';
 import { TaskModal, CreateTaskModal } from './TaskModals';
 import { Archive, Sprints, CreateSprintModal } from './SprintsBugsArchive';
@@ -277,6 +278,11 @@ export default function IndexMain({
         {visited.has('logs') && (
           <div className={view === 'logs' ? '' : 'hidden'}>
             <Logs />
+          </div>
+        )}
+        {visited.has('streamers') && (
+          <div className={view === 'streamers' ? '' : 'hidden'}>
+            <Streamers active={view === 'streamers'} canEdit={can('streamers_edit')} />
           </div>
         )}
         {visited.has('ai') && (

@@ -40,7 +40,7 @@ export type CategoryId = string;
 // «Требуется залить в лаунчер».
 export type DeployStatus = string;
 export type TaskOutcome = 'done' | 'unfeasible' | 'cancelled';
-export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas' | 'patchnotes' | 'patches' | 'logs' | 'ai';
+export type ViewId = 'board' | 'sprints' | 'archive' | 'knowledge' | 'restart' | 'ideas' | 'patchnotes' | 'patches' | 'logs' | 'streamers' | 'ai';
 
 export interface Comment {
   id: string;

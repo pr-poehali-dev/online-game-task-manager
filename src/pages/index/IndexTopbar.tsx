@@ -89,6 +89,7 @@ export default function IndexTopbar({
     { k: 'patchnotes', label: 'Патчноуты', icon: 'ScrollText' },
     { k: 'patches', label: 'Патчи', icon: 'FolderTree' },
     { k: 'logs', label: 'Логи', icon: 'FileText' },
+    { k: 'streamers', label: 'Стримеры', icon: 'Radio' },
     { k: 'ai', label: 'AI', icon: 'Sparkles' },
     { k: 'archive', label: 'Архив', icon: 'Archive' },
   ] as const;
@@ -125,11 +126,12 @@ export default function IndexTopbar({
             {view === 'patchnotes' && 'Патчноуты'}
             {view === 'patches' && 'Патчи'}
             {view === 'logs' && 'Логи'}
+            {view === 'streamers' && 'Стримеры'}
             {view === 'ai' && 'AI'}
           </span>
         </div>
         <nav className="ml-4 hidden md:flex gap-1 bg-secondary/40 p-1 rounded-lg border border-border/40">
-          {NAV_ITEMS.filter((t) => (t.k !== 'logs' || can('logs_view')) && (t.k !== 'ai' || can('ai_access'))).map((t) => (
+          {NAV_ITEMS.filter((t) => (t.k !== 'logs' || can('logs_view')) && (t.k !== 'streamers' || can('streamers_view') || can('streamers_edit')) && (t.k !== 'ai' || can('ai_access'))).map((t) => (
             <button
               key={t.k}
               onClick={() => setView(t.k as typeof view)}
@@ -369,7 +371,7 @@ export default function IndexTopbar({
           <div className="px-4 pt-4 pb-2">
             <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2 px-1">Разделы</div>
             <div className="space-y-0.5">
-              {NAV_ITEMS.filter((t) => (t.k !== 'logs' || can('logs_view')) && (t.k !== 'ai' || can('ai_access'))).map((t) => (
+              {NAV_ITEMS.filter((t) => (t.k !== 'logs' || can('logs_view')) && (t.k !== 'streamers' || can('streamers_view') || can('streamers_edit')) && (t.k !== 'ai' || can('ai_access'))).map((t) => (
                 <button
                   key={t.k}
                   onClick={() => { setView(t.k as typeof view); setMenuOpen(false); }}

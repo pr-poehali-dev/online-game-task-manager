@@ -11,6 +11,7 @@ export const PATCHNOTES_URL = (func2url as Record<string, string>).patchnotes;
 export const DIGEST_URL = (func2url as Record<string, string>).digest;
 export const PATCHES_URL = (func2url as Record<string, string>).patches;
 export const LOGS_URL = (func2url as Record<string, string>).logs;
+export const STREAMERS_URL = (func2url as Record<string, string>).streamers;
 export const AI_URL = (func2url as Record<string, string>).ai;
 // AI_STREAM_URL — потоковый (SSE) ответ обычного чата, работает ТОЛЬКО на self-hosted-сервере
 // (см. deploy/server.py, /api/ai/stream) — облачные функции poehali.dev его не поддерживают.
