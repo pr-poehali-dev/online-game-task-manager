@@ -1,4 +1,5 @@
 {
+  "streamers-collector": "https://functions.poehali.dev/9b7c642f-2e6a-4a0f-9bb3-8e3207cad238",
   "streamers": "https://functions.poehali.dev/0f1102b7-ebc2-4134-8d1d-0cdcb57c4aea",
   "digest": "https://functions.poehali.dev/3f982ca7-8479-4cc1-8fe9-2b556ad4ac49",
   "preview-gate": "https://functions.poehali.dev/ef336a1f-b68a-4fda-a7fd-4e9e9d484d98",
@@ -19,6 +20,5 @@
   "login-code": "https://functions.poehali.dev/4fd04e50-8d09-492e-89e1-aec5962144f1",
   "tg-webhook": "https://functions.poehali.dev/372e14c9-0993-428e-a2f1-d0517cf6deb5",
   "admin": "https://functions.poehali.dev/34ab7e5c-02b0-4be8-9dbb-823221f2b24c",
-  "auth": "https://functions.poehali.dev/bd45a664-c262-4040-baa1-d545163eaf50",
-  "ideas": "https://functions.poehali.dev/c0ea3ca0-42c6-4c39-9c64-211d18d85266"
+  "auth": "https://functions.poehali.dev/bd45a664-c262-4040-baa1-d545163eaf50"
 }

@@ -1,0 +1,16 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Без секрета cron доступ закрыт",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 403
+    }
+  ]
+}
